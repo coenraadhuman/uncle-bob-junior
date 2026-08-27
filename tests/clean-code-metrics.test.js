@@ -230,3 +230,45 @@ test('python code reports zero mutability metrics', () => {
   assert.equal(m.mutableFieldCount, 0);
   assert.equal(m.setterCount, 0);
 });
+
+test('java: two control-flow levels inside a method are not deeply nested', () => {
+  const twoLevels = analyze([
+    'public class Sum {',
+    '    public int sumPositive(int[] values) {',
+    '        int total = 0;',
+    '        for (int value : values) {',
+    '            if (value > 0) {',
+    '                total += value;',
+    '            }',
+    '        }',
+    '        return total;',
+    '    }',
+    '}',
+  ].join('\n'), 'java');
+  assert.equal(twoLevels.maxNestingDepth, 4, 'class + method + for + if');
+  assert.equal(twoLevels.deeplyNested, false, 'the ruleset allows 2 levels inside a method');
+
+  const threeLevels = analyze([
+    'public class Sum {',
+    '    public int sum(int[][] rows) {',
+    '        int total = 0;',
+    '        for (int[] row : rows) {',
+    '            for (int value : row) {',
+    '                if (value > 0) {',
+    '                    total += value;',
+    '                }',
+    '            }',
+    '        }',
+    '        return total;',
+    '    }',
+    '}',
+  ].join('\n'), 'java');
+  assert.equal(threeLevels.deeplyNested, true, '3 levels inside a method breaks the rule');
+});
+
+test('python: two control-flow levels inside a def are not deeply nested', () => {
+  const ok = analyze('def f(rows):\n    for row in rows:\n        if row:\n            print(row)\n', 'python');
+  assert.equal(ok.deeplyNested, false);
+  const deep = analyze('def f(rows):\n    for row in rows:\n        for v in row:\n            if v:\n                print(v)\n', 'python');
+  assert.equal(deep.deeplyNested, true);
+});

@@ -1,2 +1,0 @@
-javac SalesSumCalculator.java
-java SalesSumCalculator

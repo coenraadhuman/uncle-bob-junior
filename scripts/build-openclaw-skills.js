@@ -21,7 +21,7 @@ const DESCRIPTIONS = {
   'uncle-bob-junior-review': 'Review a diff for clean-code violations: vague names, long functions, deep nesting, duplication, magic values, missing tests. One line per finding.',
   'uncle-bob-junior-audit': 'Audit the whole repo for clean-code violations. A ranked list of the hardest-to-read, hardest-to-change spots, hot files first.',
   'uncle-bob-junior-debt': 'Harvest every ubj: deviation comment into one cleanup ledger, so deferrals get tracked instead of forgotten. One-shot report.',
-  'uncle-bob-junior-gain': 'Show the measured with/without benchmark scoreboard: lint, complexity, function length, nesting, tests. One-shot display.',
+  'uncle-bob-junior-gain': 'Show the measured with/without scoreboard from the newest promptfoo eval: checklist gates, smell penalties, tests. One-shot display.',
   'uncle-bob-junior-help': "Quick reference for uncle-bob-junior's modes, skills, and commands. One-shot display.",
 };
 

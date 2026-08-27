@@ -13,25 +13,9 @@ would have taken a day took twenty minutes.
 
 Uncle Bob Junior puts that reviewer inside your AI agent.
 
-## Before / after
+## Before / After
 
-You ask for "handle the incoming order". Your agent writes one 46-line
-function that parses, validates, prices, saves, and emails, with a bare `5`
-and a `900000` in the middle and no test.
 
-With uncle-bob-junior:
-
-```python
-def handle_order(request):
-    order_data = parse_order(request.body)
-    validate_order(order_data)
-    order = save_order(order_data)
-    send_confirmation(order)
-    return order
-```
-
-...plus the named constants, and tests for the happy path and the edges.
-More before/afters in [examples/](examples/).
 
 ## How it works
 
@@ -70,20 +54,23 @@ data-loss handling, security, or accessibility. Deliberate deviations get a
 
 ## Does it work? Measure it
 
-The repo ships its own with/without benchmark: the same tasks through a
-headless agent, once bare and once with the ruleset, scored by deterministic
+The repo ships its own with/without benchmark: the same tasks, once bare and
+once with the ruleset as system prompt, scored by deterministic
 judges — code LOC, longest function, nesting depth, magic numbers, short
 names, duplication, mutable fields and setters, whether tests ship, and a
 functional correctness gate.
-No LLM grading, no hand-picked outputs.
+No LLM grading, no hand-picked outputs. It runs through
+[promptfoo](https://promptfoo.dev), with a web UI showing both arms side by
+side; the provider drives your logged-in Claude Code CLI, so no API key is
+needed:
 
 ```bash
-node benchmarks/run-clean-code.js --runs 4
+npx promptfoo@latest eval -c benchmarks/promptfooconfig.yaml
+npx promptfoo@latest view
 ```
 
-Reports land in `benchmarks/results/`, and `/uncle-bob-junior-gain` renders
-the newest one as a scoreboard. Method, caveats, and how to read the numbers:
-[benchmarks/](benchmarks/).
+`/uncle-bob-junior-gain` renders the newest eval as a scoreboard. Method,
+caveats, and how to read the numbers: [benchmarks/](benchmarks/).
 
 ### Latest results (27-08-2026, per-generation means)
 
@@ -139,8 +126,10 @@ typed `RetryExhaustedException`, `CheckedRunnable`/`CheckedSupplier`
 interfaces so callers say what they mean, and an 88-line `RetryPolicyTest`,
 test code roughly matching production code line for line.
 
-Every generation behind these numbers is in `benchmarks/results/<run>/src/`,
-organised as `<task>/<arm>-run<N>/<File>.java`; nothing is hand-picked.
+All examples are verbatim model output from benchmark runs; nothing is
+hand-picked. Reproduce the comparison yourself with
+`npx promptfoo@latest eval -c benchmarks/promptfooconfig.yaml` and read both
+arms side by side in `npx promptfoo@latest view`.
 
 ## Install
 
@@ -269,7 +258,7 @@ These remove the plugin's own files. Run `node scripts/uninstall.js` **before** 
 | `/uncle-bob-junior-review` | Review the current diff for clean-code violations, one line per smell. |
 | `/uncle-bob-junior-audit` | Audit the whole repo, ranked by change friction, hot files first. |
 | `/uncle-bob-junior-debt` | Harvest the `ubj:` deviations you've deferred into a ledger. |
-| `/uncle-bob-junior-gain` | Render the newest with/without benchmark result as a scoreboard. |
+| `/uncle-bob-junior-gain` | Render the newest with/without promptfoo eval as a scoreboard. |
 | `/uncle-bob-junior-help` | Quick reference for the commands above. |
 
 Commands need a skill-capable host (Claude Code, Codex, Devin CLI, OpenCode, Gemini, pi, Swival, Hermes Agent, Qoder, Grok Build). In Codex they're skills, invoke with `@`. The instruction-only adapters load the always-on ruleset without the commands.

@@ -5,7 +5,7 @@ model, same tasks:
 
 - **baseline** — the bare task prompt, nothing else.
 - **uncle-bob-junior** — the same prompt with `skills/uncle-bob-junior/SKILL.md`
-  appended as system prompt.
+  as system prompt.
 
 Each answer's fenced code is scored by two deterministic judges, no LLM grading:
 
@@ -22,43 +22,51 @@ Each answer's fenced code is scored by two deterministic judges, no LLM grading:
 
 ## Run it
 
-Needs an authenticated Claude Code install (`claude` on PATH); no API key
-plumbing. Each session runs `--safe-mode`, so your own CLAUDE.md, hooks, and plugins (including
-an installed uncle-bob-junior) cannot leak into either arm.
+The benchmark runs through [promptfoo](https://promptfoo.dev), with an
+interactive web UI for reading the two arms next to each other:
 
 ```bash
-node benchmarks/run-clean-code.js                     # 5 tasks, 1 run each, haiku
-node benchmarks/run-clean-code.js --model sonnet --runs 4
-node benchmarks/run-clean-code.js --tasks email,csv   # subset while iterating
+npx promptfoo@latest eval -c benchmarks/promptfooconfig.yaml
+npx promptfoo@latest view
 ```
 
-Each run gets its own directory, `results/<date>-<model>/`, containing:
+No API key needed: the provider in [`providers/claude-cli.js`](providers/claude-cli.js)
+drives the authenticated Claude Code CLI (`claude` on PATH, logged in) with
+`--safe-mode`, so your own CLAUDE.md, hooks, and plugins (including an
+installed uncle-bob-junior) cannot leak into either arm. Both arms are
+prompt functions in [`arms/`](arms/) — baseline sends the bare task, the
+ruleset arm loads `skills/uncle-bob-junior/SKILL.md` as system prompt — and
+the asserts in [`promptfoo-metrics.js`](promptfoo-metrics.js) wrap the
+judges above, plus [`correctness.js`](correctness.js), which promptfoo calls
+directly.
 
-- `report.md` — medians per task + summary.
-- `src/<task>/<arm>-run<N>/` — every generated code block saved as a real
-  file, Java files named after their declared type (so a ruleset run reads as
-  `EmailValidator.java` + `EmailValidatorTest.java`); alternative
-  implementations of the same type get an `alt-` prefix.
-- `sources.md` — the same code inline, baseline directly above the ruleset
-  arm, for side-by-side reading.
-- `raw.json` — per-run scores plus full reply text, persisted after every
-  task so an interrupted run stays rescoreable.
+The asserts come in three kinds, so the arm columns read directly (higher
+score = cleaner, pass rate = checklist compliance):
 
-`/uncle-bob-junior-gain` renders the newest run's report as a scoreboard.
+- **Gates** fail on the ruleset's own rules: no function over 20 lines, no
+  nesting past 2 levels inside a method, tests ship, and the answer is
+  functionally correct.
+- **Penalties** score smell density from 1 (clean) down to 0: magic numbers,
+  mutable fields, setters. They never fail — the rulers have known false
+  positives, so counts inform without gating.
+- **Raw measurements** (LOC, longest function, max nesting) carry weight 0:
+  visible in the UI, excluded from the score.
 
-Tasks live in [`tasks.json`](tasks.json), all Java: email validator, CSV sum,
-retry helper, rate limiter, order processor (validation + VAT + discount +
-receipt). Single-shot generations, default temperature, so expect run-to-run
-variance; use `--runs 4` or more for numbers you want to quote.
+The tasks live in [`promptfooconfig.yaml`](promptfooconfig.yaml), all Java:
+email validator, CSV sum, retry helper, rate limiter, order processor
+(validation + VAT + discount + receipt). Three providers are configured
+(haiku, sonnet, fable); trim a run with `--filter-providers haiku` and/or
+`--filter-pattern email` while iterating. Single-shot generations, so expect
+run-to-run variance; repeat runs before quoting numbers. See
+[`examples/`](../examples/) for how the generated comparisons are used, and
+`/uncle-bob-junior-gain` renders the newest eval as a scoreboard.
 
 ## Reading the results
 
-Lower is better on every metric except **ships tests** and **correct**. The
-honest expectation: the ruleset arm should cut magic numbers, short names,
-nesting, and long functions, and raise the ships-tests share — usually at the
-price of somewhat more LOC (tests and named constants are lines too) and cost.
-If correctness drops in the ruleset arm, that is a finding, not a formatting
-issue: report it.
+The honest expectation: the ruleset arm should pass more gates (especially
+ships-tests) and hold higher penalty scores — usually at the price of somewhat
+more LOC (tests and named constants are lines too) and cost. If correctness
+drops in the ruleset arm, that is a finding, not a formatting issue: report it.
 
 The metrics are regex-based rulers, not compilers (see the `ubj:` note in
 `clean-code-metrics.js`). They are stable enough to compare two arms on the

@@ -207,7 +207,10 @@ function analyze(rawCode, lang) {
     maxFunctionLength: Math.max(0, ...functionLengths),
     longFunctionCount: functionLengths.filter((length) => length > LONG_FUNCTION_THRESHOLD).length,
     maxNestingDepth,
-    deeplyNested: maxNestingDepth > DEEP_NESTING_THRESHOLD + 1,
+    // "Nesting deeper than 2 levels inside a function": a Python def body
+    // starts one indent in; brace-language code burns two levels of wrapper
+    // (class + method) before any control flow.
+    deeplyNested: maxNestingDepth > DEEP_NESTING_THRESHOLD + (isPython ? 1 : 2),
     magicNumberCount: countMagicNumbers(lines),
     shortNameCount: countShortNames(lines),
     duplicateBlockCount: countDuplicateBlocks(lines),

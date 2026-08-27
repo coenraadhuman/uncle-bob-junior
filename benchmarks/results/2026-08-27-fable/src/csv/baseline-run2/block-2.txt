@@ -1,3 +1,0 @@
-javac SalesSum.java
-java SalesSum          # reads sales.csv in the current directory
-java SalesSum path/to/other.csv

@@ -1,0 +1,91 @@
+# Uncle Bob Junior benchmark via promptfoo: same tasks, same model, once bare
+# and once with the ruleset as system prompt, scored by the repo's own judges.
+#
+#   Run:   npx promptfoo@latest eval -c benchmarks/promptfooconfig.yaml
+#   View:  npx promptfoo@latest view
+#
+# No API key needed: the provider drives the authenticated Claude Code CLI
+# (`claude` on PATH, logged in). Trim a run with --filter-providers haiku
+# and/or --filter-pattern email while iterating.
+# The correctness gate compiles and runs the email/csv answers when a JDK
+# (javac + java) is on PATH; without one those checks report "skipped".
+description: "Uncle Bob Junior vs no ruleset: same model, same Java tasks. Measures structure (function length, nesting, magic values, mutability), test-shipping, and functional correctness with deterministic judges."
+
+providers:
+  - id: file://providers/claude-cli.js
+    label: haiku
+    config: { model: haiku }
+#  - id: file://providers/claude-cli.js
+#    label: sonnet
+#    config: { model: sonnet }
+#  - id: file://providers/claude-cli.js
+#    label: fable
+#    config: { model: fable }
+
+prompts:
+  - id: file://arms/baseline.js
+    label: baseline (no ruleset)
+  - id: file://arms/uncle-bob-junior.js
+    label: uncle-bob-junior
+
+# Gates fail on the checklist's own rules; penalties score smell density
+# (1 = clean); raw counts carry weight 0 so they inform without skewing the
+# aggregate. Higher score = cleaner, so the arm columns compare directly.
+defaultTest:
+  assert:
+    # Raw measurements (read them, they don't count toward the score).
+    - type: javascript
+      value: file://promptfoo-metrics.js:codeLoc
+      metric: code_loc
+      weight: 0
+    - type: javascript
+      value: file://promptfoo-metrics.js:longestFunction
+      metric: longest_function
+      weight: 0
+    - type: javascript
+      value: file://promptfoo-metrics.js:maxNesting
+      metric: max_nesting
+      weight: 0
+    # Smell penalties (0..1, 1 = clean).
+    - type: javascript
+      value: file://promptfoo-metrics.js:magicNumbers
+      metric: magic_numbers
+      weight: 1
+    - type: javascript
+      value: file://promptfoo-metrics.js:mutableFields
+      metric: mutable_fields
+      weight: 1
+    - type: javascript
+      value: file://promptfoo-metrics.js:setters
+      metric: setters
+      weight: 1
+    # Clean-code gates (the ruleset's own checklist rules).
+    - type: javascript
+      value: file://promptfoo-metrics.js:noLongFunctions
+      metric: no_long_functions
+      weight: 1
+    - type: javascript
+      value: file://promptfoo-metrics.js:flatControlFlow
+      metric: flat_control_flow
+      weight: 1
+    - type: javascript
+      value: file://promptfoo-metrics.js:shipsTests
+      metric: ships_tests
+      weight: 2
+    # Functional correctness gate: cleaner must never mean broken.
+    - type: javascript
+      value: file://correctness.js
+      metric: correct
+      weight: 2
+
+tests:
+  - description: email
+    vars: { task: "Write a Java method that validates email addresses." }
+  - description: csv
+    vars: { task: "Write a Java program that reads sales.csv and prints the sum of the 'amount' column." }
+  - description: retry
+    vars: { task: "Write a reusable retry helper in Java: it runs an operation, retries it up to a maximum number of attempts when it throws an exception, and waits a fixed delay between attempts." }
+  - description: ratelimit
+    vars: { task: "Add rate limiting to a Java HTTP handler so each client can't make more than a few requests per minute." }
+  - description: order
+    vars: { task: "Write Java code that processes an order: validate the line items, compute the total with 21% VAT, apply a 10% discount when the pre-VAT total exceeds 100 euros, and produce a receipt string." }

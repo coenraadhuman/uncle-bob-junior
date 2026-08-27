@@ -1,8 +1,0 @@
-<servlet>
-    <servlet-name>rateLimitedHandler</servlet-name>
-    <servlet-class>RateLimitedHttpHandler</servlet-class>
-</servlet>
-<servlet-mapping>
-    <servlet-name>rateLimitedHandler</servlet-name>
-    <url-pattern>/api/*</url-pattern>
-</servlet-mapping>
