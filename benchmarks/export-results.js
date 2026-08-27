@@ -5,17 +5,19 @@
 //   node benchmarks/export-results.js [evalId]   # defaults to the newest eval
 //
 // Each run directory contains:
-//   report.md                          scoreboard per arm and task
-//   src/<task>/<arm>/<File>.java       every generated code block, verbatim
-//   src/<task>/<arm>/reply.md          the full model reply
-//   habit-hooks/<task>-<arm>.md        the full habit-hooks report per answer
+//   report.md                                    scoreboard per task, model, and arm
+//   src/<task>/<model>/<arm>/main/<Type>.java    production code, one file per top-level type
+//   src/<task>/<model>/<arm>/test/<Type>.java    the shipped tests, when any
+//   src/<task>/<model>/<arm>/reply.md            the full model reply
+//   habit-hooks/<task>-<model>-<arm>.md          habit-hooks run on that answer's main/
 const { execFileSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { fencedBlocks } = require('./promptfoo-metrics');
-const { javaFileName, scanReply } = require('./habit-hooks-assert');
+const { fencedBlocks, productionBlocks, isTestBlock, extractCode } = require('./promptfoo-metrics');
+const { codeFiles, pluginsFor } = require('./extract-files');
+const { scanDir } = require('./habit-hooks-assert');
 
 const RESULTS_DIR = path.join(__dirname, 'results');
 
@@ -54,7 +56,8 @@ function loadEval(evalId) {
 function resultRows(data) {
   const list = Array.isArray(data) ? data : (data.results?.results || []);
   return list.map((r) => ({
-    arm: r.prompt?.label || r.provider?.label || 'unknown-arm',
+    arm: r.prompt?.label || 'unknown-arm',
+    model: r.provider?.label || r.provider?.id || 'unknown-model',
     task: r.testCase?.description || slug(r.vars?.task).slice(0, 40),
     output: String(r.response?.output || ''),
     score: r.gradingResult?.score ?? 0,
@@ -71,47 +74,67 @@ function buildReport(evalId, rows) {
   const lines = [
     `# Benchmark run ${evalId}`,
     '',
-    'Judges: habit-hooks (independent smell report, penalty), ships_tests and',
-    'correct (gates). Higher score = cleaner. Generated code and full',
-    'habit-hooks reports sit next to this file in `src/` and `habit-hooks/`.',
+    'Judges: habit-hooks (independent smell detector — enforced smells fail,',
+    'suggested smells are advisory), ships_tests and correct (gates). Higher',
+    'score = cleaner. Generated code and full habit-hooks reports sit next to',
+    'this file in `src/` and `habit-hooks/`.',
     '',
-    '| task | arm | score | habit-hooks | ships tests | correct |',
-    '|------|-----|------:|-------------|:-----------:|:-------:|',
+    '| task | model | arm | score | habit-hooks | smells found | ships tests | correct |',
+    '|------|-------|-----|------:|:-----------:|--------------|:-----------:|:-------:|',
   ];
   const armTotals = new Map();
   for (const row of rows) {
     const metric = (name) => row.components.find((c) => c.metric === name);
     const habit = metric('habit_hooks');
     lines.push(
-      `| ${row.task} | ${row.arm} | ${row.score.toFixed(2)} | ${habit ? habit.reason : 'n/a'} | ` +
-      `${metric('ships_tests')?.pass ? 'yes' : 'NO'} | ${metric('correct')?.pass ? 'YES' : 'NO'} |`,
+      `| ${row.task} | ${row.model} | ${row.arm} | ${row.score.toFixed(2)} | ` +
+      `${habit ? (habit.pass ? 'pass' : 'FAIL') : 'n/a'} | ${habit ? habit.reason : 'n/a'} | ` +
+      `${metric('ships_tests')?.pass ? 'yes' : 'NO'} | ${metric('correct')?.pass ? 'yes' : 'NO'} |`,
     );
-    const totals = armTotals.get(row.arm) || { sum: 0, n: 0 };
+    const key = `${row.model} / ${row.arm}`;
+    const totals = armTotals.get(key) || { sum: 0, n: 0 };
     totals.sum += row.score;
     totals.n += 1;
-    armTotals.set(row.arm, totals);
+    armTotals.set(key, totals);
   }
-  lines.push('', '## Mean score per arm', '');
-  for (const [arm, totals] of armTotals) {
-    lines.push(`- **${arm}**: ${(totals.sum / totals.n).toFixed(3)} (n=${totals.n})`);
+  lines.push('', '## Mean score per model and arm', '');
+  for (const [key, totals] of armTotals) {
+    lines.push(`- **${key}**: ${(totals.sum / totals.n).toFixed(3)} (n=${totals.n})`);
   }
   return lines.join('\n') + '\n';
 }
 
+function writeCodeFiles(blocks, dir) {
+  fs.mkdirSync(dir, { recursive: true });
+  for (const file of codeFiles(blocks)) {
+    fs.writeFileSync(path.join(dir, file.name), file.content);
+  }
+}
+
 // The scan option exists so tests can inject a fake instead of the real CLI.
-function writeRunArtifacts(evalId, rows, runDir, { scan = scanReply } = {}) {
+// The run dir is wiped first: it is fully derived from the eval, so a
+// re-export must not leave files from an earlier layout behind. habit-hooks
+// runs directly on the exported `main/` files — the report's File:line
+// references point at files you can open — with the plugins matching the
+// languages the answer used.
+function writeRunArtifacts(evalId, rows, runDir, { scan = scanDir } = {}) {
+  fs.rmSync(runDir, { recursive: true, force: true });
   fs.mkdirSync(path.join(runDir, 'habit-hooks'), { recursive: true });
   for (const row of rows) {
-    const armDir = path.join(runDir, 'src', slug(row.task), slug(row.arm));
+    const armDir = path.join(runDir, 'src', slug(row.task), slug(row.model), slug(row.arm));
     fs.mkdirSync(armDir, { recursive: true });
     fs.writeFileSync(path.join(armDir, 'reply.md'), row.output);
-    fencedBlocks(row.output).forEach((block, index) => {
-      fs.writeFileSync(path.join(armDir, javaFileName(block.code, index)), block.code);
-    });
 
-    const result = scan(row.output);
+    // Mirror the judge's fallback: an unfenced reply is still one scannable file.
+    const production = productionBlocks(row.output);
+    if (production.length === 0) production.push(extractCode(row.output));
+    const tests = fencedBlocks(row.output).filter((block) => isTestBlock(block.code));
+    writeCodeFiles(production, path.join(armDir, 'main'));
+    if (tests.length) writeCodeFiles(tests, path.join(armDir, 'test'));
+
+    const result = scan(path.join(armDir, 'main'), pluginsFor(production));
     const report = result.skipped ? 'skipped: habit-hooks not on PATH\n' : result.report;
-    fs.writeFileSync(path.join(runDir, 'habit-hooks', `${slug(row.task)}-${slug(row.arm)}.md`), report);
+    fs.writeFileSync(path.join(runDir, 'habit-hooks', `${slug(row.task)}-${slug(row.model)}-${slug(row.arm)}.md`), report);
   }
   fs.writeFileSync(path.join(runDir, 'report.md'), buildReport(evalId, rows));
 }
