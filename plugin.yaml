@@ -1,0 +1,21 @@
+name: uncle-bob-junior
+version: 1.0.0
+description: Clean-code mode for Hermes Agent, always-on context, bundled skills, and slash commands.
+author: Coenraad Human
+provides_hooks:
+  - pre_llm_call
+  - pre_gateway_dispatch
+provides_commands:
+  - uncle-bob-junior
+  - uncle-bob-junior-review
+  - uncle-bob-junior-audit
+  - uncle-bob-junior-debt
+  - uncle-bob-junior-gain
+  - uncle-bob-junior-help
+provides_skills:
+  - uncle-bob-junior
+  - uncle-bob-junior-review
+  - uncle-bob-junior-audit
+  - uncle-bob-junior-debt
+  - uncle-bob-junior-gain
+  - uncle-bob-junior-help

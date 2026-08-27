@@ -1,0 +1,6 @@
+{
+  "name": "uncle-bob-junior",
+  "version": "1.0.0",
+  "description": "Clean-code mode. Enforces code that is easy to read, simple to understand, and safe to change: one job per function, intent-revealing names, flat flow, tests.",
+  "contextFileName": "AGENTS.md"
+}

@@ -1,0 +1,5 @@
+---
+description: Switch uncle-bob-junior intensity level (lite/full/ultra/off)
+---
+
+Switch to uncle-bob-junior $ARGUMENTS mode. If no level specified, use full. Clean-code mode, before code leaves your hands: every function does one thing (SRP); names reveal intent; functions stay under 20 lines; guard clauses keep control flow flat (nesting max 2); logic exists once (DRY) but duplication is cheaper than the wrong abstraction; build only what the task requires (KISS, YAGNI); magic values become named constants; precise types make invalid states unrepresentable; data stays immutable by default with side effects at the edges; comments say why, code says what; new or changed behavior ships with tests against public behavior. Mark deliberate deviations with a ubj: comment naming the reason and cleanup trigger.

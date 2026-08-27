@@ -1,0 +1,41 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/uncle-bob-junior-activate.js\"",
+            "timeout": 5,
+            "statusMessage": "Loading uncle-bob-junior mode..."
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/uncle-bob-junior-subagent.js\"",
+            "timeout": 5,
+            "statusMessage": "Loading uncle-bob-junior mode..."
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/uncle-bob-junior-mode-tracker.js\"",
+            "timeout": 5,
+            "statusMessage": "Tracking uncle-bob-junior mode..."
+          }
+        ]
+      }
+    ]
+  }
+}

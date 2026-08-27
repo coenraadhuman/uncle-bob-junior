@@ -1,0 +1,10 @@
+{
+  "method": "Same Java task, same model, two arms: baseline (bare prompt) and uncle-bob-junior (the SKILL.md ruleset appended as system prompt). Each response's fenced Java code is scored by clean-code-metrics.js and gated by correctness.js (javac + java for the executable checks).",
+  "tasks": [
+    { "id": "email", "prompt": "Write a Java method that validates email addresses." },
+    { "id": "csv", "prompt": "Write a Java program that reads sales.csv and prints the sum of the 'amount' column." },
+    { "id": "retry", "prompt": "Write a reusable retry helper in Java: it runs an operation, retries it up to a maximum number of attempts when it throws an exception, and waits a fixed delay between attempts." },
+    { "id": "ratelimit", "prompt": "Add rate limiting to a Java HTTP handler so each client can't make more than a few requests per minute." },
+    { "id": "order", "prompt": "Write Java code that processes an order: validate the line items, compute the total with 21% VAT, apply a 10% discount when the pre-VAT total exceeds 100 euros, and produce a receipt string." }
+  ]
+}

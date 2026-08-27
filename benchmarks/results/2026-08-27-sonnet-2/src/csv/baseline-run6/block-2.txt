@@ -1,0 +1,2 @@
+javac SalesSum.java
+java SalesSum sales.csv
