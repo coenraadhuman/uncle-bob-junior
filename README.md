@@ -94,44 +94,6 @@ with the gate). Nesting counts braces from the file top, so Java's floor is 3
 (class + method + one block). Correctness never regresses: the ruleset arm
 passes the functional gate exactly as often as baseline.
 
-### What the ruleset arm actually writes
-
-**haiku, rate limiter.** Baseline inlines the policy (`new RateLimiter(10,
-60_000)` with comments doing a constant's job) and ships no tests. The
-ruleset arm names the policy and proves the behavior:
-
-```java
-private static final int MAX_REQUESTS = 10;
-private static final long WINDOW_MILLIS = TimeUnit.MINUTES.toMillis(1);
-```
-
-...plus `allowsRequestsUnderLimit`, `blocksRequestsOverLimit`,
-`isolatesDifferentClients`, and `resetsAfterTimeWindow` tests. This is the
-model that shipped tests in 0/10 runs before the final gate.
-
-**sonnet, order processor.** Baseline: one file holding parsing, validation,
-pricing, and rendering. The ruleset arm splits along the checklist's seams,
-with types over checks (`EmptyOrderException`, `InvalidLineItemException`
-instead of boolean returns), value objects (`LineItem`, `OrderTotals`), and
-one job per class:
-
-```
-LineItem.java  OrderTotals.java  OrderCalculator.java  OrderProcessor.java
-ReceiptFormatter.java  EmptyOrderException.java  InvalidLineItemException.java
-LineItemTest.java  OrderCalculatorTest.java  OrderProcessorTest.java
-```
-
-**fable, retry helper.** Baseline: a 103-line `Retry` monolith with a usage
-example instead of tests. The ruleset arm: an 88-line `RetryPolicy` with a
-typed `RetryExhaustedException`, `CheckedRunnable`/`CheckedSupplier`
-interfaces so callers say what they mean, and an 88-line `RetryPolicyTest`,
-test code roughly matching production code line for line.
-
-All examples are verbatim model output from benchmark runs; nothing is
-hand-picked. Reproduce the comparison yourself with
-`npx promptfoo@latest eval -c benchmarks/promptfooconfig.yaml` and read both
-arms side by side in `npx promptfoo@latest view`.
-
 ## Install
 
 The Claude Code and Codex plugins run two tiny Node.js lifecycle hooks, so `node` needs to be on your PATH (note for Nix/nvm users: it must be on the non-interactive shell's PATH). If it isn't, the skills still work, the always-on activation just stays quiet instead of erroring on every prompt.
