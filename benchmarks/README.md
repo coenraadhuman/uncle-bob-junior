@@ -7,22 +7,25 @@ model, same tasks:
 - **uncle-bob-junior** — the same prompt with `skills/uncle-bob-junior/SKILL.md`
   as system prompt.
 
-Each answer is scored by three deterministic judges, no LLM grading:
+Each answer is scored by deterministic judges, no LLM grading:
 
 - [`habit-hooks-assert.js`](habit-hooks-assert.js) — the smell judge:
   [habit-hooks](https://github.com/habit-hooks/habit-hooks), an independent
-  third-party detector, scans the generated Java (java + generic plugins) so
-  the ruleset is vetted by a ruler this repo did not write. The verdict
-  mirrors habit-hooks' own
-  [catch list](https://github.com/habit-hooks/habit-hooks#what-it-catches):
-  **enforced** smells (oversized-function, too-many-parameters,
-  high-complexity, unused-variable, unused-import, …) fail the answer, while
-  **suggested** smells (swallowed-exception, duplicated-code, …) are advisory.
-  The 0..1 score stays granular beyond the verdict, the reason carries the
-  per-rule breakdown with `File.java:line` locations, and sensor artifacts
-  like `incomplete-run` never count. Skips cleanly when the CLI is not
-  installed. `tests/promptfoo.test.js` proves each Java-relevant rule from
-  the catch list actually fires.
+  third-party detector, scans the extracted code so the ruleset is vetted by
+  a ruler this repo did not write. **Each smell from its
+  [catch list](https://github.com/habit-hooks/habit-hooks#what-it-catches) is
+  its own promptfoo metric** (`hh:oversized-function`,
+  `hh:too-many-parameters`, `hh:unused-import`, …): zero occurrences passes,
+  any occurrence fails that smell's metric, with `File:line` locations in the
+  reason. Enforced smells weigh 1; suggested smells (swallowed-exception,
+  duplicated-code, …) weigh 0.5. All rule metrics share one memoized scan per
+  answer, and the CLI missing means a clean skip.
+  `tests/promptfoo.test.js` proves each Java-relevant rule actually fires.
+- [`habit-hooks-assert.js:validCode`](habit-hooks-assert.js) — gate: the
+  answer must contain at least one valid compilation unit. Java blocks with
+  no top-level type declaration — usage examples, shell output pasted into a
+  java fence, bare statements — are snippets and are excluded from judging
+  entirely; the benchmark wants valid code.
 - [`promptfoo-metrics.js:shipsTests`](promptfoo-metrics.js) — gate: new
   behavior ships with tests, the ruleset's headline rule.
 - [`correctness.js`](correctness.js) — gate: the email and csv tasks are
@@ -80,8 +83,9 @@ Each run directory under `benchmarks/results/<eval-id>/` contains:
 - `src/<task>/<model>/<arm>/main/` — the production code as real source
   files, one file per top-level Java type (imports attributed to the types
   that use them; a genuinely unused import survives once, so the
-  unused-import rule still sees it). Shipped tests land in `test/`, and
-  `reply.md` holds the full verbatim answer.
+  unused-import rule still sees it). Snippet blocks — no top-level type —
+  are excluded. Shipped tests land in `test/`, and `reply.md` holds the full
+  verbatim answer.
 - `habit-hooks/<task>-<model>-<arm>.md` — habit-hooks run **directly on that
   answer's exported `main/` files**, so every `File.java:line` in the report
   points at a file in the run directory. The plugin set matches the languages

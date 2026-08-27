@@ -34,24 +34,40 @@ prompts:
 extensions:
   - file://promptfoo-extension.js:extensionHook
 
-# Three judges. Smell detection is habit-hooks — an independent third-party
-# ruler (java + generic plugins), scored as a penalty from 1 (clean) down to 0
-# with the per-rule breakdown in the reason. ships_tests and correct are
-# gates: tests must ship, and cleaner must never mean broken.
+# Smell detection is habit-hooks — an independent third-party ruler — with
+# one metric per smell from its documented catch list: zero occurrences
+# passes, any occurrence fails that smell's metric. Enforced smells weigh 1,
+# suggested smells 0.5. All rule asserts share one memoized scan per answer.
+# valid_code, ships_tests, and correct are gates: the answer must contain a
+# real compilation unit (snippets are excluded), ship tests, and work.
 defaultTest:
   assert:
     - type: javascript
-      value: file://habit-hooks-assert.js
-      metric: habit_hooks
-      weight: 1
+      value: file://habit-hooks-assert.js:validCode
+      metric: valid_code
+      weight: 2
     - type: javascript
       value: file://promptfoo-metrics.js:shipsTests
       metric: ships_tests
-      weight: 1
+      weight: 2
     - type: javascript
       value: file://correctness.js
       metric: correct
-      weight: 1
+      weight: 2
+    # Enforced smells (habit-hooks fails its run on these).
+    - { type: javascript, value: "file://habit-hooks-assert.js:oversizedFunction", metric: "hh:oversized-function", weight: 1 }
+    - { type: javascript, value: "file://habit-hooks-assert.js:tooManyParameters", metric: "hh:too-many-parameters", weight: 1 }
+    - { type: javascript, value: "file://habit-hooks-assert.js:highComplexity", metric: "hh:high-complexity", weight: 1 }
+    - { type: javascript, value: "file://habit-hooks-assert.js:deepNesting", metric: "hh:deep-nesting", weight: 1 }
+    - { type: javascript, value: "file://habit-hooks-assert.js:oversizedFile", metric: "hh:oversized-file", weight: 1 }
+    - { type: javascript, value: "file://habit-hooks-assert.js:unusedVariable", metric: "hh:unused-variable", weight: 1 }
+    - { type: javascript, value: "file://habit-hooks-assert.js:unusedImport", metric: "hh:unused-import", weight: 1 }
+    - { type: javascript, value: "file://habit-hooks-assert.js:unusedClassMember", metric: "hh:unused-class-member", weight: 1 }
+    # Suggested smells (advisory in habit-hooks — half the weight here).
+    - { type: javascript, value: "file://habit-hooks-assert.js:swallowedException", metric: "hh:swallowed-exception", weight: 0.5 }
+    - { type: javascript, value: "file://habit-hooks-assert.js:duplicatedCode", metric: "hh:duplicated-code", weight: 0.5 }
+    - { type: javascript, value: "file://habit-hooks-assert.js:warningComment", metric: "hh:warning-comment", weight: 0.5 }
+    - { type: javascript, value: "file://habit-hooks-assert.js:nonEssentialComment", metric: "hh:non-essential-comment", weight: 0.5 }
 
 tests:
   - description: email

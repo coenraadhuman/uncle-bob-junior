@@ -113,7 +113,7 @@ test('shipsTests gates on the whole reply, not just production code', () => {
 
 test('promptfooconfig.yaml references only files and metric exports that exist', () => {
   const config = fs.readFileSync(path.join(root, 'benchmarks', 'promptfooconfig.yaml'), 'utf8');
-  for (const match of config.matchAll(/file:\/\/([\w./-]+?)(?::(\w+))?(?=\s|$)/gm)) {
+  for (const match of config.matchAll(/file:\/\/([\w./-]+?)(?::(\w+))?(?=[\s"]|$)/gm)) {
     const [, relPath, exportName] = match;
     const absPath = path.join(root, 'benchmarks', relPath);
     assert.ok(fs.existsSync(absPath), `${relPath} referenced by promptfooconfig.yaml must exist`);
@@ -178,17 +178,17 @@ test('extracted files are named after their declared type per language', () => {
   assert.equal(fileNameFor('def parse_row(row):\n    return row', 'py', 0), 'parse_row.py');
 });
 
-test('habit-hooks fails dirty code and passes clean code', { skip: !hasHabitHooks }, () => {
-  const dirty = habitHooksAssert(DIRTY_JAVA_REPLY);
-  assert.equal(dirty.pass, false, 'enforced smells fail the run, mirroring habit-hooks exit 1');
-  assert.ok(dirty.score < 1, `26-line method must cost score: ${dirty.reason}`);
-  assert.ok(/FAILED/.test(dirty.reason), dirty.reason);
+test('each smell metric fails on dirty code and passes on clean code', { skip: !hasHabitHooks }, () => {
+  const dirty = habitHooksAssert.oversizedFunction(DIRTY_JAVA_REPLY);
+  assert.equal(dirty.pass, false, `any occurrence fails that smell's metric: ${dirty.reason}`);
+  assert.ok(dirty.score < 1, dirty.reason);
   assert.ok(/oversized-function/.test(dirty.reason), dirty.reason);
+  assert.equal(habitHooksAssert.unusedImport(DIRTY_JAVA_REPLY).pass, true, 'unrelated smells stay green');
 
-  const clean = habitHooksAssert(CLEAN_JAVA_REPLY);
+  const clean = habitHooksAssert.oversizedFunction(CLEAN_JAVA_REPLY);
   assert.equal(clean.pass, true);
   assert.equal(clean.score, 1, clean.reason);
-  assert.equal(clean.reason, 'habit-hooks passed: clean');
+  assert.equal(habitHooksAssert.validCode(CLEAN_JAVA_REPLY).pass, true);
 });
 
 const os = require('os');
@@ -206,7 +206,9 @@ const FIXTURE_EVAL = {
         gradingResult: {
           score: 0.4,
           componentResults: [
-            { assertion: { metric: 'habit_hooks' }, pass: true, score: 0.5, reason: 'habit-hooks: 3 smell(s) — oversized-function(3)' },
+            { assertion: { metric: 'valid_code' }, pass: true, score: 1, reason: '1 source file(s) extracted' },
+            { assertion: { metric: 'hh:oversized-function' }, pass: false, score: 0.25, reason: '3 oversized-function at OrderHandler.java:3' },
+            { assertion: { metric: 'hh:unused-import' }, pass: true, score: 1, reason: 'no unused-import' },
             { assertion: { metric: 'ships_tests' }, pass: false, score: 0, reason: 'no tests shipped' },
             { assertion: { metric: 'correct' }, pass: true, score: 1, reason: 'ok' },
           ],
@@ -220,7 +222,9 @@ const FIXTURE_EVAL = {
         gradingResult: {
           score: 1,
           componentResults: [
-            { assertion: { metric: 'habit_hooks' }, pass: true, score: 1, reason: 'habit-hooks: clean' },
+            { assertion: { metric: 'valid_code' }, pass: true, score: 1, reason: '1 source file(s) extracted' },
+            { assertion: { metric: 'hh:oversized-function' }, pass: true, score: 1, reason: 'no oversized-function' },
+            { assertion: { metric: 'hh:unused-import' }, pass: true, score: 1, reason: 'no unused-import' },
             { assertion: { metric: 'ships_tests' }, pass: true, score: 1, reason: 'ships tests' },
             { assertion: { metric: 'correct' }, pass: true, score: 1, reason: 'ok' },
           ],
@@ -242,8 +246,8 @@ test('exporter flattens eval JSON into per-arm rows', () => {
 test('report.md carries the scoreboard and per-arm means', () => {
   const rows = exporter.resultRows(FIXTURE_EVAL);
   const report = exporter.buildReport(FIXTURE_EVAL.evalId, rows);
-  assert.ok(report.includes('| email | haiku | baseline (no ruleset) | 0.40 | pass |'), report);
-  assert.ok(report.includes('habit-hooks: clean'));
+  assert.ok(report.includes('| email | haiku | baseline (no ruleset) | 0.40 | yes | FAIL | 3 oversized-function at OrderHandler.java:3 |'), report);
+  assert.ok(report.includes('| email | haiku | uncle-bob-junior | 1.00 | yes | pass | clean |'), report);
   assert.ok(report.includes('**haiku / uncle-bob-junior**: 1.000 (n=1)'));
   assert.ok(report.includes('**haiku / baseline (no ruleset)**: 0.400 (n=1)'));
 });
@@ -272,12 +276,11 @@ test('slug makes filesystem-safe names', () => {
   assert.equal(exporter.slug('eval-9FT-2026-08-27T12:20:27'), 'eval-9ft-2026-08-27t12-20-27');
 });
 
-test('scan files are one per fenced block, wrapped when no type is declared', { skip: !hasHabitHooks }, () => {
-  const twoBlocks = [
+test('snippet blocks are excluded: only valid compilation units get judged', { skip: !hasHabitHooks }, () => {
+  const snippetAndClass = [
     '```java',
-    'public boolean isValid(String email) {',
-    '    return email != null && email.contains("@");',
-    '}',
+    'Order order = new Order();',
+    'System.out.println(order);',
     '```',
     '```java',
     'public class Checker {',
@@ -285,17 +288,21 @@ test('scan files are one per fenced block, wrapped when no type is declared', { 
     '}',
     '```',
   ].join('\n');
-  const scan = habitHooksAssert.scanReply(twoBlocks);
-  assert.equal(scan.skipped, false);
-  assert.ok(scan.report, 'a bare-method block must still produce a parseable scan');
+  const scan = habitHooksAssert.scanReply(snippetAndClass);
+  assert.equal(scan.fileCount, 1, 'the statements-only block is a snippet and must be excluded');
+  assert.ok(!scan.issues.some((issue) => issue.rule === 'incomplete-run'), scan.report);
+  assert.equal(habitHooksAssert.validCode(snippetAndClass).pass, true);
+
+  const snippetOnly = '```java\nSystem.out.println("just output");\n```';
+  const verdict = habitHooksAssert.validCode(snippetOnly);
+  assert.equal(verdict.pass, false, 'a reply with no valid compilation unit fails valid_code');
+  assert.equal(habitHooksAssert.oversizedFunction(snippetOnly).pass, true, 'smell metrics do not double-punish');
 });
 
-test('scan artifacts like incomplete-run never cost smell score', () => {
-  const filtered = habitHooksAssert.realSmells([
-    { rule: 'incomplete-run', count: 1, locations: [] },
-    { rule: 'oversized-function', count: 2, locations: ['A.java:3'] },
-  ]);
-  assert.deepEqual(filtered.map((issue) => issue.rule), ['oversized-function']);
+test('scan artifacts have no metric, so they never cost score', () => {
+  const rules = [...habitHooksAssert.ENFORCED_RULES, ...habitHooksAssert.SUGGESTED_RULES];
+  assert.ok(!rules.includes('incomplete-run'));
+  assert.ok(!rules.includes('parse-error'));
 });
 
 test('exportRun accepts the bare results array the afterAll hook receives', () => {
@@ -331,38 +338,35 @@ const CATCH_LIST_FIXTURES = {
 };
 
 for (const [rule, fixture] of Object.entries(CATCH_LIST_FIXTURES)) {
-  test(`habit-hooks catches ${rule} and fails the run (enforced)`, { skip: !hasHabitHooks }, () => {
+  test(`habit-hooks catches ${rule} on its own metric`, { skip: !hasHabitHooks }, () => {
     const scan = habitHooksAssert.scanReply(fixture);
     assert.ok(scan.issues.some((issue) => issue.rule === rule), `expected ${rule}, got: ${scan.issues.map((i) => i.rule).join(', ') || 'clean'}`);
-    const verdict = habitHooksAssert(fixture);
-    assert.equal(verdict.pass, false, `${rule} is enforced and must fail: ${verdict.reason}`);
+    const camelRule = rule.replace(/-(\w)/g, (_, c) => c.toUpperCase());
+    const verdict = habitHooksAssert[camelRule](fixture);
+    assert.equal(verdict.pass, false, `${rule} must fail its own metric: ${verdict.reason}`);
     assert.ok(verdict.reason.includes(rule), verdict.reason);
   });
 }
 
-test('habit-hooks treats swallowed-exception as suggested: reported, not failed', { skip: !hasHabitHooks }, () => {
+test('swallowed-exception fails its own metric too; its tier is the weight', { skip: !hasHabitHooks }, () => {
   const fixture = '```java\npublic class Swallow {\n    public int parse(String s) {\n        try {\n            return Integer.parseInt(s);\n        } catch (Exception e) {}\n        return 0;\n    }\n}\n```';
-  const scan = habitHooksAssert.scanReply(fixture);
-  assert.ok(scan.issues.some((issue) => issue.rule === 'swallowed-exception'), scan.issues.map((i) => i.rule).join(','));
-  const verdict = habitHooksAssert(fixture);
-  assert.equal(verdict.pass, true, `suggested smells are advisory: ${verdict.reason}`);
-  assert.ok(verdict.score < 1, 'but they still cost score');
-  assert.ok(/passed — 1 suggested/.test(verdict.reason), verdict.reason);
+  const verdict = habitHooksAssert.swallowedException(fixture);
+  assert.equal(verdict.pass, false, verdict.reason);
+  assert.ok(/1 swallowed-exception/.test(verdict.reason), verdict.reason);
 });
 
-test('enforced/suggested split follows the documented catch list', () => {
-  const issues = [
-    { rule: 'oversized-function', count: 1, locations: [] },
-    { rule: 'swallowed-exception', count: 2, locations: [] },
-    { rule: 'duplicated-code', count: 1, locations: [] },
-    { rule: 'incomplete-run', count: 1, locations: [] },
-    { rule: 'brand-new-rule', count: 1, locations: [] },
-  ];
-  assert.deepEqual(
-    habitHooksAssert.enforcedSmells(issues).map((issue) => issue.rule),
-    ['oversized-function', 'brand-new-rule'],
-    'unknown rules count as enforced, suggested and artifacts do not',
-  );
+test('config weights: every smell has a metric, suggested at half the enforced weight', () => {
+  const config = fs.readFileSync(path.join(root, 'benchmarks', 'promptfooconfig.yaml'), 'utf8');
+  for (const rule of habitHooksAssert.ENFORCED_RULES) {
+    const line = config.split('\n').find((l) => l.includes(`hh:${rule}`));
+    assert.ok(line, `enforced ${rule} must be a config metric`);
+    assert.ok(line.includes('weight: 1'), `${rule} weighs 1: ${line}`);
+  }
+  for (const rule of habitHooksAssert.SUGGESTED_RULES) {
+    const line = config.split('\n').find((l) => l.includes(`hh:${rule}`));
+    assert.ok(line, `suggested ${rule} must be a config metric`);
+    assert.ok(line.includes('weight: 0.5'), `${rule} weighs 0.5: ${line}`);
+  }
 });
 
 test('re-exporting a run wipes stale files from earlier layouts', () => {

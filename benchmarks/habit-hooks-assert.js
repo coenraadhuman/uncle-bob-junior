@@ -1,16 +1,17 @@
-// Promptfoo assert that judges generated code with habit-hooks
+// Promptfoo asserts that judge generated code with habit-hooks
 // (https://github.com/habit-hooks/habit-hooks): an independent, third-party
 // smell detector, so the ruleset is vetted by a ruler this repo did not write.
 //
-// The production code blocks are extracted to real source files (one file
-// per top-level Java type; test blocks excluded, same as the ships-tests
-// judge) and scanned with the plugins matching the languages present. The
-// verdict mirrors habit-hooks' own semantics: enforced smells fail,
-// suggested smells are advisory, and the 0..1 score keeps the comparison
-// granular beyond the binary verdict.
+// Each smell from habit-hooks' documented catch list is its own assert and
+// metric: zero occurrences passes, any occurrence fails, and the config
+// weights suggested smells at half an enforced smell. All rule asserts share
+// one memoized scan per reply, so twelve metrics cost one habit-hooks run.
 //
-// benchmarks/export-results.js reuses scanReply() to write each answer's full
-// habit-hooks report into benchmarks/results/.
+// The production code is extracted to real source files (one per top-level
+// Java type; snippets and test blocks excluded) and scanned with the plugins
+// matching the languages present. A reply with no valid compilation unit
+// fails the valid_code gate — the benchmark wants valid code.
+const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
@@ -20,8 +21,29 @@ const { productionBlocks, extractCode } = require('./promptfoo-metrics');
 const { codeFiles, pluginsFor } = require('./extract-files');
 
 const SCAN_TIMEOUT_MS = 60_000;
-// Score falls linearly to 0 at this many reported smells.
-const WORST_SMELL_COUNT = 6;
+// Per rule, the score falls linearly to 0 at this many occurrences.
+const WORST_PER_RULE = 4;
+
+// The catch list (https://github.com/habit-hooks/habit-hooks#what-it-catches),
+// restricted to rules that can fire on this benchmark's languages. The tier
+// decides the assert's weight in promptfooconfig.yaml, not its pass rule:
+// any occurrence of any smell fails its own metric.
+const ENFORCED_RULES = [
+  'oversized-function',
+  'too-many-parameters',
+  'high-complexity',
+  'deep-nesting',
+  'oversized-file',
+  'unused-variable',
+  'unused-import',
+  'unused-class-member',
+];
+const SUGGESTED_RULES = [
+  'swallowed-exception',
+  'duplicated-code',
+  'warning-comment',
+  'non-essential-comment',
+];
 
 // Every finding section opens with `── <rule> (N issues) ──` and closes with
 // the offending `File.java:line` locations.
@@ -79,71 +101,70 @@ function scanDir(dir, plugins) {
 
 // Scan one model reply: extract the production code to real files in a temp
 // dir (same extraction the results exporter writes) and judge those.
+// fileCount says how many valid source files the reply produced.
 function scanReply(output) {
   const blocks = productionBlocks(String(output || ''));
   if (blocks.length === 0) blocks.push(extractCode(String(output || '')));
+  const files = codeFiles(blocks);
+  if (files.length === 0) {
+    return { skipped: false, report: 'no valid code to scan (snippets excluded)\n', issues: [], total: 0, fileCount: 0 };
+  }
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ubj-habit-hooks-'));
   try {
-    for (const file of codeFiles(blocks)) {
+    for (const file of files) {
       fs.writeFileSync(path.join(dir, file.name), file.content);
     }
-    return scanDir(dir, pluginsFor(blocks));
+    return { ...scanDir(dir, pluginsFor(blocks)), fileCount: files.length };
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 }
 
-function describe(issues) {
-  return issues
-    .map((issue) => `${issue.rule}(${issue.count})${issue.locations.length ? ` at ${issue.locations.join(', ')}` : ''}`)
-    .join('; ');
-}
+// All per-rule asserts on the same reply share one scan.
+const scanCache = new Map();
+const SCAN_CACHE_LIMIT = 512;
 
-// `incomplete-run` and `parse-error` report a sensor that could not read a
-// code fragment — scan artifacts of judging fenced snippets, not smells in
-// the code (the correctness gate owns "the code is broken").
-const SCAN_ARTIFACT_RULES = new Set(['incomplete-run', 'parse-error']);
-
-// habit-hooks' documented "suggested" tier (advisory, exit 0). Everything
-// else it reports is enforced and fails its run — see
-// https://github.com/habit-hooks/habit-hooks#what-it-catches. An unknown new
-// rule counts as enforced, so it surfaces instead of hiding.
-const SUGGESTED_RULES = new Set([
-  'warning-comment',
-  'explicit-any',
-  'non-null-assertion',
-  'non-essential-comment',
-  'duplicated-code',
-  'swallowed-exception',
-]);
-
-function realSmells(issues) {
-  return issues.filter((issue) => !SCAN_ARTIFACT_RULES.has(issue.rule));
-}
-
-function enforcedSmells(issues) {
-  return realSmells(issues).filter((issue) => !SUGGESTED_RULES.has(issue.rule));
-}
-
-// pass/fail mirrors habit-hooks' own verdict: enforced smells fail the run,
-// suggested smells are coached but non-blocking. The score stays granular
-// (all real smells count) so the arms compare beyond the binary verdict.
-module.exports = (output) => {
+function cachedScan(output) {
+  const key = crypto.createHash('sha1').update(String(output || '')).digest('hex');
+  if (scanCache.has(key)) return scanCache.get(key);
   const scan = scanReply(output);
+  if (scanCache.size >= SCAN_CACHE_LIMIT) scanCache.delete(scanCache.keys().next().value);
+  scanCache.set(key, scan);
+  return scan;
+}
+
+// The benchmark judges valid code only: a reply whose java blocks are all
+// snippets (no top-level type anywhere) has nothing to judge and fails here.
+function validCode(output) {
+  const scan = cachedScan(output);
   if (scan.skipped) return { pass: true, score: 1, reason: 'skipped: habit-hooks not on PATH' };
-  const smells = realSmells(scan.issues);
-  const enforced = enforcedSmells(scan.issues);
-  const total = smells.reduce((sum, issue) => sum + issue.count, 0);
-  const artifactNote = smells.length === scan.issues.length ? '' : ' (scan artifacts excluded)';
-  if (total === 0) return { pass: true, score: 1, reason: `habit-hooks passed: clean${artifactNote}` };
-  const score = Math.max(0, 1 - total / WORST_SMELL_COUNT);
-  if (enforced.length === 0) {
-    return { pass: true, score, reason: `habit-hooks passed — ${total} suggested smell(s): ${describe(smells)}${artifactNote}` };
+  if (scan.fileCount === 0) {
+    return { pass: false, score: 0, reason: 'no valid compilation unit found (snippets are excluded)' };
   }
-  return { pass: false, score, reason: `habit-hooks FAILED: ${total} smell(s) — ${describe(smells)}${artifactNote}` };
-};
-module.exports.parseIssues = parseIssues;
-module.exports.scanReply = scanReply;
-module.exports.scanDir = scanDir;
-module.exports.realSmells = realSmells;
-module.exports.enforcedSmells = enforcedSmells;
+  return { pass: true, score: 1, reason: `${scan.fileCount} source file(s) extracted` };
+}
+
+// One assert per smell: 0 occurrences = pass, anything else fails that
+// smell's own metric, with the locations in the reason.
+function smellAssert(rule) {
+  return (output) => {
+    const scan = cachedScan(output);
+    if (scan.skipped) return { pass: true, score: 1, reason: 'skipped: habit-hooks not on PATH' };
+    if (scan.fileCount === 0) return { pass: true, score: 1, reason: 'no valid code (see valid_code)' };
+    const issue = scan.issues.find((entry) => entry.rule === rule);
+    if (!issue) return { pass: true, score: 1, reason: `no ${rule}` };
+    const where = issue.locations.length ? ` at ${issue.locations.join(', ')}` : '';
+    return {
+      pass: false,
+      score: Math.max(0, 1 - issue.count / WORST_PER_RULE),
+      reason: `${issue.count} ${rule}${where}`,
+    };
+  };
+}
+
+const camel = (rule) => rule.replace(/-(\w)/g, (_, c) => c.toUpperCase());
+
+module.exports = { parseIssues, scanReply, scanDir, validCode, smellAssert, ENFORCED_RULES, SUGGESTED_RULES };
+for (const rule of [...ENFORCED_RULES, ...SUGGESTED_RULES]) {
+  module.exports[camel(rule)] = smellAssert(rule);
+}

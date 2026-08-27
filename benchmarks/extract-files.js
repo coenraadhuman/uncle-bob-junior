@@ -158,26 +158,22 @@ function fileNameFor(code, ext, index) {
   return `${base}.${ext}`;
 }
 
-// A Java block without a top-level type (a bare method, say) is not a valid
-// compilation unit; wrap it so parsers can read it.
-function asJavaUnit(code, index) {
-  if (TYPE_DECLARATION.test(code)) return code;
-  return `class Snippet${index + 1} {\n${code}\n}\n`;
-}
-
-// Blocks in, files out: {name, content} with unique names.
+// Blocks in, files out: {name, content} with unique names. A java block with
+// no top-level type declaration is a snippet — a usage example, shell output
+// pasted into a java fence, or bare statements — not a valid compilation
+// unit. The benchmark judges valid code only, so snippets are excluded.
 function codeFiles(blocks) {
   const files = [];
   blocks.forEach((block, index) => {
     const ext = EXTENSIONS[block.lang] || 'java';
     if (ext === 'java') {
-      const unit = asJavaUnit(block.code, index);
-      const split = splitJavaTypes(unit);
+      if (!TYPE_DECLARATION.test(block.code)) return; // snippet: excluded
+      const split = splitJavaTypes(block.code);
       if (split) {
         split.forEach((part) => files.push({ name: `${part.name}.java`, content: part.code }));
         return;
       }
-      files.push({ name: fileNameFor(unit, 'java', index), content: unit });
+      files.push({ name: fileNameFor(block.code, 'java', index), content: block.code });
       return;
     }
     files.push({ name: fileNameFor(block.code, ext, index), content: block.code });

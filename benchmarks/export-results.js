@@ -74,21 +74,31 @@ function buildReport(evalId, rows) {
   const lines = [
     `# Benchmark run ${evalId}`,
     '',
-    'Judges: habit-hooks (independent smell detector — enforced smells fail,',
-    'suggested smells are advisory), ships_tests and correct (gates). Higher',
-    'score = cleaner. Generated code and full habit-hooks reports sit next to',
-    'this file in `src/` and `habit-hooks/`.',
+    'Judges: one habit-hooks metric per code smell (0 occurrences = pass;',
+    'suggested smells carry half the weight of enforced ones), plus the',
+    'valid_code, ships_tests, and correct gates. Higher score = cleaner.',
+    'Generated code and full habit-hooks reports sit next to this file in',
+    '`src/` and `habit-hooks/`.',
     '',
-    '| task | model | arm | score | habit-hooks | smells found | ships tests | correct |',
-    '|------|-------|-----|------:|:-----------:|--------------|:-----------:|:-------:|',
+    '| task | model | arm | score | valid code | habit-hooks | smells found | ships tests | correct |',
+    '|------|-------|-----|------:|:----------:|:-----------:|--------------|:-----------:|:-------:|',
   ];
   const armTotals = new Map();
   for (const row of rows) {
     const metric = (name) => row.components.find((c) => c.metric === name);
-    const habit = metric('habit_hooks');
+    // One component per smell (hh:*); older exports carry a single
+    // habit_hooks component instead, so fall back to it.
+    const smells = row.components.filter((c) => c.metric.startsWith('hh:'));
+    const legacy = metric('habit_hooks');
+    const habitPass = smells.length ? smells.every((c) => c.pass) : legacy?.pass;
+    const failing = smells.filter((c) => !c.pass).map((c) => c.reason);
+    const detail = smells.length
+      ? (failing.length ? failing.join('; ') : 'clean')
+      : (legacy ? legacy.reason : 'n/a');
     lines.push(
       `| ${row.task} | ${row.model} | ${row.arm} | ${row.score.toFixed(2)} | ` +
-      `${habit ? (habit.pass ? 'pass' : 'FAIL') : 'n/a'} | ${habit ? habit.reason : 'n/a'} | ` +
+      `${metric('valid_code') ? (metric('valid_code').pass ? 'yes' : 'NO') : 'n/a'} | ` +
+      `${habitPass === undefined ? 'n/a' : habitPass ? 'pass' : 'FAIL'} | ${detail} | ` +
       `${metric('ships_tests')?.pass ? 'yes' : 'NO'} | ${metric('correct')?.pass ? 'yes' : 'NO'} |`,
     );
     const key = `${row.model} / ${row.arm}`;
