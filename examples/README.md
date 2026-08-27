@@ -20,13 +20,17 @@ npx promptfoo@latest view
 
 `eval` runs the five Java tasks (email validation, CSV summing, retry helper,
 rate limiting, order processing) through each configured model twice — the
-baseline arm and the ruleset arm — and scores every answer with the repo's
-deterministic judges (`benchmarks/promptfoo-metrics.js` + `correctness.js`).
-Gates fail on the checklist's own rules (functions over 20 lines, nesting past
-2 levels inside a method, missing tests, broken code); smell penalties score
-magic numbers, mutable fields, and setters from 1 (clean) down to 0; raw
-counts (LOC, longest function, nesting depth) are shown but don't affect the
-score.
+baseline arm and the ruleset arm — and scores every answer with three
+deterministic judges: the independent
+[habit-hooks](https://github.com/habit-hooks/habit-hooks) smell detector
+(penalty from 1 = clean down to 0, per-rule breakdown with file:line
+locations), a ships-tests gate, and a functional correctness gate.
+
+Every eval automatically exports its outcomes to
+`benchmarks/results/<eval-id>/`: a `report.md` scoreboard, every generated
+Java file under `src/`, and the full habit-hooks report per answer under
+`habit-hooks/` — the raw material for the examples here. Re-export a past
+run with `node benchmarks/export-results.js <eval-id>`.
 
 `view` opens the local web UI with the two arms side by side per task and
 model: the raw completions to read, pass/fail per gate, and the weighted score

@@ -1,0 +1,10 @@
+── incomplete-run (1 issue) ──
+
+⚠️ Habit Hooks: this run did not complete — a tool broke, so a clean result cannot be trusted.
+
+habit-sensors: sensor 'pmd' failed: ${python} ${dir}/pmd_sensor.py ${args} -- ${files}
+Snippet2.java: ParseException: Parse exception in file 'Snippet2.java' at line 2, column 19: Encountered "(".
+Was expecting one of:
+    <IDENTIFIER> ...
+    "<" ...
+Fix the broken tool and re-run; do not treat this change as checked.

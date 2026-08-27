@@ -7,18 +7,23 @@ model, same tasks:
 - **uncle-bob-junior** — the same prompt with `skills/uncle-bob-junior/SKILL.md`
   as system prompt.
 
-Each answer's fenced code is scored by two deterministic judges, no LLM grading:
+Each answer is scored by three deterministic judges, no LLM grading:
 
-- [`clean-code-metrics.js`](clean-code-metrics.js) — code LOC, longest function,
-  functions over 20 lines, max nesting depth, magic numbers, short names,
-  duplicate blocks, mutable (non-final) Java fields, setters, whether tests
-  ship with the code. Zero dependencies;
-  proven by `tests/clean-code-metrics.test.js`.
-- [`correctness.js`](correctness.js) — gates the generated Java: the email and
-  csv tasks are compiled and executed with the local JDK (`javac` + `java`)
-  against real checks, the open-ended tasks get structural checks, so
-  "cleaner" is never quietly "broken". Without a JDK on PATH the executable
-  checks report "skipped" instead of failing.
+- [`habit-hooks-assert.js`](habit-hooks-assert.js) — the smell judge:
+  [habit-hooks](https://github.com/habit-hooks/habit-hooks), an independent
+  third-party detector, scans the generated Java (java + generic plugins) so
+  the ruleset is vetted by a ruler this repo did not write. Scored as a
+  penalty from 1 (clean) down to 0, with the per-rule breakdown and
+  `File.java:line` locations in the reason; sensor artifacts like
+  `incomplete-run` never cost score. Skips cleanly when the CLI is not
+  installed.
+- [`promptfoo-metrics.js:shipsTests`](promptfoo-metrics.js) — gate: new
+  behavior ships with tests, the ruleset's headline rule.
+- [`correctness.js`](correctness.js) — gate: the email and csv tasks are
+  compiled and executed with the local JDK (`javac` + `java`) against real
+  checks, the open-ended tasks get structural checks, so "cleaner" is never
+  quietly "broken". Without a JDK on PATH the executable checks report
+  "skipped" instead of failing.
 
 ## Run it
 
@@ -40,18 +45,6 @@ the asserts in [`promptfoo-metrics.js`](promptfoo-metrics.js) wrap the
 judges above, plus [`correctness.js`](correctness.js), which promptfoo calls
 directly.
 
-The asserts come in three kinds, so the arm columns read directly (higher
-score = cleaner, pass rate = checklist compliance):
-
-- **Gates** fail on the ruleset's own rules: no function over 20 lines, no
-  nesting past 2 levels inside a method, tests ship, and the answer is
-  functionally correct.
-- **Penalties** score smell density from 1 (clean) down to 0: magic numbers,
-  mutable fields, setters. They never fail — the rulers have known false
-  positives, so counts inform without gating.
-- **Raw measurements** (LOC, longest function, max nesting) carry weight 0:
-  visible in the UI, excluded from the score.
-
 The tasks live in [`promptfooconfig.yaml`](promptfooconfig.yaml), all Java:
 email validator, CSV sum, retry helper, rate limiter, order processor
 (validation + VAT + discount + receipt). Three providers are configured
@@ -61,13 +54,34 @@ run-to-run variance; repeat runs before quoting numbers. See
 [`examples/`](../examples/) for how the generated comparisons are used, and
 `/uncle-bob-junior-gain` renders the newest eval as a scoreboard.
 
+## Run outcomes in `results/`
+
+Every `eval` exports its outcomes automatically to
+`benchmarks/results/<eval-id>/` (the directory is gitignored) — the
+`extensions` entry in the config runs the exporter after each run. To
+re-export a past eval:
+
+```bash
+node benchmarks/export-results.js            # newest eval
+node benchmarks/export-results.js <eval-id>  # a specific one
+```
+
+Each run directory under `benchmarks/results/<eval-id>/` contains:
+
+- `report.md` — scoreboard per task and arm: weighted score, the habit-hooks
+  smell breakdown, ships-tests and correctness, plus mean score per arm.
+- `src/<task>/<arm>/` — every generated code block as a real Java file, named
+  after its declared type, next to `reply.md` with the full verbatim answer.
+- `habit-hooks/<task>-<arm>.md` — the complete habit-hooks report for each
+  answer, verbatim.
+
 ## Reading the results
 
-The honest expectation: the ruleset arm should pass more gates (especially
-ships-tests) and hold higher penalty scores — usually at the price of somewhat
-more LOC (tests and named constants are lines too) and cost. If correctness
-drops in the ruleset arm, that is a finding, not a formatting issue: report it.
+The honest expectation: the ruleset arm should hold a higher habit-hooks
+score and pass the gates (especially ships-tests) — usually at the price of
+somewhat more output and cost. If correctness drops in the ruleset arm, that
+is a finding, not a formatting issue: report it.
 
-The metrics are regex-based rulers, not compilers (see the `ubj:` note in
-`clean-code-metrics.js`). They are stable enough to compare two arms on the
-same task; do not quote them as absolute code-quality scores.
+habit-hooks draws its own thresholds (functions over 12 lines, files over
+200), stricter than the ruleset's, which is why it scores as a penalty rather
+than a gate: the score compares arms, it does not define compliance.

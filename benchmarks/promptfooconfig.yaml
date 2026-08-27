@@ -28,55 +28,30 @@ prompts:
   - id: file://arms/uncle-bob-junior.js
     label: uncle-bob-junior
 
-# Gates fail on the checklist's own rules; penalties score smell density
-# (1 = clean); raw counts carry weight 0 so they inform without skewing the
-# aggregate. Higher score = cleaner, so the arm columns compare directly.
+# After every eval, the run's outcomes are exported automatically to
+# benchmarks/results/<eval-id>/ (report.md, generated sources, full
+# habit-hooks reports). Re-export a past run: node benchmarks/export-results.js <eval-id>
+extensions:
+  - file://promptfoo-extension.js:extensionHook
+
+# Three judges. Smell detection is habit-hooks — an independent third-party
+# ruler (java + generic plugins), scored as a penalty from 1 (clean) down to 0
+# with the per-rule breakdown in the reason. ships_tests and correct are
+# gates: tests must ship, and cleaner must never mean broken.
 defaultTest:
   assert:
-    # Raw measurements (read them, they don't count toward the score).
     - type: javascript
-      value: file://promptfoo-metrics.js:codeLoc
-      metric: code_loc
-      weight: 0
-    - type: javascript
-      value: file://promptfoo-metrics.js:longestFunction
-      metric: longest_function
-      weight: 0
-    - type: javascript
-      value: file://promptfoo-metrics.js:maxNesting
-      metric: max_nesting
-      weight: 0
-    # Smell penalties (0..1, 1 = clean).
-    - type: javascript
-      value: file://promptfoo-metrics.js:magicNumbers
-      metric: magic_numbers
-      weight: 1
-    - type: javascript
-      value: file://promptfoo-metrics.js:mutableFields
-      metric: mutable_fields
-      weight: 1
-    - type: javascript
-      value: file://promptfoo-metrics.js:setters
-      metric: setters
-      weight: 1
-    # Clean-code gates (the ruleset's own checklist rules).
-    - type: javascript
-      value: file://promptfoo-metrics.js:noLongFunctions
-      metric: no_long_functions
-      weight: 1
-    - type: javascript
-      value: file://promptfoo-metrics.js:flatControlFlow
-      metric: flat_control_flow
+      value: file://habit-hooks-assert.js
+      metric: habit_hooks
       weight: 1
     - type: javascript
       value: file://promptfoo-metrics.js:shipsTests
       metric: ships_tests
-      weight: 2
-    # Functional correctness gate: cleaner must never mean broken.
+      weight: 1
     - type: javascript
       value: file://correctness.js
       metric: correct
-      weight: 2
+      weight: 1
 
 tests:
   - description: email

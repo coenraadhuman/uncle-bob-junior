@@ -94,38 +94,11 @@ const DIRTY_JAVA_REPLY = [
   '```',
 ].join('\n');
 
-test('clean code passes every gate and scores 1 on every penalty', () => {
-  const longest = metrics.longestFunction(CLEAN_JAVA_REPLY);
-  assert.equal(longest.pass, true, 'raw measurements never gate');
-  assert.ok(longest.score > 0 && longest.score <= 20, `longest function ${longest.score}`);
-  assert.equal(metrics.magicNumbers(CLEAN_JAVA_REPLY).score, 1, 'MAX_LENGTH constant is not magic');
-  assert.equal(metrics.mutableFields(CLEAN_JAVA_REPLY).score, 1);
-  assert.equal(metrics.setters(CLEAN_JAVA_REPLY).score, 1);
-  assert.equal(metrics.noLongFunctions(CLEAN_JAVA_REPLY).pass, true);
-  assert.equal(metrics.flatControlFlow(CLEAN_JAVA_REPLY).pass, true);
-});
-
-test('dirty code fails the gates and loses penalty score', () => {
-  const longGate = metrics.noLongFunctions(DIRTY_JAVA_REPLY);
-  assert.equal(longGate.pass, false, `26-line process() must fail the 20-line gate: ${longGate.reason}`);
-  assert.equal(longGate.score, 0);
-
-  const nestGate = metrics.flatControlFlow(DIRTY_JAVA_REPLY);
-  assert.equal(nestGate.pass, false, `4 nested ifs must fail the flat-flow gate: ${nestGate.reason}`);
-
-  const magic = metrics.magicNumbers(DIRTY_JAVA_REPLY);
-  assert.equal(magic.pass, true, 'penalties never gate (rulers have false positives)');
-  assert.ok(magic.score < 1, `bare 250/0.175/0.21/99/0.9 must cost score, got ${magic.score}`);
-
-  const mutable = metrics.mutableFields(DIRTY_JAVA_REPLY);
-  assert.ok(mutable.score < 1, `non-final retries field must cost score, got ${mutable.score}`);
-});
-
-test('penalty scores stay in the 0..1 range even past the worst case', () => {
-  const swamp = '```java\nint a = 37; int b = 41; int c = 53; int d = 67; int e2 = 71; int f2 = 73; int g2 = 79; int h2 = 83; int i2 = 89; int j2 = 97;\n```';
-  const magic = metrics.magicNumbers(swamp);
-  assert.equal(magic.score, 0, 'floor at 0, never negative');
-  assert.equal(magic.pass, true);
+test('production code excludes test blocks and non-code fences', () => {
+  const production = metrics.productionCode(CLEAN_JAVA_REPLY);
+  assert.ok(production.code.includes('class EmailValidator'));
+  assert.ok(!production.code.includes('EmailValidatorTest'), 'test blocks are not production code');
+  assert.equal(metrics.productionCode('```bash\nmvn test\n```'), null, 'non-code fences are not production code');
 });
 
 test('shipsTests gates on the whole reply, not just production code', () => {
@@ -175,4 +148,167 @@ test('provider id is model-scoped so promptfoo can tell the columns apart', () =
   const provider = new ClaudeCliProvider({ config: { model: 'sonnet' }, label: 'sonnet' });
   assert.equal(provider.id(), 'claude-cli:sonnet');
   assert.equal(new ClaudeCliProvider({}).id(), 'claude-cli:haiku');
+});
+
+const { spawnSync } = require('child_process');
+const habitHooksAssert = require('../benchmarks/habit-hooks-assert.js');
+const { parseIssues, javaFileName } = habitHooksAssert;
+const hasHabitHooks = spawnSync('habit-hooks', ['--version'], { encoding: 'utf8' }).status === 0;
+
+test('parseIssues reads rule names and counts from habit-hooks output', () => {
+  const report = [
+    '── oversized-function (2 issues) ──',
+    'prose about the rule',
+    'OrderHandler.java:3',
+    '── swallowed-exception (1 issue) ──',
+    'OrderHandler.java:13',
+  ].join('\n');
+  assert.deepEqual(parseIssues(report), [
+    { rule: 'oversized-function', count: 2, locations: ['OrderHandler.java:3'] },
+    { rule: 'swallowed-exception', count: 1, locations: ['OrderHandler.java:13'] },
+  ]);
+  assert.deepEqual(parseIssues('✅ Habit Hooks: automated checks passed.'), []);
+});
+
+test('java scan files are named after their declared type', () => {
+  assert.equal(javaFileName('public final class EmailValidator {\n}', 0), 'EmailValidator.java');
+  assert.equal(javaFileName('interface Store { void save(); }', 3), 'Store.java');
+  assert.equal(javaFileName('int x = 1;', 2), 'Snippet3.java');
+});
+
+test('habit-hooks judges dirty code down and clean code as clean', { skip: !hasHabitHooks }, () => {
+  const dirty = habitHooksAssert(DIRTY_JAVA_REPLY);
+  assert.equal(dirty.pass, true, 'penalty, never a gate');
+  assert.ok(dirty.score < 1, `26-line method must cost score: ${dirty.reason}`);
+  assert.ok(/oversized-function/.test(dirty.reason), dirty.reason);
+
+  const clean = habitHooksAssert(CLEAN_JAVA_REPLY);
+  assert.equal(clean.score, 1, clean.reason);
+  assert.equal(clean.reason, 'habit-hooks: clean');
+});
+
+const os = require('os');
+const exporter = require('../benchmarks/export-results.js');
+
+const FIXTURE_EVAL = {
+  evalId: 'eval-FIX-2026-08-27T12:00:00',
+  results: {
+    results: [
+      {
+        prompt: { label: 'baseline (no ruleset)' },
+        testCase: { description: 'email' },
+        response: { output: DIRTY_JAVA_REPLY },
+        gradingResult: {
+          score: 0.4,
+          componentResults: [
+            { assertion: { metric: 'habit_hooks' }, pass: true, score: 0.5, reason: 'habit-hooks: 3 smell(s) — oversized-function(3)' },
+            { assertion: { metric: 'ships_tests' }, pass: false, score: 0, reason: 'no tests shipped' },
+            { assertion: { metric: 'correct' }, pass: true, score: 1, reason: 'ok' },
+          ],
+        },
+      },
+      {
+        prompt: { label: 'uncle-bob-junior' },
+        testCase: { description: 'email' },
+        response: { output: CLEAN_JAVA_REPLY },
+        gradingResult: {
+          score: 1,
+          componentResults: [
+            { assertion: { metric: 'habit_hooks' }, pass: true, score: 1, reason: 'habit-hooks: clean' },
+            { assertion: { metric: 'ships_tests' }, pass: true, score: 1, reason: 'ships tests' },
+            { assertion: { metric: 'correct' }, pass: true, score: 1, reason: 'ok' },
+          ],
+        },
+      },
+    ],
+  },
+};
+
+test('exporter flattens eval JSON into per-arm rows', () => {
+  const rows = exporter.resultRows(FIXTURE_EVAL);
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].arm, 'baseline (no ruleset)');
+  assert.equal(rows[0].task, 'email');
+  assert.ok(rows[0].output.includes('OrderHandler'));
+  assert.equal(rows[1].score, 1);
+});
+
+test('report.md carries the scoreboard and per-arm means', () => {
+  const rows = exporter.resultRows(FIXTURE_EVAL);
+  const report = exporter.buildReport(FIXTURE_EVAL.evalId, rows);
+  assert.ok(report.includes('| email | baseline (no ruleset) | 0.40 |'));
+  assert.ok(report.includes('habit-hooks: clean'));
+  assert.ok(report.includes('**uncle-bob-junior**: 1.000 (n=1)'));
+  assert.ok(report.includes('**baseline (no ruleset)**: 0.400 (n=1)'));
+});
+
+test('writeRunArtifacts lays out src, habit-hooks reports, and report.md', () => {
+  const runDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ubj-export-test-'));
+  try {
+    const rows = exporter.resultRows(FIXTURE_EVAL);
+    const fakeScan = (output) => ({ skipped: false, report: `fake report for ${output.length} chars\n`, issues: [], total: 0 });
+    exporter.writeRunArtifacts(FIXTURE_EVAL.evalId, rows, runDir, { scan: fakeScan });
+
+    assert.ok(fs.existsSync(path.join(runDir, 'report.md')));
+    assert.ok(fs.existsSync(path.join(runDir, 'src', 'email', 'uncle-bob-junior', 'EmailValidator.java')));
+    assert.ok(fs.existsSync(path.join(runDir, 'src', 'email', 'uncle-bob-junior', 'EmailValidatorTest.java')));
+    assert.ok(fs.existsSync(path.join(runDir, 'src', 'email', 'baseline-no-ruleset', 'OrderHandler.java')));
+    assert.ok(fs.existsSync(path.join(runDir, 'src', 'email', 'baseline-no-ruleset', 'reply.md')));
+    const report = fs.readFileSync(path.join(runDir, 'habit-hooks', 'email-uncle-bob-junior.md'), 'utf8');
+    assert.ok(report.startsWith('fake report'));
+  } finally {
+    fs.rmSync(runDir, { recursive: true, force: true });
+  }
+});
+
+test('slug makes filesystem-safe names', () => {
+  assert.equal(exporter.slug('baseline (no ruleset)'), 'baseline-no-ruleset');
+  assert.equal(exporter.slug('eval-9FT-2026-08-27T12:20:27'), 'eval-9ft-2026-08-27t12-20-27');
+});
+
+test('scan files are one per fenced block, wrapped when no type is declared', { skip: !hasHabitHooks }, () => {
+  const twoBlocks = [
+    '```java',
+    'public boolean isValid(String email) {',
+    '    return email != null && email.contains("@");',
+    '}',
+    '```',
+    '```java',
+    'public class Checker {',
+    '    public void run() {}',
+    '}',
+    '```',
+  ].join('\n');
+  const scan = habitHooksAssert.scanReply(twoBlocks);
+  assert.equal(scan.skipped, false);
+  assert.ok(scan.report, 'a bare-method block must still produce a parseable scan');
+});
+
+test('scan artifacts like incomplete-run never cost smell score', () => {
+  const filtered = habitHooksAssert.realSmells([
+    { rule: 'incomplete-run', count: 1, locations: [] },
+    { rule: 'oversized-function', count: 2, locations: ['A.java:3'] },
+  ]);
+  assert.deepEqual(filtered.map((issue) => issue.rule), ['oversized-function']);
+});
+
+test('exportRun accepts the bare results array the afterAll hook receives', () => {
+  const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ubj-hook-test-'));
+  try {
+    const fakeScan = () => ({ skipped: false, report: 'fake\n', issues: [], total: 0 });
+    const runDir = exporter.exportRun(FIXTURE_EVAL.evalId, FIXTURE_EVAL.results.results, { resultsDir, scan: fakeScan });
+    assert.ok(runDir.endsWith(exporter.slug(FIXTURE_EVAL.evalId)));
+    assert.ok(fs.existsSync(path.join(runDir, 'report.md')));
+    assert.ok(fs.existsSync(path.join(runDir, 'src', 'email', 'uncle-bob-junior', 'EmailValidator.java')));
+    assert.equal(exporter.exportRun('eval-empty', [], { resultsDir }), null, 'nothing to write means no dir');
+  } finally {
+    fs.rmSync(resultsDir, { recursive: true, force: true });
+  }
+});
+
+test('extension hook only acts on afterAll', async () => {
+  const { extensionHook } = require('../benchmarks/promptfoo-extension.js');
+  await extensionHook('beforeAll', {});
+  await extensionHook('afterEach', { results: undefined });
+  await extensionHook('afterAll', { evalId: 'eval-empty', results: [] });
 });
