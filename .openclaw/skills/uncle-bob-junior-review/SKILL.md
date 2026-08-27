@@ -24,6 +24,7 @@ Tags:
 - `srp:` a function or class with two jobs (an "and" in its description, a boolean flag parameter). Name the split.
 - `dead:` commented-out code, unused branches, unreachable paths. Delete.
 - `type:` a runtime check guarding a state a precise type would forbid (a mode string, a nullable that is never null, raw primitives passed as a group). Name the enum, value object, or non-nullable field.
+- `wheel:` hand-rolled code the standard library or an existing project dependency already provides (a date parser, string padding, a retry loop, crypto). Name the library call that replaces it — or, when a third-party type leaks through the codebase, the thin boundary seam that should contain it.
 - `mut:` shared mutable state or a side effect buried in core logic. Name where the effect moves (the edge) or what becomes immutable.
 - `untested:` new or changed behavior with no test, or tests welded to internals that a pure refactor would break. Name the missing cases (happy path, edges) or the public surface to test through.
 

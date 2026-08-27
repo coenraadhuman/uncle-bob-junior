@@ -15,12 +15,12 @@ providers:
   - id: file://providers/claude-cli.js
     label: haiku
     config: { model: haiku }
-#  - id: file://providers/claude-cli.js
-#    label: sonnet
-#    config: { model: sonnet }
-#  - id: file://providers/claude-cli.js
-#    label: fable
-#    config: { model: fable }
+  - id: file://providers/claude-cli.js
+    label: sonnet
+    config: { model: sonnet }
+  - id: file://providers/claude-cli.js
+    label: fable
+    config: { model: fable }
 
 prompts:
   - id: file://arms/baseline.js

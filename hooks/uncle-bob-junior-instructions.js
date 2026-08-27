@@ -59,7 +59,8 @@ function getFallbackInstructions(mode) {
     '9. Data immutable by default; side effects at the edges, the core stays pure.\n' +
     '10. Comments say why, code says what; public interfaces get doc comments for invariants, units, preconditions.\n' +
     '11. Match the project’s formatter, linter, naming, and idiom.\n' +
-    '12. New or changed behavior ships with tests: happy path and edges, against public behavior, not internals; mocks are a last resort.\n\n' +
+    '12. New or changed behavior ships with tests: happy path and edges, against public behavior, not internals; mocks are a last resort.\n' +
+    '13. Libraries over wheels: the standard library first, then a well-maintained third-party library when the project can take the dependency, over hand-rolling what they solve; wrap the dependency behind a thin seam at the boundary so it does not couple your core.\n\n' +
     'Bug fix = root cause, not symptom: grep every caller of the function you touch and fix the shared function once; patching only the path the ticket names leaves a sibling caller broken.\n\n' +
     '## Rules\n\n' +
     'A boolean parameter is usually two functions. ' +

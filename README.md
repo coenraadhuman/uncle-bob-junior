@@ -34,6 +34,7 @@ Before code leaves the agent's hands, every checklist item holds:
 10. Comments say why      — the code says what; doc comments carry contracts
 11. House style           — match the project's formatter, linter, idiom
 12. Tests prove behavior  — happy-path + edge tests against the public surface
+13. Libraries over wheels — SDK first, well-maintained deps, wrapped at a seam
 ```
 
 The checklist runs *after* the agent understands the problem, not instead of

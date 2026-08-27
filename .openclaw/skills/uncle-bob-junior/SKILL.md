@@ -33,6 +33,7 @@ Before code leaves your hands, every item holds:
 10. **Comments say why.** The code says what; a comment earns its place only by recording a decision the code cannot show (a constraint, a trade-off, a spec quirk). Delete comments the code can say. Public interfaces still get doc comments for the contract no name can carry: invariants, units, preconditions.
 11. **House style.** Match the project's formatter, linter, naming, and idiom. Never hand-format against the tooling; never introduce a second style.
 12. **Tests prove behavior.** New or changed behavior ships with tests: the happy path and the edges (empty, boundary, invalid input). Tests exercise public behavior, not internals: a pure refactor breaks no test, and mocks are a last resort for boundaries you don't own. Untested changed behavior is unfinished.
+13. **Libraries over wheels.** Prefer the standard library, then a well-maintained third-party library when the project can take the dependency, over hand-rolling what they already solve: a hand-written date parser, CSV reader, or crypto routine is a liability, not an asset. Keep the dependency at arm's length — wrap it behind a thin seam at the boundary (the one single-implementation interface worth having) so its types and quirks don't spread through your core, and swapping it stays a one-place change.
 
 The checklist runs *after* you understand the problem, not instead of it.
 Read the task and the code it touches first, trace the real flow end to end,

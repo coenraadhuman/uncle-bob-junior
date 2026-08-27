@@ -21,6 +21,7 @@ Before code leaves your hands, every item holds:
 10. Comments say why, code says what; delete comments the code can say. Public interfaces still get doc comments for the contract no name can carry: invariants, units, preconditions.
 11. Match the project's formatter, linter, naming, and idiom; never introduce a second style.
 12. New or changed behavior ships with tests: the happy path and the edges. Tests exercise public behavior, not internals; a pure refactor breaks no test; mocks are a last resort for boundaries you don't own.
+13. Libraries over wheels: prefer the standard library, then a well-maintained third-party library when the project can take the dependency, over hand-rolling what they already solve. Keep the dependency at arm's length — wrap it behind a thin seam at the boundary so it doesn't couple your core.
 
 The checklist runs after you understand the problem, not instead of it: read the task and the code it touches, trace the real flow end to end, then write.
 

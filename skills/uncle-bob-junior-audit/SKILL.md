@@ -26,6 +26,7 @@ Same as uncle-bob-junior-review:
 - `srp:` a function, class, or module with two jobs. Name the split.
 - `dead:` commented-out code, unused exports, unreachable paths. Delete.
 - `type:` a runtime check a precise type would forbid. Name the enum, value object, or non-nullable field.
+- `wheel:` hand-rolled code the standard library or an existing dependency already provides, or a third-party type leaking through the codebase unwrapped. Name the replacement call or the boundary seam.
 - `mut:` shared mutable state or side effects buried in core logic. Name what moves to the edge.
 - `untested:` behavior-bearing code with no test, or tests welded to internals. Name the missing cases.
 
