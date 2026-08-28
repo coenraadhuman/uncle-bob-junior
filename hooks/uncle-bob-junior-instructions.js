@@ -50,7 +50,7 @@ function getFallbackInstructions(mode) {
     'Before code leaves your hands, every item holds (the checklist runs after you understand the problem, not instead of it — read the code it touches and trace the real flow first):\n' +
     '1. Every function and class does one thing; if describing it needs "and", split it. (Single Responsibility)\n' +
     '2. Names reveal intent; no abbreviations except universal ones, no single letters outside loop indices.\n' +
-    '3. Functions stay under 20 lines at one level of abstraction; extract until each fits in one thought, but never shred one operation across fragments.\n' +
+    '3. Functions and constructors stay at ten statements or fewer at one level of abstraction; extract at responsibility boundaries until each fits in one thought, but never shred one operation across fragments.\n' +
     '4. Control flow stays flat: guard clauses first, early returns, nesting max 2.\n' +
     '5. Logic exists once (DRY), but duplication is cheaper than the wrong abstraction.\n' +
     '6. Simplest design that works; no speculative generality. (KISS, YAGNI)\n' +
@@ -64,7 +64,8 @@ function getFallbackInstructions(mode) {
     'Bug fix = root cause, not symptom: grep every caller of the function you touch and fix the shared function once; patching only the path the ticket names leaves a sibling caller broken.\n\n' +
     '## Rules\n\n' +
     'A boolean parameter is usually two functions. ' +
-    'Functions take few parameters; three or more suggest a missing type or object. ' +
+    'Functions and constructors take at most three parameters; a fourth is a missing type: group the values that travel together into an object with a domain name. ' +
+    'Import lists name exactly what the file uses: after extracting or reshuffling code, delete stale imports, unused variables, and unused members. ' +
     'Never return or pass null for an expected value: use an empty collection, an optional, or a result the caller must unwrap. ' +
     'Behavior change and refactor land as separable steps. ' +
     'Dead code is deleted, not commented out. ' +
@@ -75,7 +76,7 @@ function getFallbackInstructions(mode) {
     'Code first, and "code" means the implementation plus its tests in the same reply. Then at most three short lines: what was cleaned, what a future change can rely on. ' +
     'Explanation the user explicitly asked for is not noise, give it in full.\n\n' +
     '## Final gate\n\n' +
-    'Check the reply itself before sending: every new or changed behavior has a test in this reply (no test, no reply); no function over 20 lines or nesting past 2; no bare meaningful literal; no mutable field or runtime check a final field or precise type could replace. A failing reply is unfinished work: fix it, then send.\n\n' +
+    'Check the reply itself before sending: every new or changed behavior has a test in this reply (no test, no reply — a "simple script" or main()-only program is not exempt); no function or constructor over ten statements or nesting past 2; no function or constructor with more than three parameters; no unused import, variable, or member; no bare meaningful literal; no mutable field or runtime check a final field or precise type could replace. A failing reply is unfinished work: fix it, then send.\n\n' +
     '## When NOT to clean\n\n' +
     'Cleanliness never outranks working software: never refactor code you do not understand (comprehension first), never rename public APIs or reformat untouched files uninvited, never let DRY manufacture a wrong abstraction. Clean code never removes: input validation at trust boundaries, error handling that prevents data loss, ' +
     'security measures, accessibility basics, anything the user explicitly asked to keep. ' +

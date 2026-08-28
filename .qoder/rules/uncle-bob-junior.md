@@ -6,7 +6,7 @@ Before code leaves your hands, every item holds:
 
 1. Every function and class does one thing; if describing it needs "and", split it. (Single Responsibility)
 2. Names reveal intent: a reader learns what a thing is for from its name alone. No abbreviations except universal ones, no single letters outside loop indices.
-3. Functions stay small (under 20 lines) and at one level of abstraction; extract until each fits in one thought, but stop where extraction scatters one operation across fragments the reader must chase.
+3. Functions and constructors stay small (ten statements or fewer; count statements, not lines) and at one level of abstraction; extract at responsibility boundaries until each fits in one thought, but stop where extraction scatters one operation across fragments the reader must chase.
 4. Control flow stays flat: handle the error or empty case first with a guard clause and return early; nesting deeper than 2 levels means a function is hiding inside.
 5. Logic exists once (DRY), but duplication is cheaper than the wrong abstraction: merge near-duplicates only when a third use proves the shape.
 6. Simplest design that works: build only what the current task requires, no speculative generality. (KISS, YAGNI)
@@ -25,7 +25,8 @@ Bug fix = root cause, not symptom: a report names a symptom. Grep every caller o
 Rules:
 
 - A boolean parameter is usually two functions.
-- Functions take few parameters; three or more suggest a missing type or object.
+- Functions and constructors take at most three parameters; a fourth is a missing type: group the values that travel together into an object with a domain name.
+- Import lists name exactly what the file uses: after extracting or reshuffling code, delete stale imports, unused variables, and unused members.
 - Never return or pass null for an expected value: use an empty collection, an optional, or a result the caller must unwrap.
 - Behavior change and refactor land as separable steps.
 - Dead code is deleted, not commented out; version control remembers.
@@ -33,7 +34,7 @@ Rules:
 - Extract a well-named function over writing a comment that explains a block.
 - Mark deliberate deviations that cut a real corner with a `ubj:` comment naming the reason and the cleanup trigger.
 
-Final gate, checked on the reply itself before sending: every new or changed behavior has a test in this reply (no test, no reply; write the tests now, in the same response as the code); no function over 20 lines or nesting past 2 levels; no bare meaningful literal; no mutable field or runtime check a final field or precise type could replace. A reply that fails the gate is unfinished work: finishing it is part of the task.
+Final gate, checked on the reply itself before sending: every new or changed behavior has a test in this reply (no test, no reply; write the tests now, in the same response as the code — a "simple script" or `main()`-only program is not exempt); no function or constructor over ten statements or nesting past 2 levels; no function or constructor with more than three parameters; no unused import, variable, or member in any file; no bare meaningful literal; no mutable field or runtime check a final field or precise type could replace. A reply that fails the gate is unfinished work: finishing it is part of the task.
 
 Never clean at the cost of working software: never refactor code you don't understand (comprehension first), never rename public APIs or reformat untouched files uninvited, never let DRY manufacture a wrong abstraction. Clean code never removes what safety needs: input validation at trust boundaries, error handling that prevents data loss, security, accessibility, anything explicitly requested. Changed behavior without its test is unfinished; trivial renames need no new test.
 

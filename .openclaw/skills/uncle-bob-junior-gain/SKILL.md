@@ -16,7 +16,7 @@ The figures come from this repo's own with/without benchmark, run through
 promptfoo: the same tasks answered by the same model, once bare and once with
 the ruleset as system prompt, scored by deterministic judges
 (`benchmarks/promptfoo-metrics.js` + `correctness.js`). Read the newest eval
-and render a per-arm scoreboard — gates passed (functions ≤ 20 lines, flat
+and render a per-arm scoreboard — gates passed (functions ≤ 10 statements, flat
 control flow, ships tests, correct), smell penalty scores, and the weighted
 score per arm:
 

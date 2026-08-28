@@ -19,7 +19,7 @@ edits weekly outranks the script nobody touches.
 Same as uncle-bob-junior-review:
 
 - `name:` a name that hides intent. Give the intent-revealing name.
-- `long:` function over 20 lines or doing more than one thing. Name the extraction seams.
+- `long:` function over ten statements or doing more than one thing. Name the extraction seams.
 - `nest:` nesting deeper than 2 levels. Show what flattens it.
 - `dup:` the same logic in two or more places. Name the shared function.
 - `magic:` a bare literal with meaning. Give the constant name.

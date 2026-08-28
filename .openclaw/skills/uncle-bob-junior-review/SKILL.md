@@ -17,7 +17,7 @@ multi-file diffs.
 Tags:
 
 - `name:` a name that hides intent (`data2`, `tmp`, `doStuff`). Give the intent-revealing name.
-- `long:` function over 20 lines or doing more than one thing. Name the extraction seams.
+- `long:` function over ten statements or doing more than one thing. Name the extraction seams.
 - `nest:` nesting deeper than 2 levels. Show the guard clause or extraction that flattens it.
 - `dup:` the same logic in two places. Name the shared function to extract; flag near-duplicates only when a third use exists.
 - `magic:` a bare literal with meaning. Give the constant name.

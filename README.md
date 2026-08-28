@@ -590,7 +590,7 @@ Before code leaves the agent's hands, every checklist item holds:
 ```
 1.  One job each          — SRP: an "and" in the description means split it
 2.  Names reveal intent   — remainingRetries, not n
-3.  Small functions       — under 20 lines, one thought, one abstraction level
+3.  Small functions       — ten statements max, one thought, one abstraction level
 4.  Flat control flow     — guard clauses first, nesting max 2
 5.  Logic exists once     — DRY, but duplication beats the wrong abstraction
 6.  Simplest design       — KISS + YAGNI, no speculative generality
@@ -607,7 +607,7 @@ The checklist runs *after* the agent understands the problem, not instead of
 it: read the code the change touches, trace the real flow, then write.
 
 A **final gate** closes every reply: before sending code, the agent checks its
-own answer for tests present in the same reply, functions over 20 lines,
+own answer for tests present in the same reply, functions over ten statements,
 nesting past 2, bare literals, and mutable state a `final` field or precise
 type could replace. The gate is what makes the test rule bind on smaller
 models (see the benchmark below): principles get dropped, output contracts
@@ -798,7 +798,7 @@ Commands need a skill-capable host (Claude Code, Codex, Devin CLI, OpenCode, Gem
 |-------|--------------|
 | **lite** | Readability pass only: names, guard clauses, named constants on the code you touch. |
 | **full** | The whole checklist enforced on new and changed code, tests included. Default. |
-| **ultra** | Hard limits (≤ 20 lines, ≤ 2 nesting), every branch tested, adjacent smells in touched files cleaned too. |
+| **ultra** | Hard limits (≤ 10 statements, ≤ 2 nesting), every branch tested, adjacent smells in touched files cleaned too. |
 
 ## Development
 

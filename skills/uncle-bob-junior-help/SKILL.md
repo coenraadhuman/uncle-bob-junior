@@ -18,7 +18,7 @@ write flag files, or persist anything.
 |-------|---------|-------------|
 | **Lite** | `/uncle-bob-junior lite` | Readability pass only: names, guard clauses, named constants on touched code. |
 | **Full** | `/uncle-bob-junior` | The checklist enforced: SRP → names → small functions → flat flow → DRY → no magic values → precise types → immutability → libraries over wheels → tests. Default. |
-| **Ultra** | `/uncle-bob-junior ultra` | Hard limits (≤ 20 lines, ≤ 2 nesting), every branch tested, adjacent smells in touched files cleaned too. |
+| **Ultra** | `/uncle-bob-junior ultra` | Hard limits (≤ 10 statements, ≤ 2 nesting), every branch tested, adjacent smells in touched files cleaned too. |
 
 Level sticks until changed or session end.
 

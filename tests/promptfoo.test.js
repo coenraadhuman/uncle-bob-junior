@@ -268,8 +268,8 @@ test('exporter flattens eval JSON into per-arm rows', () => {
 test('report.md carries the scoreboard and per-arm means', () => {
   const rows = exporter.resultRows(FIXTURE_EVAL);
   const report = exporter.buildReport(FIXTURE_EVAL.evalId, rows);
-  assert.ok(report.includes('| email | haiku | baseline (no ruleset) | 0.40 | yes | FAIL | 3 oversized-function at OrderHandler.java:3 |'), report);
-  assert.ok(report.includes('| email | haiku | uncle-bob-junior | 1.00 | yes | pass | clean |'), report);
+  assert.ok(report.includes('| email | haiku | baseline (no ruleset) | 0.40 | YES | FAIL | 3 oversized-function at OrderHandler.java:3 |'), report);
+  assert.ok(report.includes('| email | haiku | uncle-bob-junior | 1.00 | YES | PASS | clean |'), report);
   assert.ok(report.includes('**haiku / uncle-bob-junior**: 1.000 (n=1)'));
   assert.ok(report.includes('**haiku / baseline (no ruleset)**: 0.400 (n=1)'));
 });

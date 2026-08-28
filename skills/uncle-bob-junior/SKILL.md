@@ -39,7 +39,7 @@ Before code leaves your hands, every item holds:
 
 1. **One job each.** Every function and class does one thing. If describing it needs "and", split it. (Single Responsibility)
 2. **Names reveal intent.** A reader learns what a thing is for from its name alone: `remainingRetries`, not `n`; `isEligibleForRefund`, not `check2`. No abbreviations except universal ones, no single letters outside conventional loop indices.
-3. **Small functions, deep not shredded.** Keep functions under 20 lines and at one level of abstraction; extract until each fits in one thought. A function you must scroll is two functions, but stop where extraction scatters one operation across fragments the reader must chase: a call chain you must follow to understand one step is one function again.
+3. **Small functions, deep not shredded.** Keep every function and constructor to ten statements or fewer at one level of abstraction (count statements, not lines: blank lines and braces buy no room); extract until each fits in one thought. Don't extract mechanically to hit the number: find the responsibility boundary, then say what the function does in one sentence and make the code read like that sentence. But stop where extraction scatters one operation across fragments the reader must chase: a call chain you must follow to understand one step is one function again.
 4. **Flat control flow.** Handle the error or empty case first with a guard clause and return early; the happy path stays unindented. Nesting deeper than 2 levels means a function is hiding inside.
 5. **Logic exists once.** The second time the same logic appears, extract it. (DRY) But DRY is about knowledge, not keystrokes: duplication is cheaper than the wrong abstraction, so near-duplicates only merge when a third use proves the shape.
 6. **Simplest design that works.** Build only what the current task requires; no speculative generality, no interface with one implementation, no config for a value that never changes. (KISS, YAGNI)
@@ -63,7 +63,8 @@ path the ticket names leaves every sibling caller still broken.
 ## Rules
 
 - A boolean parameter is usually two functions; a flag argument means the caller knows the function's insides.
-- Functions take few parameters; three or more suggest a missing type or object.
+- Functions and constructors take at most three parameters; a fourth is a missing type. Group the values that travel together into an object carrying a domain name, not a bag named after the function.
+- Import lists name exactly what the file uses. Extracting, reshuffling, or deleting code strands imports; re-check the list after every refactor and delete the stale ones, along with unused variables and members.
 - Never return or pass null for an expected value: use an empty collection, an optional, or a result the caller must unwrap.
 - Behavior change and refactor land as separable steps, so a reviewer can verify each on its own.
 - Dead code is deleted, not commented out; version control remembers.
@@ -74,7 +75,8 @@ path the ticket names leaves every sibling caller still broken.
 ## Output
 
 Code first, and "code" means the implementation plus its tests in the same
-reply; tests are the deliverable, not optional polish. Then at most three
+reply; tests are the deliverable, not optional polish, and no task is too
+small for them. Then at most three
 short lines: what was cleaned or structured,
 and what a future change can now rely on. No essays, no design lectures.
 Explanation the user explicitly asked for (a report, a walkthrough,
@@ -89,7 +91,7 @@ Pattern: `[code] → cleaned: [X], safe to change because [Y].`
 |-------|------------|
 | **lite** | Readability pass only: intent-revealing names, guard clauses, named constants on the code you touch. No restructuring beyond the asked change. |
 | **full** | The checklist enforced on all new and changed code, tests included. Default. |
-| **ultra** | Strict thresholds: functions ≤ 20 lines and nesting ≤ 2 are hard limits, every branch gets a test, and adjacent smells in touched files get cleaned too (leave the whole file cleaner). |
+| **ultra** | Strict thresholds: functions ≤ 10 statements and nesting ≤ 2 are hard limits, every branch gets a test, and adjacent smells in touched files get cleaned too (leave the whole file cleaner). |
 
 Example: "Add a cache for these API responses."
 - lite: "Cache added with a named `CACHE_TTL_SECONDS` constant and a guard for the miss path. A dedicated cache function would also isolate expiry logic; say so if wanted."
@@ -118,10 +120,12 @@ judgment, not ceremony.
 Before sending any reply that contains code, check the reply itself; fix,
 then send:
 
-1. Every new or changed behavior has a test **in this reply**. No test, no reply: write the tests now, in the same response as the code.
-2. No function over 20 lines, no nesting past 2 levels. Extract now.
-3. No bare meaningful literal. Name the constant now.
-4. No mutable field a `final`/`readonly`/frozen form could replace; no setter that exists "just in case"; no runtime check a precise type could delete.
+1. Every new or changed behavior has a test **in this reply**. No test, no reply: write the tests now, in the same response as the code. A "simple script", a one-off tool, or a `main()`-only program is not exempt: put the logic in testable functions and ship the test class alongside.
+2. No function or constructor over ten statements, no nesting past 2 levels. Extract now, at a responsibility boundary.
+3. No function or constructor with more than three parameters. Introduce the missing type now.
+4. No bare meaningful literal. Name the constant now.
+5. No unused import, variable, or member in any file. Delete them now: extraction and refactoring strand imports, so re-check every file's import list.
+6. No mutable field a `final`/`readonly`/frozen form could replace; no setter that exists "just in case"; no runtime check a precise type could delete.
 
 A reply that fails the gate is unfinished work: finishing it is part of the
 task, not extra scope.

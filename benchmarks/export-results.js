@@ -97,9 +97,9 @@ function buildReport(evalId, rows) {
       : (legacy ? legacy.reason : 'n/a');
     lines.push(
       `| ${row.task} | ${row.model} | ${row.arm} | ${row.score.toFixed(2)} | ` +
-      `${metric('valid_code') ? (metric('valid_code').pass ? 'yes' : 'NO') : 'n/a'} | ` +
-      `${habitPass === undefined ? 'n/a' : habitPass ? 'pass' : 'FAIL'} | ${detail} | ` +
-      `${metric('ships_tests')?.pass ? 'yes' : 'NO'} | ${metric('correct')?.pass ? 'yes' : 'NO'} |`,
+      `${metric('valid_code') ? (metric('valid_code').pass ? 'YES' : 'NO') : 'n/a'} | ` +
+      `${habitPass === undefined ? 'n/a' : habitPass ? 'PASS' : 'FAIL'} | ${detail} | ` +
+      `${metric('ships_tests')?.pass ? 'YES' : 'NO'} | ${metric('correct')?.pass ? 'YES' : 'NO'} |`,
     );
     const key = `${row.model} / ${row.arm}`;
     const totals = armTotals.get(key) || { sum: 0, n: 0 };
