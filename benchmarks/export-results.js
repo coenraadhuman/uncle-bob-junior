@@ -70,48 +70,107 @@ function resultRows(data) {
   }));
 }
 
-function buildReport(evalId, rows) {
-  const lines = [
-    `# Benchmark run ${evalId}`,
-    '',
-    'Judges: one habit-hooks metric per code smell (0 occurrences = pass;',
-    'suggested smells carry half the weight of enforced ones), plus the',
-    'valid_code, ships_tests, and correct gates. Higher score = cleaner.',
-    'Generated code and full habit-hooks reports sit next to this file in',
-    '`src/` and `habit-hooks/`.',
-    '',
-    '| task | model | arm | score | valid code | habit-hooks | smells found | ships tests | correct |',
-    '|------|-------|-----|------:|:----------:|:-----------:|--------------|:-----------:|:-------:|',
-  ];
+// The full habit-hooks catch list, one report column per smell (enforced
+// first, then suggested). Wider than the language-restricted assert lists in
+// habit-hooks-assert.js on purpose: the scoreboard shows every smell the
+// tool can catch, so a 0 means "scanned, none found" for any language.
+const ENFORCED_SMELL_COLUMNS = [
+  'oversized-function', 'too-many-parameters', 'high-complexity', 'deep-nesting',
+  'oversized-file', 'unused-variable', 'unused-import', 'loose-equality',
+  'var-declaration', 'non-const-binding', 'duplicate-import', 'redundant-type-annotation',
+  'unused-class-member', 'unused-file', 'unused-export', 'unused-dependency',
+  'test-only-dead-code', 'parse-error',
+];
+const SUGGESTED_SMELL_COLUMNS = [
+  'warning-comment', 'explicit-any', 'non-null-assertion', 'non-essential-comment',
+  'duplicated-code', 'swallowed-exception',
+];
+const REPORT_SMELL_COLUMNS = [...ENFORCED_SMELL_COLUMNS, ...SUGGESTED_SMELL_COLUMNS];
+
+// A smell metric's reason is `no <rule>` on pass or `<count> <rule> at
+// <locations>` on fail, so the occurrence count is the leading integer.
+function smellCount(component) {
+  const count = Number.parseInt(component?.reason ?? '', 10);
+  return Number.isNaN(count) ? 0 : count;
+}
+
+function reportHeaderLines(smellColumns) {
+  const header = ['task', 'model', 'arm', 'score', 'valid code', 'habit-hooks', ...smellColumns, 'ships tests', 'correct'];
+  const alignment = header.map((column) => {
+    if (column === 'score' || smellColumns.includes(column)) return '---:';
+    if (['valid code', 'habit-hooks', 'ships tests', 'correct'].includes(column)) return ':---:';
+    return '---';
+  });
+  return [`| ${header.join(' | ')} |`, `| ${alignment.join(' | ')} |`];
+}
+
+function rowSmellCount(row, rule) {
+  return smellCount(row.components.find((c) => c.metric === `hh:${rule}`));
+}
+
+function reportRow(row, smellColumns) {
+  const metric = (name) => row.components.find((c) => c.metric === name);
+  // One component per smell (hh:*); older exports carry a single
+  // habit_hooks component instead, whose reason has no per-smell counts.
+  const hasSmellMetrics = row.components.some((c) => c.metric.startsWith('hh:'));
+  const habitPass = hasSmellMetrics
+    ? row.components.filter((c) => c.metric.startsWith('hh:')).every((c) => c.pass)
+    : metric('habit_hooks')?.pass;
+  const counts = smellColumns.map((rule) => (hasSmellMetrics ? rowSmellCount(row, rule) : 'n/a'));
+  const gate = (name) => (metric(name)?.pass ? 'YES' : 'NO');
+  return `| ${row.task} | ${row.model} | ${row.arm} | ${row.score.toFixed(2)} | ` +
+    `${metric('valid_code') ? (metric('valid_code').pass ? 'YES' : 'NO') : 'n/a'} | ` +
+    `${habitPass === undefined ? 'n/a' : habitPass ? 'PASS' : 'FAIL'} |` +
+    `${counts.map((count) => ` ${count} |`).join('')} ` +
+    `${gate('ships_tests')} | ${gate('correct')} |`;
+}
+
+// The compact table's columns: only the smells at least one row hit.
+function hitSmellColumns(rows) {
+  return REPORT_SMELL_COLUMNS.filter((rule) => rows.some((row) => rowSmellCount(row, rule) > 0));
+}
+
+function scoreboardLines(rows, smellColumns) {
+  return [...reportHeaderLines(smellColumns), ...rows.map((row) => reportRow(row, smellColumns))];
+}
+
+function meanScoreLines(rows) {
   const armTotals = new Map();
   for (const row of rows) {
-    const metric = (name) => row.components.find((c) => c.metric === name);
-    // One component per smell (hh:*); older exports carry a single
-    // habit_hooks component instead, so fall back to it.
-    const smells = row.components.filter((c) => c.metric.startsWith('hh:'));
-    const legacy = metric('habit_hooks');
-    const habitPass = smells.length ? smells.every((c) => c.pass) : legacy?.pass;
-    const failing = smells.filter((c) => !c.pass).map((c) => c.reason);
-    const detail = smells.length
-      ? (failing.length ? failing.join('; ') : 'clean')
-      : (legacy ? legacy.reason : 'n/a');
-    lines.push(
-      `| ${row.task} | ${row.model} | ${row.arm} | ${row.score.toFixed(2)} | ` +
-      `${metric('valid_code') ? (metric('valid_code').pass ? 'YES' : 'NO') : 'n/a'} | ` +
-      `${habitPass === undefined ? 'n/a' : habitPass ? 'PASS' : 'FAIL'} | ${detail} | ` +
-      `${metric('ships_tests')?.pass ? 'YES' : 'NO'} | ${metric('correct')?.pass ? 'YES' : 'NO'} |`,
-    );
     const key = `${row.model} / ${row.arm}`;
     const totals = armTotals.get(key) || { sum: 0, n: 0 };
     totals.sum += row.score;
     totals.n += 1;
     armTotals.set(key, totals);
   }
-  lines.push('', '## Mean score per model and arm', '');
-  for (const [key, totals] of armTotals) {
-    lines.push(`- **${key}**: ${(totals.sum / totals.n).toFixed(3)} (n=${totals.n})`);
-  }
-  return lines.join('\n') + '\n';
+  return [...armTotals].map(([key, totals]) => `- **${key}**: ${(totals.sum / totals.n).toFixed(3)} (n=${totals.n})`);
+}
+
+function buildReport(evalId, rows) {
+  return [
+    `# Benchmark run ${evalId}`,
+    '',
+    'Judges: one habit-hooks metric per code smell (0 occurrences = pass;',
+    'suggested smells carry half the weight of enforced ones), plus the',
+    'valid_code, ships_tests, and correct gates. Higher score = cleaner.',
+    'Each smell column holds the occurrence count (enforced smells first,',
+    'then suggested). The first table keeps only the smells with at least',
+    'one hit across the run; the second carries the full catch list. File',
+    'and line locations live in the `habit-hooks/` reports next to this',
+    'file; the generated code sits in `src/`.',
+    '',
+    '## Smells with hits',
+    '',
+    ...scoreboardLines(rows, hitSmellColumns(rows)),
+    '',
+    '## Full smell breakdown',
+    '',
+    ...scoreboardLines(rows, REPORT_SMELL_COLUMNS),
+    '',
+    '## Mean score per model and arm',
+    '',
+    ...meanScoreLines(rows),
+  ].join('\n') + '\n';
 }
 
 function writeCodeFiles(blocks, dir) {
@@ -171,4 +230,7 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { slug, resultRows, buildReport, writeRunArtifacts, exportRun, loadEval, newestEvalId };
+module.exports = {
+  slug, resultRows, buildReport, writeRunArtifacts, exportRun, loadEval, newestEvalId,
+  ENFORCED_SMELL_COLUMNS, SUGGESTED_SMELL_COLUMNS, REPORT_SMELL_COLUMNS,
+};

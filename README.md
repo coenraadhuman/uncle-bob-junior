@@ -639,26 +639,32 @@ npx promptfoo@latest view
 `/uncle-bob-junior-gain` renders the newest eval as a scoreboard. Method,
 caveats, and how to read the numbers: [benchmarks/](benchmarks/).
 
-### Latest results (27-08-2026, per-generation means)
+### Latest results (28-08-2026, per-generation means)
 
-Java tasks (email validator, CSV parser, retry helper, rate limiter, order
-processor). Lower is better everywhere except **ships tests** and **correct**.
+#### Smells with hits
 
-| model | arm | longest fn | fns > 20 | nesting | magic | mutable fields | ships tests | correct | cost/gen |
-|-------|-----|--:|--:|--:|--:|--:|--:|--:|--:|
-| haiku | baseline | 22.7 | 0.56 | 4.5 | 4.2 | 0.70 | 2% | 98% | $0.02 |
-| haiku | ruleset | **14.9** | **0.18** | **4.0** | **2.6** | **0.26** | **72%** | 98% | $0.03 |
-| sonnet | baseline | 22.4 | 0.50 | 4.3 | 3.3 | 0.08 | 0% | 100% | $0.06 |
-| sonnet | ruleset | **12.5** | **0.00** | **3.6** | **1.3** | 0.22 | **98%** | 100% | $0.14 |
-| fable | baseline | 24.2 | 0.40 | 4.1 | 5.4 | 0.00 | 20% | 100% | $0.25 |
-| fable | ruleset\* | **13.8** | **0.00** | **3.8** | **1.7** | 0.00 | **80%** | 100% | $0.41 |
-
-Haiku and sonnet: n=50 generations per arm (10 runs × 5 tasks) with the
-final-gate ruleset. \*Fable: n=10 per arm, measured before the final gate was
-added; its ships-tests share is expected to rise like sonnet's did (0% → 98%
-with the gate). Nesting counts braces from the file top, so Java's floor is 3
-(class + method + one block). Correctness never regresses: the ruleset arm
-passes the functional gate exactly as often as baseline.
+| task      | model             | arm                   | score | valid code | habit-hooks | oversized-function | too-many-parameters | high-complexity | unused-import | ships tests | correct |
+|-----------|-------------------|-----------------------|------:|:----------:|:-----------:|-------------------:|--------------------:|----------------:|--------------:|:-----------:|:-------:|
+| email     | claude-cli:haiku  | baseline (no ruleset) |  0.88 |    YES     |    PASS     |                  0 |                   0 |               0 |             0 |     NO      |   YES   |
+| email     | claude-cli:haiku  | uncle-bob-junior      |  1.00 |    YES     |    PASS     |                  0 |                   0 |               0 |             0 |     YES     |   YES   |
+| email     | claude-cli:sonnet | baseline (no ruleset) |  0.88 |    YES     |    PASS     |                  0 |                   0 |               0 |             0 |     NO      |   YES   |
+| email     | claude-cli:sonnet | uncle-bob-junior      |  1.00 |    YES     |    PASS     |                  0 |                   0 |               0 |             0 |     YES     |   YES   |
+| csv       | claude-cli:haiku  | baseline (no ruleset) |  0.86 |    YES     |    FAIL     |                  1 |                   0 |               0 |             0 |     NO      |   YES   |
+| csv       | claude-cli:haiku  | uncle-bob-junior      |  0.98 |    YES     |    FAIL     |                  1 |                   0 |               0 |             0 |     YES     |   YES   |
+| csv       | claude-cli:sonnet | baseline (no ruleset) |  0.86 |    YES     |    FAIL     |                  1 |                   0 |               0 |             0 |     NO      |   YES   |
+| csv       | claude-cli:sonnet | uncle-bob-junior      |  1.00 |    YES     |    PASS     |                  0 |                   0 |               0 |             0 |     YES     |   YES   |
+| retry     | claude-cli:haiku  | baseline (no ruleset) |  0.88 |    YES     |    PASS     |                  0 |                   0 |               0 |             0 |     NO      |   YES   |
+| retry     | claude-cli:sonnet | baseline (no ruleset) |  0.84 |    YES     |    FAIL     |                  1 |                   0 |               1 |             0 |     NO      |   YES   |
+| retry     | claude-cli:haiku  | uncle-bob-junior      |  1.00 |    YES     |    PASS     |                  0 |                   0 |               0 |             0 |     YES     |   YES   |
+| retry     | claude-cli:sonnet | uncle-bob-junior      |  1.00 |    YES     |    PASS     |                  0 |                   0 |               0 |             0 |     YES     |   YES   |
+| ratelimit | claude-cli:haiku  | baseline (no ruleset) |  0.86 |    YES     |    FAIL     |                  0 |                   0 |               0 |             1 |     NO      |   YES   |
+| ratelimit | claude-cli:haiku  | uncle-bob-junior      |  1.00 |    YES     |    PASS     |                  0 |                   0 |               0 |             0 |     YES     |   YES   |
+| ratelimit | claude-cli:sonnet | baseline (no ruleset) |  0.88 |    YES     |    PASS     |                  0 |                   0 |               0 |             0 |     NO      |   YES   |
+| ratelimit | claude-cli:sonnet | uncle-bob-junior      |  1.00 |    YES     |    PASS     |                  0 |                   0 |               0 |             0 |     YES     |   YES   |
+| order     | claude-cli:haiku  | baseline (no ruleset) |  0.86 |    YES     |    FAIL     |                  1 |                   0 |               0 |             0 |     NO      |   YES   |
+| order     | claude-cli:haiku  | uncle-bob-junior      |  0.97 |    YES     |    FAIL     |                  1 |                   1 |               0 |             0 |     YES     |   YES   |
+| order     | claude-cli:sonnet | baseline (no ruleset) |  0.86 |    YES     |    FAIL     |                  1 |                   0 |               0 |             0 |     NO      |   YES   |
+| order     | claude-cli:sonnet | uncle-bob-junior      |  1.00 |    YES     |    PASS     |                  0 |                   0 |               0 |             0 |     YES     |   YES   |
 
 ## Install
 

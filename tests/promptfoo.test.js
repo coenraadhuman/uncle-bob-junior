@@ -265,13 +265,80 @@ test('exporter flattens eval JSON into per-arm rows', () => {
   assert.equal(rows[1].score, 1);
 });
 
-test('report.md carries the scoreboard and per-arm means', () => {
+// One count cell per catch-list smell, in header order.
+function smellCells(counts) {
+  return exporter.REPORT_SMELL_COLUMNS
+    .map((rule) => counts[rule] ?? 0)
+    .join(' | ');
+}
+
+test('report.md carries one occurrence-count column per smell plus per-arm means', () => {
   const rows = exporter.resultRows(FIXTURE_EVAL);
   const report = exporter.buildReport(FIXTURE_EVAL.evalId, rows);
-  assert.ok(report.includes('| email | haiku | baseline (no ruleset) | 0.40 | YES | FAIL | 3 oversized-function at OrderHandler.java:3 |'), report);
-  assert.ok(report.includes('| email | haiku | uncle-bob-junior | 1.00 | YES | PASS | clean |'), report);
+  const header = `| task | model | arm | score | valid code | habit-hooks | ${exporter.REPORT_SMELL_COLUMNS.join(' | ')} | ships tests | correct |`;
+  assert.ok(report.includes(header), report);
+  assert.ok(report.includes(`| email | haiku | baseline (no ruleset) | 0.40 | YES | FAIL | ${smellCells({ 'oversized-function': 3 })} | NO | YES |`), report);
+  assert.ok(report.includes(`| email | haiku | uncle-bob-junior | 1.00 | YES | PASS | ${smellCells({})} | YES | YES |`), report);
   assert.ok(report.includes('**haiku / uncle-bob-junior**: 1.000 (n=1)'));
   assert.ok(report.includes('**haiku / baseline (no ruleset)**: 0.400 (n=1)'));
+});
+
+test('report.md leads with a compact table of only the smells the run hit', () => {
+  const rows = exporter.resultRows(FIXTURE_EVAL);
+  const report = exporter.buildReport(FIXTURE_EVAL.evalId, rows);
+  const compact = report.indexOf('## Smells with hits');
+  const full = report.indexOf('## Full smell breakdown');
+  assert.ok(compact >= 0 && full > compact, 'compact table comes before the full one');
+  const compactSection = report.slice(compact, full);
+  assert.ok(compactSection.includes('| task | model | arm | score | valid code | habit-hooks | oversized-function | ships tests | correct |'), compactSection);
+  assert.ok(compactSection.includes('| email | haiku | baseline (no ruleset) | 0.40 | YES | FAIL | 3 | NO | YES |'), compactSection);
+  assert.ok(compactSection.includes('| email | haiku | uncle-bob-junior | 1.00 | YES | PASS | 0 | YES | YES |'), compactSection);
+  assert.ok(!compactSection.includes('unused-import'), 'smells nothing hit stay out of the compact table');
+});
+
+test('a clean run leaves the compact table with no smell columns', () => {
+  const cleanEval = {
+    ...FIXTURE_EVAL,
+    results: { results: FIXTURE_EVAL.results.results.slice(1) },
+  };
+  const report = exporter.buildReport(cleanEval.evalId, exporter.resultRows(cleanEval));
+  const compactSection = report.slice(report.indexOf('## Smells with hits'), report.indexOf('## Full smell breakdown'));
+  assert.ok(compactSection.includes('| task | model | arm | score | valid code | habit-hooks | ships tests | correct |'), compactSection);
+  assert.ok(compactSection.includes('| email | haiku | uncle-bob-junior | 1.00 | YES | PASS | YES | YES |'), compactSection);
+});
+
+test('report smell columns cover the enforced-then-suggested catch list', () => {
+  assert.equal(exporter.REPORT_SMELL_COLUMNS.length, 24);
+  assert.equal(exporter.REPORT_SMELL_COLUMNS[0], 'oversized-function');
+  assert.equal(exporter.ENFORCED_SMELL_COLUMNS.length, 18);
+  assert.equal(exporter.SUGGESTED_SMELL_COLUMNS.length, 6);
+  assert.deepEqual(
+    exporter.REPORT_SMELL_COLUMNS,
+    [...exporter.ENFORCED_SMELL_COLUMNS, ...exporter.SUGGESTED_SMELL_COLUMNS],
+  );
+});
+
+test('legacy exports without per-smell metrics get n/a smell cells', () => {
+  const legacyEval = {
+    evalId: 'eval-LEG-2026-08-27T12:00:00',
+    results: {
+      results: [{
+        prompt: { label: 'baseline (no ruleset)' },
+        provider: { label: 'haiku' },
+        testCase: { description: 'email' },
+        response: { output: DIRTY_JAVA_REPLY },
+        gradingResult: {
+          score: 0.5,
+          componentResults: [
+            { assertion: { metric: 'habit_hooks' }, pass: false, score: 0.5, reason: '2 issues' },
+          ],
+        },
+      }],
+    },
+  };
+  const report = exporter.buildReport(legacyEval.evalId, exporter.resultRows(legacyEval));
+  const naCells = exporter.REPORT_SMELL_COLUMNS.map(() => 'n/a').join(' | ');
+  assert.ok(report.includes(`| FAIL | ${naCells} |`), report);
 });
 
 test('writeRunArtifacts lays out src, habit-hooks reports, and report.md', () => {

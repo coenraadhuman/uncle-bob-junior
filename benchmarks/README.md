@@ -81,8 +81,12 @@ node benchmarks/export-results.js <eval-id>  # a specific one
 Each run directory under `benchmarks/results/<eval-id>/` contains:
 
 - `report.md` — scoreboard per task, model, and arm: weighted score, the
-  habit-hooks pass/FAIL verdict with the smell breakdown, ships-tests and
-  correctness, plus mean score per model and arm.
+  habit-hooks pass/FAIL verdict, one occurrence-count column per smell,
+  ships-tests and correctness, plus mean score per model and arm. Two
+  tables carry the same rows: a compact one keeping only the smells with
+  at least one hit across the run, then the full habit-hooks catch list
+  (enforced smells first, then suggested). File and line locations for
+  each hit live in the `habit-hooks/` reports.
 - `src/<task>/<model>/<arm>/main/` — the production code as real source
   files, one file per top-level Java type (imports attributed to the types
   that use them; a genuinely unused import survives once, so the
