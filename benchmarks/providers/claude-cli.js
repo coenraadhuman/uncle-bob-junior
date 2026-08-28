@@ -16,23 +16,45 @@ const path = require('path');
 
 const RUN_TIMEOUT_MS = 300_000;
 
-// One headless generation. Returns { text, costUsd, durationMs } or null on failure.
-function askClaude(prompt, model, systemAppend) {
-  const cliArgs = ['-p', prompt, '--safe-mode', '--model', model, '--output-format', 'json'];
+// The benchmark is single-shot text generation, so the session gets no tools:
+// with tools available, models sometimes "verify" their answer by running it,
+// and a task whose program never exits (Game of Life redraws forever) then
+// hangs the whole eval until the timeout.
+function cliArgsFor(prompt, model, systemAppend) {
+  const cliArgs = ['-p', prompt, '--safe-mode', '--tools', '', '--model', model, '--output-format', 'json'];
   if (systemAppend) cliArgs.push('--append-system-prompt', systemAppend);
+  return cliArgs;
+}
+
+// The CLI can exit 0 with valid JSON for a failed generation (API error,
+// usage limit): is_error/subtype carry the verdict and `result` is empty.
+// Those must surface as errors, not score as an empty answer.
+function interpretReply(reply) {
+  if (reply.is_error || (reply.subtype && reply.subtype !== 'success')) {
+    return { error: `claude CLI reported ${reply.subtype || 'is_error'}: ${String(reply.result || '').slice(0, 200)}` };
+  }
+  if (String(reply.result || '').trim() === '') {
+    return { error: 'claude CLI returned an empty result' };
+  }
+  return { text: reply.result, costUsd: reply.total_cost_usd ?? null, durationMs: reply.duration_ms ?? null };
+}
+
+// One headless generation. Returns { text, costUsd, durationMs } or { error }.
+function askClaude(prompt, model, systemAppend) {
   const emptyCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ubj-bench-'));
   try {
-    const raw = execFileSync('claude', cliArgs, {
+    const raw = execFileSync('claude', cliArgsFor(prompt, model, systemAppend), {
       encoding: 'utf8',
       timeout: RUN_TIMEOUT_MS,
+      // SIGTERM can be survived mid-request and would leave execFileSync
+      // blocked forever; SIGKILL makes the timeout a real upper bound.
+      killSignal: 'SIGKILL',
       cwd: emptyCwd,
       maxBuffer: 16 * 1024 * 1024,
     });
-    const reply = JSON.parse(raw);
-    return { text: reply.result || '', costUsd: reply.total_cost_usd ?? null, durationMs: reply.duration_ms ?? null };
+    return interpretReply(JSON.parse(raw));
   } catch (error) {
-    console.error(`  run failed: ${String(error.message).slice(0, 200)}`);
-    return null;
+    return { error: `claude CLI run failed: ${String(error.message).slice(0, 200)}` };
   } finally {
     fs.rmSync(emptyCwd, { recursive: true, force: true });
   }
@@ -69,7 +91,7 @@ class ClaudeCliProvider {
   async callApi(prompt) {
     const { system, user } = parsePromptMessages(prompt);
     const reply = askClaude(user, this.model, system);
-    if (!reply) return { error: `claude CLI run failed (model ${this.model})` };
+    if (reply.error) return { error: `${reply.error} (model ${this.model})` };
     return { output: reply.text, cost: reply.costUsd ?? undefined };
   }
 }
@@ -77,3 +99,5 @@ class ClaudeCliProvider {
 module.exports = ClaudeCliProvider;
 module.exports.parsePromptMessages = parsePromptMessages;
 module.exports.askClaude = askClaude;
+module.exports.cliArgsFor = cliArgsFor;
+module.exports.interpretReply = interpretReply;

@@ -111,17 +111,19 @@ test('shipsTests gates on the whole reply, not just production code', () => {
   assert.equal(missing.score, 0);
 });
 
-test('promptfooconfig.yaml references only files and metric exports that exist', () => {
-  const config = fs.readFileSync(path.join(root, 'benchmarks', 'promptfooconfig.yaml'), 'utf8');
-  for (const match of config.matchAll(/file:\/\/([\w./-]+?)(?::(\w+))?(?=[\s"]|$)/gm)) {
-    const [, relPath, exportName] = match;
-    const absPath = path.join(root, 'benchmarks', relPath);
-    assert.ok(fs.existsSync(absPath), `${relPath} referenced by promptfooconfig.yaml must exist`);
-    if (exportName) {
-      assert.equal(typeof require(absPath)[exportName], 'function', `${relPath} must export ${exportName}`);
+for (const configName of ['promptfooconfig.yaml', 'promptfooconfig.gameoflife.yaml']) {
+  test(`${configName} references only files and metric exports that exist`, () => {
+    const config = fs.readFileSync(path.join(root, 'benchmarks', configName), 'utf8');
+    for (const match of config.matchAll(/file:\/\/([\w./-]+?)(?::(\w+))?(?=[\s"]|$)/gm)) {
+      const [, relPath, exportName] = match;
+      const absPath = path.join(root, 'benchmarks', relPath);
+      assert.ok(fs.existsSync(absPath), `${relPath} referenced by ${configName} must exist`);
+      if (exportName) {
+        assert.equal(typeof require(absPath)[exportName], 'function', `${relPath} must export ${exportName}`);
+      }
     }
-  }
-});
+  });
+}
 
 const ClaudeCliProvider = require('../benchmarks/providers/claude-cli.js');
 const { parsePromptMessages } = require('../benchmarks/providers/claude-cli.js');
@@ -142,6 +144,26 @@ test('provider treats a plain-string prompt as the user prompt', () => {
   const parsed = parsePromptMessages('just a bare prompt');
   assert.equal(parsed.system, null);
   assert.equal(parsed.user, 'just a bare prompt');
+});
+
+test('provider runs the CLI without tools so a generation cannot hang on running its own answer', () => {
+  const { cliArgsFor } = ClaudeCliProvider;
+  const args = cliArgsFor('the task', 'fable', 'the ruleset');
+  const toolsFlag = args.indexOf('--tools');
+  assert.ok(toolsFlag !== -1 && args[toolsFlag + 1] === '', 'all tools disabled: single-shot text generation');
+  assert.ok(args.includes('--safe-mode'));
+  assert.deepEqual(args.slice(-2), ['--append-system-prompt', 'the ruleset']);
+  assert.ok(!cliArgsFor('the task', 'fable', null).includes('--append-system-prompt'), 'baseline gets no system append');
+});
+
+test('provider surfaces CLI-level failures instead of scoring empty replies', () => {
+  const { interpretReply } = ClaudeCliProvider;
+  const ok = interpretReply({ subtype: 'success', is_error: false, result: 'the reply', total_cost_usd: 0.2, duration_ms: 1000 });
+  assert.deepEqual(ok, { text: 'the reply', costUsd: 0.2, durationMs: 1000 });
+
+  assert.match(interpretReply({ is_error: true, result: 'limit reached' }).error, /is_error: limit reached/);
+  assert.match(interpretReply({ subtype: 'error_during_execution', result: '' }).error, /error_during_execution/);
+  assert.match(interpretReply({ subtype: 'success', result: '   ' }).error, /empty result/);
 });
 
 test('provider id is model-scoped so promptfoo can tell the columns apart', () => {
@@ -455,6 +477,71 @@ test('exported main/ contains one file per top-level class', () => {
     assert.deepEqual(fs.readdirSync(mainDir).sort(), ['LineItem.java', 'OrderProcessor.java', 'Pricer.java']);
   } finally {
     fs.rmSync(resultsDir, { recursive: true, force: true });
+  }
+});
+
+const gameoflife = require('../benchmarks/gameoflife-examples.js');
+
+const GAMEOFLIFE_ROW = (model, arm, output) => ({
+  prompt: { label: arm },
+  provider: { label: model },
+  testCase: { description: gameoflife.GAME_OF_LIFE_TASK },
+  response: { output },
+});
+
+const GAMEOFLIFE_EVAL_RESULTS = [
+  GAMEOFLIFE_ROW('haiku', 'baseline (no ruleset)', '# Game of Life\n```java\npublic class Gol {}\n```'),
+  GAMEOFLIFE_ROW('haiku', 'uncle-bob-junior', '# Game of Life\n```java\npublic class GameOfLife {}\n```'),
+  GAMEOFLIFE_ROW('fable', 'uncle-bob-junior', '```java\npublic final class Life {}\n```'),
+  { ...GAMEOFLIFE_ROW('sonnet', 'uncle-bob-junior', 'unrelated reply'), testCase: { description: 'email' } },
+  GAMEOFLIFE_ROW('sonnet', 'uncle-bob-junior', '   '),
+];
+
+test('gameoflife export stores one reply.md per model and arm, gameoflife rows only', () => {
+  const examplesDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ubj-examples-test-'));
+  try {
+    const written = gameoflife.exportExamples(GAMEOFLIFE_EVAL_RESULTS, { examplesDir });
+    assert.deepEqual(written, [
+      path.join(examplesDir, 'haiku', 'baseline-no-ruleset', 'reply.md'),
+      path.join(examplesDir, 'haiku', 'uncle-bob-junior', 'reply.md'),
+      path.join(examplesDir, 'fable', 'uncle-bob-junior', 'reply.md'),
+    ]);
+    assert.ok(fs.readFileSync(written[0], 'utf8').includes('class Gol'), 'baseline reply survives next to the ruleset reply');
+    assert.ok(fs.readFileSync(written[1], 'utf8').includes('class GameOfLife'), 'arms of one model must not overwrite each other');
+    assert.deepEqual(fs.readdirSync(path.join(examplesDir, 'haiku', 'uncle-bob-junior')), ['reply.md'], 'reply.md is the only artifact');
+    assert.ok(!fs.existsSync(path.join(examplesDir, 'sonnet')), 'other tasks and blank replies are skipped');
+  } finally {
+    fs.rmSync(examplesDir, { recursive: true, force: true });
+  }
+});
+
+test('gameoflife export accepts a full eval export JSON too', () => {
+  const examplesDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ubj-examples-json-'));
+  try {
+    const written = gameoflife.exportExamples({ results: { results: GAMEOFLIFE_EVAL_RESULTS } }, { examplesDir });
+    assert.equal(written.length, 3);
+  } finally {
+    fs.rmSync(examplesDir, { recursive: true, force: true });
+  }
+});
+
+test('gameoflife extension hook only acts on afterAll and never fails the eval', async () => {
+  await gameoflife.extensionHook('beforeAll', {});
+  await gameoflife.extensionHook('afterEach', { results: undefined });
+  // afterAll with unusable results must be swallowed, not thrown.
+  await gameoflife.extensionHook('afterAll', {});
+});
+
+test('gameoflife config is standalone: both arms, examples export, no judges', () => {
+  const config = fs.readFileSync(path.join(root, 'benchmarks', 'promptfooconfig.gameoflife.yaml'), 'utf8');
+  assert.ok(config.includes('gameoflife-examples.js:extensionHook'), 'exports replies to examples/');
+  assert.ok(!config.includes('promptfoo-extension.js'), 'must not export to results/');
+  assert.ok(!config.includes('defaultTest'), 'no judges: the replies are the deliverable');
+  assert.ok(config.includes('arms/uncle-bob-junior.js'));
+  assert.ok(config.includes('arms/baseline.js'), 'baseline arm generates the comparison reply');
+  assert.ok(config.includes(`description: ${gameoflife.GAME_OF_LIFE_TASK}\n`), 'task description must match the exporter filter');
+  for (const requirement of ["Conway's Game of Life", 'Maven', 'pom.xml', 'terminal', 'stdout']) {
+    assert.ok(config.includes(requirement), `task must demand: ${requirement}`);
   }
 });
 

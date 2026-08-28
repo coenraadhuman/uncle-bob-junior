@@ -171,4 +171,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { slug, resultRows, buildReport, writeRunArtifacts, exportRun };
+module.exports = { slug, resultRows, buildReport, writeRunArtifacts, exportRun, loadEval, newestEvalId };

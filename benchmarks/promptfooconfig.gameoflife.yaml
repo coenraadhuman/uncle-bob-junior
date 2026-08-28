@@ -1,0 +1,40 @@
+# Standalone Game of Life showcase — deliberately NOT part of the main
+# benchmark suite. It runs only when invoked explicitly:
+#
+#   npx promptfoo@latest eval -c benchmarks/promptfooconfig.gameoflife.yaml
+#
+# One generation per model and arm (baseline and uncle-bob-junior). There are
+# no judges and no results/ export: the extension stores each full reply as
+# examples/<model>/<arm>/reply.md in the repo root, and nothing else.
+# Re-export a past run: node benchmarks/gameoflife-examples.js <eval-id>
+description: "Game of Life examples: one generation per model and arm, each reply stored as examples/<model>/<arm>/reply.md."
+
+providers:
+  - id: file://providers/claude-cli.js
+    label: haiku
+    config: { model: haiku }
+  - id: file://providers/claude-cli.js
+    label: sonnet
+    config: { model: sonnet }
+  - id: file://providers/claude-cli.js
+    label: fable
+    config: { model: fable }
+
+prompts:
+  - id: file://arms/baseline.js
+    label: baseline (no ruleset)
+  - id: file://arms/uncle-bob-junior.js
+    label: uncle-bob-junior
+
+extensions:
+  - file://gameoflife-examples.js:extensionHook
+
+tests:
+  - description: gameoflife
+    vars:
+      task: >-
+        Write a Java implementation of Conway's Game of Life.
+        Use Maven as the build tool and include the pom.xml in a fenced xml block.
+        The program must run purely in the terminal: the UI stays in the same
+        position for the whole simulation with no new lines, printing each
+        generation to stdout.

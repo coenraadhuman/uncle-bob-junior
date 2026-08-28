@@ -47,7 +47,10 @@ npx promptfoo@latest view
 No API key needed: the provider in [`providers/claude-cli.js`](providers/claude-cli.js)
 drives the authenticated Claude Code CLI (`claude` on PATH, logged in) with
 `--safe-mode`, so your own CLAUDE.md, hooks, and plugins (including an
-installed uncle-bob-junior) cannot leak into either arm. Both arms are
+installed uncle-bob-junior) cannot leak into either arm. The session also
+gets no tools (`--tools ""`): generations are single-shot text, so a model
+can never hang the eval by running its own answer (the Game of Life task
+produces a program that never exits). Both arms are
 prompt functions in [`arms/`](arms/) — baseline sends the bare task, the
 ruleset arm loads `skills/uncle-bob-junior/SKILL.md` as system prompt — and
 the asserts in [`promptfoo-metrics.js`](promptfoo-metrics.js) wrap the
@@ -91,6 +94,23 @@ Each run directory under `benchmarks/results/<eval-id>/` contains:
   points at a file in the run directory. The plugin set matches the languages
   the answer used (java, python, typescript, php + generic), and the scan
   config is removed afterwards.
+
+## Game of Life examples (standalone)
+
+[`promptfooconfig.gameoflife.yaml`](promptfooconfig.gameoflife.yaml) is a
+separate showcase config, deliberately not part of the main suite: it runs
+only when invoked explicitly:
+
+```bash
+npx promptfoo@latest eval -c benchmarks/promptfooconfig.gameoflife.yaml
+```
+
+One task (a terminal-only Conway's Game of Life with a Maven `pom.xml`, the
+grid redrawn in place with no new lines, each generation printed to stdout),
+both arms, all three models. There are no judges and no `results/` export:
+the run stores only each full reply as
+[`examples/`](../examples/)`<model>/<arm>/reply.md` in the repo root.
+Re-export a past run with `node benchmarks/gameoflife-examples.js <eval-id>`.
 
 ## Reading the results
 
