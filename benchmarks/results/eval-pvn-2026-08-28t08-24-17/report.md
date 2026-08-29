@@ -65,3 +65,11 @@ file; the generated code sits in `src/`.
 - **claude-cli:sonnet / baseline (no ruleset)**: 0.850 (n=5)
 - **claude-cli:haiku / uncle-bob-junior**: 0.963 (n=5)
 - **claude-cli:sonnet / uncle-bob-junior**: 1.000 (n=5)
+
+```mermaid
+xychart-beta
+    title "Mean score per model and arm"
+    x-axis ["claude-cli:haiku / baseline (no ruleset)", "claude-cli:sonnet / baseline (no ruleset)", "claude-cli:haiku / uncle-bob-junior", "claude-cli:sonnet / uncle-bob-junior"]
+    y-axis "mean score" 0 --> 1
+    bar [0.863, 0.850, 0.963, 1.000]
+```

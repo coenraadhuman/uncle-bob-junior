@@ -18,7 +18,7 @@ const os = require('os');
 const path = require('path');
 
 const { productionBlocks, extractCode } = require('./promptfoo-metrics');
-const { codeFiles, pluginsFor } = require('./extract-files');
+const { productionFiles, pluginsFor } = require('./extract-files');
 
 const SCAN_TIMEOUT_MS = 60_000;
 // Per rule, the score falls linearly to 0 at this many occurrences.
@@ -105,7 +105,7 @@ function scanDir(dir, plugins) {
 function scanReply(output) {
   const blocks = productionBlocks(String(output || ''));
   if (blocks.length === 0) blocks.push(extractCode(String(output || '')));
-  const files = codeFiles(blocks);
+  const files = productionFiles(blocks);
   if (files.length === 0) {
     return { skipped: false, report: 'no valid code to scan (snippets excluded)\n', issues: [], total: 0, fileCount: 0 };
   }

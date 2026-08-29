@@ -172,10 +172,18 @@ test('provider id is model-scoped so promptfoo can tell the columns apart', () =
   assert.equal(new ClaudeCliProvider({}).id(), 'claude-cli:haiku');
 });
 
+test('provider carries the arm in its label so the promptfoo graphs can tell the arms apart', () => {
+  const { ARM_SEPARATOR } = ClaudeCliProvider;
+  const provider = new ClaudeCliProvider({ config: { model: 'sonnet', arm: 'uncle-bob-junior' } });
+  assert.equal(provider.id(), `claude-cli:sonnet${ARM_SEPARATOR}uncle-bob-junior`);
+  assert.equal(provider.label, provider.id(), 'promptfoo displays the instance label');
+  assert.equal(new ClaudeCliProvider({ config: { model: 'sonnet' } }).id(), 'claude-cli:sonnet', 'no arm, no suffix');
+});
+
 const { spawnSync } = require('child_process');
 const habitHooksAssert = require('../benchmarks/habit-hooks-assert.js');
 const { parseIssues } = habitHooksAssert;
-const { splitJavaTypes, fileNameFor, codeFiles: extractCodeFiles, pluginsFor } = require('../benchmarks/extract-files.js');
+const { splitJavaTypes, fileNameFor, codeFiles: extractCodeFiles, pluginsFor, isTestFile, productionFiles } = require('../benchmarks/extract-files.js');
 const hasHabitHooks = spawnSync('habit-hooks', ['--version'], { encoding: 'utf8' }).status === 0;
 
 test('parseIssues reads rule names and counts from habit-hooks output', () => {
@@ -265,6 +273,19 @@ test('exporter flattens eval JSON into per-arm rows', () => {
   assert.equal(rows[1].score, 1);
 });
 
+test('exporter strips the arm suffix graph-friendly providers carry', () => {
+  const { ARM_SEPARATOR } = ClaudeCliProvider;
+  const [row] = exporter.resultRows([{
+    prompt: { label: 'uncle-bob-junior' },
+    provider: { label: `claude-cli:haiku${ARM_SEPARATOR}uncle-bob-junior` },
+    testCase: { description: 'email' },
+    response: { output: 'x' },
+    gradingResult: { score: 1, componentResults: [] },
+  }]);
+  assert.equal(row.model, 'claude-cli:haiku');
+  assert.equal(row.arm, 'uncle-bob-junior');
+});
+
 // One count cell per catch-list smell, in header order.
 function smellCells(counts) {
   return exporter.REPORT_SMELL_COLUMNS
@@ -294,6 +315,22 @@ test('report.md leads with a compact table of only the smells the run hit', () =
   assert.ok(compactSection.includes('| email | haiku | baseline (no ruleset) | 0.40 | YES | FAIL | 3 | NO | YES |'), compactSection);
   assert.ok(compactSection.includes('| email | haiku | uncle-bob-junior | 1.00 | YES | PASS | 0 | YES | YES |'), compactSection);
   assert.ok(!compactSection.includes('unused-import'), 'smells nothing hit stay out of the compact table');
+});
+
+test('report.md charts the mean score per model and arm', () => {
+  const report = exporter.buildReport(FIXTURE_EVAL.evalId, exporter.resultRows(FIXTURE_EVAL));
+  assert.ok(report.includes('xychart-beta'), report);
+  assert.ok(report.includes('x-axis ["haiku / baseline (no ruleset)", "haiku / uncle-bob-junior"]'), report);
+  assert.ok(report.includes('bar [0.400, 1.000]'), report);
+});
+
+test('cells pass on aggregate score against a threshold that keeps gates fatal', () => {
+  const yaml = fs.readFileSync(path.join(__dirname, '..', 'benchmarks', 'promptfooconfig.yaml'), 'utf8');
+  const threshold = Number(yaml.match(/^\s*threshold:\s*([\d.]+)/m)?.[1]);
+  const totalWeight = 16;
+  const gateWeight = 2;
+  assert.ok(threshold > (totalWeight - gateWeight) / totalWeight, 'a failed gate must sink the cell');
+  assert.ok(threshold < (totalWeight - 1) / totalWeight, 'one fully failed smell must not sink the cell');
 });
 
 test('a clean run leaves the compact table with no smell columns', () => {
@@ -515,6 +552,46 @@ test('splitJavaTypes leaves single-type and nested-type code alone', () => {
   assert.equal(splitJavaTypes('int x = 1;'), null);
 });
 
+test('splitJavaTypes attributes wildcard imports to the units that use the package', () => {
+  const units = splitJavaTypes([
+    'import java.util.*;',
+    'import java.io.*;',
+    'import com.example.legacy.*;',
+    '',
+    'public class Store {',
+    '    private final Map<String, String> entries = new HashMap<>();',
+    '}',
+    '',
+    'class Config {',
+    '    private final int port = 8080;',
+    '}',
+  ].join('\n'));
+  const byName = Object.fromEntries(units.map((unit) => [unit.name, unit.code]));
+  assert.ok(byName.Store.includes('import java.util.*;'), 'Store uses Map/HashMap');
+  assert.ok(!byName.Config.includes('import java.util.*;'), 'Config uses nothing from java.util');
+  assert.ok(byName.Store.includes('import java.io.*;'), 'a known wildcard nothing uses survives once, in the first unit');
+  assert.ok(!byName.Config.includes('import java.io.*;'));
+  assert.ok(byName.Config.includes('import com.example.legacy.*;'), 'unknown packages still go to every unit');
+});
+
+test('a test class inside a production block is filtered from the judged files', () => {
+  const blocks = [{
+    lang: 'java',
+    code: [
+      'public class Analyzer {',
+      '    public int run() { return 1; }',
+      '}',
+      '',
+      'class AnalyzerTest {',
+      '    static void runTests() { assert new Analyzer().run() == 1; }',
+      '}',
+    ].join('\n'),
+  }];
+  assert.deepEqual(extractCodeFiles(blocks).map((f) => f.name), ['Analyzer.java', 'AnalyzerTest.java']);
+  assert.deepEqual(productionFiles(blocks).map((f) => f.name), ['Analyzer.java']);
+  assert.equal(isTestFile({ name: 'Anything.java', content: 'import org.junit.Test;' }), true, 'junit marks a test file regardless of name');
+});
+
 test('codeFiles splits multi-class java blocks and keeps other languages whole', () => {
   const files = extractCodeFiles([
     { lang: 'java', code: MULTI_CLASS_JAVA },
@@ -542,6 +619,26 @@ test('exported main/ contains one file per top-level class', () => {
     const runDir = exporter.exportRun('eval-split', [row], { resultsDir, scan: fakeScan });
     const mainDir = path.join(runDir, 'src', 'order', 'haiku', 'uncle-bob-junior', 'main');
     assert.deepEqual(fs.readdirSync(mainDir).sort(), ['LineItem.java', 'OrderProcessor.java', 'Pricer.java']);
+  } finally {
+    fs.rmSync(resultsDir, { recursive: true, force: true });
+  }
+});
+
+test('a test class inside a production block is exported to test/, not main/', () => {
+  const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ubj-stray-test-export-'));
+  try {
+    const row = {
+      prompt: { label: 'uncle-bob-junior' },
+      provider: { label: 'haiku' },
+      testCase: { description: 'statement' },
+      response: { output: '```java\npublic class Analyzer {\n    public int run() { return 1; }\n}\n\nclass AnalyzerTest {\n    static void runTests() { }\n}\n```' },
+      gradingResult: { score: 1, componentResults: [] },
+    };
+    const fakeScan = () => ({ skipped: false, report: 'fake\n', issues: [], total: 0 });
+    const runDir = exporter.exportRun('eval-stray', [row], { resultsDir, scan: fakeScan });
+    const armDir = path.join(runDir, 'src', 'statement', 'haiku', 'uncle-bob-junior');
+    assert.deepEqual(fs.readdirSync(path.join(armDir, 'main')), ['Analyzer.java']);
+    assert.deepEqual(fs.readdirSync(path.join(armDir, 'test')), ['AnalyzerTest.java']);
   } finally {
     fs.rmSync(resultsDir, { recursive: true, force: true });
   }

@@ -1,26 +1,22 @@
-I'll create a complete Conway's Game of Life implementation with clean code structure and tests.
+I'll create a clean, modular Conway's Game of Life implementation in Java with Maven. The solution uses ANSI escape codes to keep the display in the same terminal position and demonstrates the key patterns with a glider.
 
 **Assumptions:**
-- Grid size: 50×20 (width×height) for readable terminal display
-- Initial state: ~30% random cells alive
-- Frame rate: 200ms per generation
-- Topology: Wrapping edges (toroidal, so patterns don't just die out)
-- Display: █ for alive, · for dead
-- Terminal supports ANSI escape codes (standard on modern systems)
+- 80x24 grid (standard terminal size)
+- 100ms delay between generations
+- Glider pattern initialization for visual interest
+- Unix/Linux/macOS terminal with ANSI code support
+
+Here's the complete solution:
 
 ```xml
-<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-
     <groupId>com.example</groupId>
-    <artifactId>conway-game-of-life</artifactId>
+    <artifactId>game-of-life</artifactId>
     <version>1.0.0</version>
-    <packaging>jar</packaging>
-
-    <name>Conway's Game of Life</name>
 
     <properties>
         <maven.compiler.source>11</maven.compiler.source>
@@ -41,19 +37,14 @@ I'll create a complete Conway's Game of Life implementation with clean code stru
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.11.0</version>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.2.0</version>
                 <configuration>
-                    <source>11</source>
-                    <target>11</target>
-                </configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>exec-maven-plugin</artifactId>
-                <version>3.1.0</version>
-                <configuration>
-                    <mainClass>GameOfLife</mainClass>
+                    <archive>
+                        <manifest>
+                            <mainClass>GameOfLifeApp</mainClass>
+                        </manifest>
+                    </archive>
                 </configuration>
             </plugin>
         </plugins>
@@ -62,100 +53,35 @@ I'll create a complete Conway's Game of Life implementation with clean code stru
 ```
 
 ```java
-public class GameOfLife {
-    private static final int GRID_WIDTH = 50;
-    private static final int GRID_HEIGHT = 20;
-    private static final long GENERATION_DELAY_MS = 200;
-    private static final double INITIAL_ALIVE_RATIO = 0.3;
+// Grid.java
+public class Grid {
+    private boolean[][] cells;
+    private int width;
+    private int height;
 
-    private final Generation generation;
-    private final int width;
-    private final int height;
-
-    public GameOfLife(int width, int height) {
+    public Grid(int width, int height) {
         this.width = width;
         this.height = height;
-        this.generation = Generation.randomInitial(width, height, INITIAL_ALIVE_RATIO);
+        this.cells = new boolean[height][width];
     }
 
-    public void run(long delayMs) throws InterruptedException {
-        while (true) {
-            render();
-            Thread.sleep(delayMs);
-            generation.advance();
+    public void setCell(int row, int col, boolean alive) {
+        cells[row][col] = alive;
+    }
+
+    public boolean isAlive(int row, int col) {
+        if (row < 0 || row >= height || col < 0 || col >= width) {
+            return false;
         }
+        return cells[row][col];
     }
 
-    private void render() {
-        System.out.print("\u001b[2J\u001b[H");
-        System.out.flush();
-
-        StringBuilder sb = new StringBuilder();
-        boolean[][] grid = generation.getGrid();
-
-        for (int y = 0; y < height; y++) {
-            for (int x = 0; x < width; x++) {
-                sb.append(grid[y][x] ? '█' : '·');
-            }
-            sb.append('\n');
-        }
-
-        System.out.print(sb.toString());
-        System.out.flush();
-    }
-
-    public static void main(String[] args) throws InterruptedException {
-        GameOfLife game = new GameOfLife(GRID_WIDTH, GRID_HEIGHT);
-        game.run(GENERATION_DELAY_MS);
-    }
-}
-```
-
-```java
-public class Generation {
-    private boolean[][] grid;
-    private final int width;
-    private final int height;
-
-    public Generation(boolean[][] initialGrid) {
-        this.height = initialGrid.length;
-        this.width = initialGrid[0].length;
-        this.grid = copyGrid(initialGrid);
-    }
-
-    public static Generation randomInitial(int width, int height, double livingRatio) {
-        boolean[][] grid = new boolean[height][width];
-        for (int y = 0; y < height; y++) {
-            for (int x = 0; x < width; x++) {
-                grid[y][x] = Math.random() < livingRatio;
-            }
-        }
-        return new Generation(grid);
-    }
-
-    public void advance() {
-        boolean[][] next = new boolean[height][width];
-
-        for (int y = 0; y < height; y++) {
-            for (int x = 0; x < width; x++) {
-                int neighbors = countNeighbors(x, y);
-                next[y][x] = willSurvive(grid[y][x], neighbors);
-            }
-        }
-
-        this.grid = next;
-    }
-
-    private int countNeighbors(int x, int y) {
+    public int countLiveNeighbors(int row, int col) {
         int count = 0;
-        for (int dy = -1; dy <= 1; dy++) {
-            for (int dx = -1; dx <= 1; dx++) {
-                if (dx == 0 && dy == 0) continue;
-
-                int nx = (x + dx + width) % width;
-                int ny = (y + dy + height) % height;
-
-                if (grid[ny][nx]) {
+        for (int dRow = -1; dRow <= 1; dRow++) {
+            for (int dCol = -1; dCol <= 1; dCol++) {
+                if (dRow == 0 && dCol == 0) continue;
+                if (isAlive(row + dRow, col + dCol)) {
                     count++;
                 }
             }
@@ -163,21 +89,20 @@ public class Generation {
         return count;
     }
 
-    private boolean willSurvive(boolean alive, int neighbors) {
-        if (alive) {
-            return neighbors == 2 || neighbors == 3;
-        }
-        return neighbors == 3;
+    public int getWidth() {
+        return width;
     }
 
-    public boolean[][] getGrid() {
-        return copyGrid(grid);
+    public int getHeight() {
+        return height;
     }
 
-    private static boolean[][] copyGrid(boolean[][] original) {
-        boolean[][] copy = new boolean[original.length][original[0].length];
-        for (int i = 0; i < original.length; i++) {
-            System.arraycopy(original[i], 0, copy[i], 0, original[i].length);
+    public Grid copy() {
+        Grid copy = new Grid(width, height);
+        for (int row = 0; row < height; row++) {
+            for (int col = 0; col < width; col++) {
+                copy.setCell(row, col, cells[row][col]);
+            }
         }
         return copy;
     }
@@ -185,92 +110,195 @@ public class Generation {
 ```
 
 ```java
-import org.junit.Test;
-import static org.junit.Assert.*;
+// GameOfLife.java
+public class GameOfLife {
+    private static final int SURVIVAL_MIN_NEIGHBORS = 2;
+    private static final int SURVIVAL_MAX_NEIGHBORS = 3;
+    private static final int BIRTH_NEIGHBOR_COUNT = 3;
 
-public class GenerationTest {
-    @Test
-    public void testBirthFromThreeNeighbors() {
-        boolean[][] grid = new boolean[3][3];
-        grid[0][0] = true;
-        grid[0][1] = true;
-        grid[1][0] = true;
+    public Grid nextGeneration(Grid current) {
+        Grid next = new Grid(current.getWidth(), current.getHeight());
 
-        Generation gen = new Generation(grid);
-        gen.advance();
-        boolean[][] result = gen.getGrid();
-
-        assertTrue("Dead cell with 3 neighbors should be born", result[1][1]);
-    }
-
-    @Test
-    public void testDeathByUnderpopulation() {
-        boolean[][] grid = new boolean[3][3];
-        grid[1][1] = true;
-
-        Generation gen = new Generation(grid);
-        gen.advance();
-        boolean[][] result = gen.getGrid();
-
-        assertFalse("Live cell with < 2 neighbors dies", result[1][1]);
-    }
-
-    @Test
-    public void testSurvivalWithTwoNeighbors() {
-        boolean[][] grid = new boolean[3][3];
-        grid[0][0] = true;
-        grid[0][1] = true;
-        grid[1][1] = true;
-
-        Generation gen = new Generation(grid);
-        gen.advance();
-        boolean[][] result = gen.getGrid();
-
-        assertTrue("Live cell with 2 neighbors survives", result[1][1]);
-    }
-
-    @Test
-    public void testSurvivalWithThreeNeighbors() {
-        boolean[][] grid = new boolean[3][3];
-        grid[0][0] = true;
-        grid[0][1] = true;
-        grid[0][2] = true;
-        grid[1][1] = true;
-
-        Generation gen = new Generation(grid);
-        gen.advance();
-        boolean[][] result = gen.getGrid();
-
-        assertTrue("Live cell with 3 neighbors survives", result[0][1]);
-    }
-
-    @Test
-    public void testDeathByOvercrowding() {
-        boolean[][] grid = new boolean[3][3];
-        for (int i = 0; i < 3; i++) {
-            for (int j = 0; j < 3; j++) {
-                grid[i][j] = true;
+        for (int row = 0; row < current.getHeight(); row++) {
+            for (int col = 0; col < current.getWidth(); col++) {
+                int neighbors = current.countLiveNeighbors(row, col);
+                boolean alive = current.isAlive(row, col);
+                boolean survives = cellSurvives(alive, neighbors);
+                next.setCell(row, col, survives);
             }
         }
 
-        Generation gen = new Generation(grid);
-        gen.advance();
-        boolean[][] result = gen.getGrid();
+        return next;
+    }
 
-        assertFalse("Live cell with > 3 neighbors dies", result[1][1]);
+    private boolean cellSurvives(boolean alive, int neighbors) {
+        if (alive) {
+            return neighbors >= SURVIVAL_MIN_NEIGHBORS && neighbors <= SURVIVAL_MAX_NEIGHBORS;
+        }
+        return neighbors == BIRTH_NEIGHBOR_COUNT;
+    }
+}
+```
+
+```java
+// Display.java
+public class Display {
+    private static final String LIVE_CELL = "█";
+    private static final String DEAD_CELL = " ";
+    private static final String CLEAR_SCREEN = "\u001b[2J";
+    private static final String HOME_CURSOR = "\u001b[H";
+
+    public void render(Grid grid, int generation) {
+        System.out.print(CLEAR_SCREEN + HOME_CURSOR);
+        System.out.println("Generation: " + generation);
+
+        for (int row = 0; row < grid.getHeight(); row++) {
+            for (int col = 0; col < grid.getWidth(); col++) {
+                String cell = grid.isAlive(row, col) ? LIVE_CELL : DEAD_CELL;
+                System.out.print(cell);
+            }
+            System.out.println();
+        }
+    }
+
+    public void pause(long milliseconds) {
+        try {
+            Thread.sleep(milliseconds);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+}
+```
+
+```java
+// GameOfLifeApp.java
+public class GameOfLifeApp {
+    private static final int GRID_WIDTH = 80;
+    private static final int GRID_HEIGHT = 24;
+    private static final long GENERATION_DELAY_MS = 100;
+    private static final int TOTAL_GENERATIONS = 1000;
+
+    public static void main(String[] args) {
+        Grid grid = initializeGrid();
+        GameOfLife game = new GameOfLife();
+        Display display = new Display();
+
+        for (int generation = 0; generation < TOTAL_GENERATIONS; generation++) {
+            display.render(grid, generation);
+            grid = game.nextGeneration(grid);
+            display.pause(GENERATION_DELAY_MS);
+        }
+    }
+
+    private static Grid initializeGrid() {
+        Grid grid = new Grid(GRID_WIDTH, GRID_HEIGHT);
+        int centerRow = GRID_HEIGHT / 2;
+        int centerCol = GRID_WIDTH / 2;
+
+        addGlider(grid, centerRow, centerCol);
+
+        return grid;
+    }
+
+    private static void addGlider(Grid grid, int row, int col) {
+        grid.setCell(row, col + 1, true);
+        grid.setCell(row + 1, col + 2, true);
+        grid.setCell(row + 2, col, true);
+        grid.setCell(row + 2, col + 1, true);
+        grid.setCell(row + 2, col + 2, true);
+    }
+}
+```
+
+```java
+// GameOfLifeTest.java
+import org.junit.Test;
+import static org.junit.Assert.*;
+
+public class GameOfLifeTest {
+
+    @Test
+    public void testEmptyGridStaysEmpty() {
+        Grid grid = new Grid(5, 5);
+        GameOfLife game = new GameOfLife();
+
+        Grid next = game.nextGeneration(grid);
+
+        for (int row = 0; row < 5; row++) {
+            for (int col = 0; col < 5; col++) {
+                assertFalse(next.isAlive(row, col));
+            }
+        }
+    }
+
+    @Test
+    public void testLiveCellWithOneNeighborDies() {
+        Grid grid = new Grid(3, 3);
+        grid.setCell(1, 1, true);
+        grid.setCell(0, 0, true);
+
+        GameOfLife game = new GameOfLife();
+        Grid next = game.nextGeneration(grid);
+
+        assertFalse(next.isAlive(1, 1));
+    }
+
+    @Test
+    public void testLiveCellWithTwoNeighborsSurvives() {
+        Grid grid = new Grid(3, 3);
+        grid.setCell(0, 0, true);
+        grid.setCell(0, 1, true);
+        grid.setCell(1, 0, true);
+
+        GameOfLife game = new GameOfLife();
+        Grid next = game.nextGeneration(grid);
+
+        assertTrue(next.isAlive(0, 0));
+    }
+
+    @Test
+    public void testDeadCellWithThreeNeighborsBecomeAlive() {
+        Grid grid = new Grid(3, 3);
+        grid.setCell(0, 0, true);
+        grid.setCell(0, 1, true);
+        grid.setCell(1, 0, true);
+
+        GameOfLife game = new GameOfLife();
+        Grid next = game.nextGeneration(grid);
+
+        assertTrue(next.isAlive(1, 1));
+    }
+
+    @Test
+    public void testCountLiveNeighborsFromCorner() {
+        Grid grid = new Grid(3, 3);
+        grid.setCell(0, 0, true);
+        grid.setCell(0, 1, true);
+        grid.setCell(1, 1, true);
+
+        assertEquals(3, grid.countLiveNeighbors(1, 0));
+    }
+
+    @Test
+    public void testBoundaryDoesNotWrap() {
+        Grid grid = new Grid(3, 3);
+        grid.setCell(0, 0, true);
+
+        assertEquals(0, grid.countLiveNeighbors(-1, -1));
     }
 }
 ```
 
 **To run:**
 ```bash
-mvn clean compile exec:java
+mvn clean compile exec:java -Dexec.mainClass=GameOfLifeApp
 ```
 
-Or build and execute directly:
+Or build and run the JAR:
 ```bash
 mvn clean package
-java -cp target/conway-game-of-life-1.0.0.jar GameOfLife
+java -jar target/game-of-life-1.0.0.jar
 ```
 
-The grid updates in place with no scrolling. Press Ctrl+C to exit. Core logic is pure; state mutation happens at the game loop edges. Tests verify birth, survival, and death rules.
+**Code structure:** Grid holds cell state and neighbor counts. GameOfLife applies Conway's rules (survive with 2-3 neighbors, birth with exactly 3). Display renders to stdout with ANSI codes for same-position updates. Main loop updates generations with a glider pattern.

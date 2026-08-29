@@ -235,10 +235,124 @@ test('order: hardcoded output with no rules fails', () => {
   assert.equal(result.pass, false);
 });
 
+// --- Bank statement analyser (structural) ---
+
+const STATEMENT_TASK = "Analyse a bank statement in Java: each line of statement.txt reads 'date;description;amount;currency' (e.g. 2026-01-15;ALBERT HEIJN;-23.95;EUR). Convert USD and GBP amounts to EUR with fixed rates, categorise every transaction as salary, rent, groceries, or other from description keywords, total each category per month, flag transactions above 2000 EUR and repeated identical amounts on the same day as suspicious, and print a month-by-month report.";
+
+test('statement: conversion, categories, suspicion, monthly report passes', () => {
+  const result = check(STATEMENT_TASK, 'java', `
+import java.time.YearMonth;
+import java.util.Map;
+
+public class StatementAnalyser {
+    private static final double USD_TO_EUR = 0.92;
+    private static final double GBP_TO_EUR = 1.17;
+    private static final double SUSPICIOUS_THRESHOLD_EUR = 2000;
+
+    public String analyse(java.util.List<String> lines) {
+        Map<YearMonth, Map<String, Double>> totals = new java.util.TreeMap<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        StringBuilder report = new StringBuilder();
+        for (String line : lines) {
+            String category = categorise(line); // salary, rent, groceries, other
+            report.append(String.format("%s: %s%n", category, line));
+        }
+        return report.toString();
+    }
+
+    private String categorise(String description) {
+        if (description.contains("SALARY")) return "salary";
+        if (description.contains("RENT")) return "rent";
+        if (description.contains("GROCERIES")) return "groceries";
+        return "other";
+    }
+}`);
+  assert.equal(result.pass, true, result.reason);
+});
+
+test('statement: bare file echo with no rules fails', () => {
+  const result = check(STATEMENT_TASK, 'java',
+    'public class Analyser {\n    public void run(String file) { System.out.println(file); }\n}');
+  assert.equal(result.pass, false);
+});
+
+// --- Seat booking engine (structural) ---
+
+const BOOKING_TASK = 'Build an event seat booking engine in Java: a seat can be held for 15 minutes and the hold then expires, is confirmed, or is released; tickets are priced in adult, child, senior, and student tiers; bookings of 10 or more seats get a 5% group discount; cancelling refunds 100% more than 30 days before the event, 50% between 30 and 7 days, and nothing later; when the event is sold out, new requests join a waiting list served in order as seats free up.';
+
+test('booking: lifecycle, tiers, refunds, waiting list passes', () => {
+  const result = check(BOOKING_TASK, 'java', `
+import java.time.Instant;
+import java.util.ArrayDeque;
+import java.util.Queue;
+
+public class BookingEngine {
+    private static final int HOLD_MINUTES = 15;
+    private final Queue<String> waitingList = new ArrayDeque<>();
+
+    public void hold(String seat) { /* held until Instant.now() + HOLD_MINUTES */ }
+    public void confirm(String seat) { }
+    public void cancel(String seat) { }
+
+    public double price(String tier) {
+        return switch (tier) { case "adult" -> 30; case "child" -> 10; case "senior" -> 15; case "student" -> 20; default -> 30; };
+    }
+
+    public double refund(double paid, long daysBeforeEvent) {
+        if (daysBeforeEvent > 30) return paid;
+        if (daysBeforeEvent >= 7) return paid * 0.5;
+        return 0;
+    }
+}`);
+  assert.equal(result.pass, true, result.reason);
+});
+
+test('booking: plain seat map with no lifecycle fails', () => {
+  const result = check(BOOKING_TASK, 'java',
+    'public class Seats {\n    public void book(int seat) { taken[seat] = true; }\n}');
+  assert.equal(result.pass, false);
+});
+
+// --- Config parser (structural) ---
+
+const CONFIG_TASK = 'Write a Java parser for a small configuration language: sections in square brackets, key=value pairs, # comments and blank lines; values are typed integers, booleans, or durations such as 30s and 5m; malformed lines and unknown keys produce validation errors that name the line number; missing keys fall back to defaults. Parsing yields a typed configuration object, not a map of strings.';
+
+test('config: sections, comments, typing, line errors, defaults passes', () => {
+  const result = check(CONFIG_TASK, 'java', `
+public class ConfigParser {
+    private static final int DEFAULT_PORT = 8080;
+
+    public Config parse(java.util.List<String> lines) {
+        String section = "";
+        for (int lineNumber = 1; lineNumber <= lines.size(); lineNumber++) {
+            String line = lines.get(lineNumber - 1).trim();
+            if (line.isEmpty() || line.startsWith("#")) continue;
+            if (line.startsWith("[")) { section = line; continue; }
+            if (!line.contains("=")) throw new IllegalArgumentException("Malformed line " + lineNumber + ": " + line);
+            int port = Integer.parseInt(line.split("=")[1].trim());
+        }
+        return new Config(DEFAULT_PORT);
+    }
+}`);
+  assert.equal(result.pass, true, result.reason);
+});
+
+test('config: string map with no typing or errors fails', () => {
+  const result = check(CONFIG_TASK, 'java',
+    'public class Loader {\n    public java.util.Map<String, String> load(String text) { return java.util.Map.of(); }\n}');
+  assert.equal(result.pass, false);
+});
+
 // --- Task routing ---
 
 test('unknown task skips the gate', () => {
   const result = check('Write a haiku about spring.', 'java', 'class X {}');
   assert.equal(result.pass, true);
   assert.match(result.reason, /skipped/i);
+});
+
+test('the harder tasks route to their own checkers, not another task', () => {
+  assert.match(check(STATEMENT_TASK, 'java', 'class X {}').reason, /^Missing:/);
+  assert.match(check(BOOKING_TASK, 'java', 'class X {}').reason, /^Missing:/);
+  assert.match(check(CONFIG_TASK, 'java', 'class X {}').reason, /^Missing:/);
 });

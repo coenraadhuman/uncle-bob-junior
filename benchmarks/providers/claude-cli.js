@@ -78,14 +78,22 @@ function parsePromptMessages(prompt) {
   return { system, user };
 }
 
+// Joins model and arm in the provider label, e.g. "claude-cli:haiku · uncle-bob-junior".
+// The promptfoo web UI names its graph series by provider only (never by prompt
+// label), so the arm must ride along here for the graphs to tell the arms apart.
+// The exporter splits on this separator to recover the bare model for report.md.
+const ARM_SEPARATOR = ' · ';
+
 class ClaudeCliProvider {
   constructor(options = {}) {
     this.model = options.config?.model || 'haiku';
-    this.label = options.label || `claude-cli:${this.model}`;
+    this.arm = options.config?.arm || null;
+    this.label = this.id();
   }
 
   id() {
-    return `claude-cli:${this.model}`;
+    const model = `claude-cli:${this.model}`;
+    return this.arm ? `${model}${ARM_SEPARATOR}${this.arm}` : model;
   }
 
   async callApi(prompt) {
@@ -97,6 +105,7 @@ class ClaudeCliProvider {
 }
 
 module.exports = ClaudeCliProvider;
+module.exports.ARM_SEPARATOR = ARM_SEPARATOR;
 module.exports.parsePromptMessages = parsePromptMessages;
 module.exports.askClaude = askClaude;
 module.exports.cliArgsFor = cliArgsFor;

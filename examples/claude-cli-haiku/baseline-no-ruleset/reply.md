@@ -1,13 +1,13 @@
-I'll provide a complete Conway's Game of Life implementation with Maven build configuration.
+I'll provide a complete Conway's Game of Life implementation. 
 
 **Assumptions:**
-- Grid: 80×25 cells (standard terminal)
-- Initial density: 30% random population
-- Delay: 100ms between generations
-- Toroidal topology (wraps at edges)
-- Runs indefinitely until manually stopped
+- Grid size: 50×20 (reasonable for terminal display)
+- Update speed: 200ms per generation
+- Initial state: random cells (30% density)
+- Edges wrap around (toroidal topology)
+- Uses Unicode block characters (█ and ·) for rendering
 
-Here's the pom.xml:
+**pom.xml:**
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -17,9 +17,9 @@ Here's the pom.xml:
          http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.gameoflife</groupId>
-    <artifactId>conway-game-of-life</artifactId>
-    <version>1.0.0</version>
+    <groupId>com.example</groupId>
+    <artifactId>gameoflife</artifactId>
+    <version>1.0-SNAPSHOT</version>
 
     <properties>
         <maven.compiler.source>11</maven.compiler.source>
@@ -45,7 +45,7 @@ Here's the pom.xml:
                 <configuration>
                     <archive>
                         <manifest>
-                            <mainClass>GameOfLife</mainClass>
+                            <mainClass>Main</mainClass>
                         </manifest>
                     </archive>
                 </configuration>
@@ -55,40 +55,84 @@ Here's the pom.xml:
 </project>
 ```
 
-And here's the main Java implementation:
+**Main.java:**
 
 ```java
-import java.util.Random;
+public class Main {
+    public static void main(String[] args) throws InterruptedException {
+        int width = 50;
+        int height = 20;
+        GameOfLife game = new GameOfLife(width, height);
+        
+        int generation = 0;
+        while (true) {
+            clearScreen();
+            System.out.println("Generation: " + generation);
+            game.render();
+            System.out.flush();
+            
+            Thread.sleep(200);
+            game.update();
+            generation++;
+        }
+    }
 
+    private static void clearScreen() {
+        System.out.print("\u001B[2J\u001B[H");
+    }
+}
+```
+
+**GameOfLife.java:**
+
+```java
 public class GameOfLife {
-    private final int width;
-    private final int height;
     private boolean[][] grid;
     private boolean[][] nextGrid;
-    private int generation;
+    private int width;
+    private int height;
 
     public GameOfLife(int width, int height) {
         this.width = width;
         this.height = height;
         this.grid = new boolean[height][width];
         this.nextGrid = new boolean[height][width];
-        this.generation = 0;
         initializeRandom();
     }
 
     private void initializeRandom() {
-        Random random = new Random();
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
-                grid[y][x] = random.nextDouble() < 0.3;
+                grid[y][x] = Math.random() < 0.3;
             }
         }
     }
 
-    private int countLiveNeighbors(int x, int y) {
+    public void update() {
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                int neighbors = countNeighbors(x, y);
+                boolean alive = grid[y][x];
+                
+                if (alive && (neighbors == 2 || neighbors == 3)) {
+                    nextGrid[y][x] = true;
+                } else if (!alive && neighbors == 3) {
+                    nextGrid[y][x] = true;
+                } else {
+                    nextGrid[y][x] = false;
+                }
+            }
+        }
+        
+        boolean[][] temp = grid;
+        grid = nextGrid;
+        nextGrid = temp;
+    }
+
+    private int countNeighbors(int x, int y) {
         int count = 0;
-        for (int dx = -1; dx <= 1; dx++) {
-            for (int dy = -1; dy <= 1; dy++) {
+        for (int dy = -1; dy <= 1; dy++) {
+            for (int dx = -1; dx <= 1; dx++) {
                 if (dx == 0 && dy == 0) continue;
                 int nx = (x + dx + width) % width;
                 int ny = (y + dy + height) % height;
@@ -98,58 +142,17 @@ public class GameOfLife {
         return count;
     }
 
-    public void step() {
-        for (int y = 0; y < height; y++) {
-            for (int x = 0; x < width; x++) {
-                int liveNeighbors = countLiveNeighbors(x, y);
-                boolean alive = grid[y][x];
-                
-                if (alive) {
-                    nextGrid[y][x] = liveNeighbors == 2 || liveNeighbors == 3;
-                } else {
-                    nextGrid[y][x] = liveNeighbors == 3;
-                }
-            }
-        }
-        
-        boolean[][] temp = grid;
-        grid = nextGrid;
-        nextGrid = temp;
-        generation++;
-    }
-
     public void render() {
-        System.out.print("\033[H\033[2J");
-        System.out.flush();
-        
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
-                System.out.print(grid[y][x] ? "█" : " ");
+                System.out.print(grid[y][x] ? "█" : "·");
             }
             System.out.println();
-        }
-        System.out.printf("Generation: %d%n", generation);
-        System.out.flush();
-    }
-
-    public static void main(String[] args) throws InterruptedException {
-        GameOfLife game = new GameOfLife(80, 24);
-        
-        game.render();
-        
-        while (true) {
-            Thread.sleep(100);
-            game.step();
-            game.render();
         }
     }
 }
 ```
 
-**Build and run:**
-```bash
-mvn clean package
-java -cp target/conway-game-of-life-1.0.0.jar GameOfLife
-```
+To run: `mvn clean package && java -jar target/gameoflife-1.0-SNAPSHOT.jar`
 
-The simulation updates in-place using ANSI escape codes (`\033[H\033[2J` clears the screen and moves cursor to home), preventing scrolling. Press Ctrl+C to stop.
+The ANSI escape codes (`\u001B[2J\u001B[H`) clear the screen and move the cursor to the top-left, keeping the display in place while updating each generation.

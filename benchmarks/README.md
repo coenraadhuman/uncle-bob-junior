@@ -34,6 +34,13 @@ Each answer is scored by deterministic judges, no LLM grading:
   quietly "broken". Without a JDK on PATH the executable checks report
   "skipped" instead of failing.
 
+A cell passes on its **aggregate weighted score against a 0.9 threshold**
+(`defaultTest.threshold`), not on every assert passing: one smell hit
+degrades the score (the cell keeps its 0.98) instead of zeroing the cell in
+the pass-rate view. The bar sits so that failing any gate (each weighs 2/16,
+capping the score at 0.875) still fails the cell, while smell hits alone do
+not.
+
 ## Run it
 
 The benchmark runs through [promptfoo](https://promptfoo.dev), with an
@@ -59,9 +66,16 @@ directly.
 
 The tasks live in [`promptfooconfig.yaml`](promptfooconfig.yaml), all Java:
 email validator, CSV sum, retry helper, rate limiter, order processor
-(validation + VAT + discount + receipt). Three providers are configured
-(haiku, sonnet, fable); trim a run with `--filter-providers haiku` and/or
-`--filter-pattern email` while iterating. Single-shot generations, so expect
+(validation + VAT + discount + receipt), plus three deliberately
+multi-responsibility ones — bank statement analyser, seat booking engine,
+and config-language parser — that mix parsing, branching business rules,
+and reporting in one ask, so a baseline answer that keeps everything in one
+method trips the structural smells rather than only the ships-tests gate. Providers are configured one per
+model × arm (e.g. `claude-cli:haiku · uncle-bob-junior`), each bound to its
+arm's prompt: the promptfoo web UI names its graph series by provider only,
+so carrying the arm in the provider label is what makes baseline and ruleset
+distinguishable on the graphs. Trim a run with `--filter-providers haiku`
+and/or `--filter-pattern email` while iterating. Single-shot generations, so expect
 run-to-run variance; repeat runs before quoting numbers. See
 [`examples/`](../examples/) for how the generated comparisons are used, and
 `/uncle-bob-junior-gain` renders the newest eval as a scoreboard.
@@ -82,11 +96,13 @@ Each run directory under `benchmarks/results/<eval-id>/` contains:
 
 - `report.md` — scoreboard per task, model, and arm: weighted score, the
   habit-hooks pass/FAIL verdict, one occurrence-count column per smell,
-  ships-tests and correctness, plus mean score per model and arm. Two
-  tables carry the same rows: a compact one keeping only the smells with
-  at least one hit across the run, then the full habit-hooks catch list
-  (enforced smells first, then suggested). File and line locations for
-  each hit live in the `habit-hooks/` reports.
+  ships-tests and correctness, plus mean score per model and arm (as a
+  list and as a mermaid bar chart, so the graded gap between arms is
+  visible even where pass/fail views flatten it). Two tables carry the
+  same rows: a compact one keeping only the smells with at least one hit
+  across the run, then the full habit-hooks catch list (enforced smells
+  first, then suggested). File and line locations for each hit live in
+  the `habit-hooks/` reports.
 - `src/<task>/<model>/<arm>/main/` — the production code as real source
   files, one file per top-level Java type (imports attributed to the types
   that use them; a genuinely unused import survives once, so the

@@ -16,8 +16,9 @@ const os = require('os');
 const path = require('path');
 
 const { fencedBlocks, productionBlocks, isTestBlock, extractCode } = require('./promptfoo-metrics');
-const { codeFiles, pluginsFor } = require('./extract-files');
+const { codeFiles, isTestFile, pluginsFor } = require('./extract-files');
 const { scanDir } = require('./habit-hooks-assert');
+const { ARM_SEPARATOR } = require('./providers/claude-cli');
 
 const RESULTS_DIR = path.join(__dirname, 'results');
 
@@ -57,7 +58,9 @@ function resultRows(data) {
   const list = Array.isArray(data) ? data : (data.results?.results || []);
   return list.map((r) => ({
     arm: r.prompt?.label || 'unknown-arm',
-    model: r.provider?.label || r.provider?.id || 'unknown-model',
+    // Providers carry the arm in their label for the promptfoo graphs; the
+    // report has its own arm column, so only the model half is kept here.
+    model: String(r.provider?.label || r.provider?.id || 'unknown-model').split(ARM_SEPARATOR)[0],
     task: r.testCase?.description || slug(r.vars?.task).slice(0, 40),
     output: String(r.response?.output || ''),
     score: r.gradingResult?.score ?? 0,
@@ -134,7 +137,7 @@ function scoreboardLines(rows, smellColumns) {
   return [...reportHeaderLines(smellColumns), ...rows.map((row) => reportRow(row, smellColumns))];
 }
 
-function meanScoreLines(rows) {
+function meanScores(rows) {
   const armTotals = new Map();
   for (const row of rows) {
     const key = `${row.model} / ${row.arm}`;
@@ -143,7 +146,26 @@ function meanScoreLines(rows) {
     totals.n += 1;
     armTotals.set(key, totals);
   }
-  return [...armTotals].map(([key, totals]) => `- **${key}**: ${(totals.sum / totals.n).toFixed(3)} (n=${totals.n})`);
+  return [...armTotals].map(([key, totals]) => ({ key, mean: totals.sum / totals.n, n: totals.n }));
+}
+
+function meanScoreLines(rows) {
+  return meanScores(rows).map(({ key, mean, n }) => `- **${key}**: ${mean.toFixed(3)} (n=${n})`);
+}
+
+// The pass-rate view is binary per cell, so the graded comparison the scores
+// carry (0.88 vs 1.00) only shows up in a chart of the means themselves.
+function meanScoreChartLines(rows) {
+  const means = meanScores(rows);
+  return [
+    '```mermaid',
+    'xychart-beta',
+    '    title "Mean score per model and arm"',
+    `    x-axis [${means.map(({ key }) => `"${key}"`).join(', ')}]`,
+    '    y-axis "mean score" 0 --> 1',
+    `    bar [${means.map(({ mean }) => mean.toFixed(3)).join(', ')}]`,
+    '```',
+  ];
 }
 
 function buildReport(evalId, rows) {
@@ -170,12 +192,15 @@ function buildReport(evalId, rows) {
     '## Mean score per model and arm',
     '',
     ...meanScoreLines(rows),
+    '',
+    ...meanScoreChartLines(rows),
   ].join('\n') + '\n';
 }
 
-function writeCodeFiles(blocks, dir) {
+function writeFiles(files, dir) {
+  if (files.length === 0) return;
   fs.mkdirSync(dir, { recursive: true });
-  for (const file of codeFiles(blocks)) {
+  for (const file of files) {
     fs.writeFileSync(path.join(dir, file.name), file.content);
   }
 }
@@ -197,9 +222,21 @@ function writeRunArtifacts(evalId, rows, runDir, { scan = scanDir } = {}) {
     // Mirror the judge's fallback: an unfenced reply is still one scannable file.
     const production = productionBlocks(row.output);
     if (production.length === 0) production.push(extractCode(row.output));
-    const tests = fencedBlocks(row.output).filter((block) => isTestBlock(block.code));
-    writeCodeFiles(production, path.join(armDir, 'main'));
-    if (tests.length) writeCodeFiles(tests, path.join(armDir, 'test'));
+    const testBlocks = fencedBlocks(row.output).filter((block) => isTestBlock(block.code));
+    // A test class kept inside a production block belongs in test/, and the
+    // judge scans main/ only — same split scanReply applies. A block holding
+    // both production and test types reaches main/ and test/ through
+    // different routes, so test/ drops any file main/ already owns.
+    const [strayTests, mainFiles] = codeFiles(production).reduce(
+      ([tests, main], file) => (isTestFile(file) ? [[...tests, file], main] : [tests, [...main, file]]),
+      [[], []],
+    );
+    const mainNames = new Set(mainFiles.map((file) => file.name));
+    const testFiles = [...codeFiles(testBlocks), ...strayTests]
+      .filter((file, index, all) => all.findIndex((other) => other.name === file.name) === index)
+      .filter((file) => !mainNames.has(file.name));
+    writeFiles(mainFiles, path.join(armDir, 'main'));
+    writeFiles(testFiles, path.join(armDir, 'test'));
 
     const result = scan(path.join(armDir, 'main'), pluginsFor(production));
     const report = result.skipped ? 'skipped: habit-hooks not on PATH\n' : result.report;

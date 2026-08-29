@@ -11,16 +11,39 @@
 # (javac + java) is on PATH; without one those checks report "skipped".
 description: "Uncle Bob Junior vs no ruleset: same model, same Java tasks. Measures structure (function length, nesting, magic values, mutability), test-shipping, and functional correctness with deterministic judges."
 
+# One provider entry per model × arm, each bound to its arm's prompt via
+# `prompts:`. The promptfoo web UI names graph series by provider only, so
+# the provider carries the arm in its label (config.arm) — that is what makes
+# baseline and ruleset distinguishable on the graphs.
+# The yaml label must equal the provider instance's own label
+# (`claude-cli:<model> · <arm>`): promptfoo keys its provider→prompts map by
+# the yaml label but looks it up by the instance label, and on a key miss the
+# provider silently runs every prompt.
 providers:
   - id: file://providers/claude-cli.js
-    label: haiku
-    config: { model: haiku }
+    label: claude-cli:haiku · baseline (no ruleset)
+    config: { model: haiku, arm: baseline (no ruleset) }
+    prompts: [baseline (no ruleset)]
   - id: file://providers/claude-cli.js
-    label: sonnet
-    config: { model: sonnet }
+    label: claude-cli:haiku · uncle-bob-junior
+    config: { model: haiku, arm: uncle-bob-junior }
+    prompts: [uncle-bob-junior]
 #  - id: file://providers/claude-cli.js
-#    label: fable
-#    config: { model: fable }
+#    label: claude-cli:sonnet · baseline (no ruleset)
+#    config: { model: sonnet, arm: baseline (no ruleset) }
+#    prompts: [baseline (no ruleset)]
+#  - id: file://providers/claude-cli.js
+#    label: claude-cli:sonnet · uncle-bob-junior
+#    config: { model: sonnet, arm: uncle-bob-junior }
+#    prompts: [uncle-bob-junior]
+#  - id: file://providers/claude-cli.js
+#    label: claude-cli:fable · baseline (no ruleset)
+#    config: { model: fable, arm: baseline (no ruleset) }
+#    prompts: [baseline (no ruleset)]
+#  - id: file://providers/claude-cli.js
+#    label: claude-cli:fable · uncle-bob-junior
+#    config: { model: fable, arm: uncle-bob-junior }
+#    prompts: [uncle-bob-junior]
 
 prompts:
   - id: file://arms/baseline.js
@@ -41,6 +64,13 @@ extensions:
 # valid_code, ships_tests, and correct are gates: the answer must contain a
 # real compilation unit (snippets are excluded), ship tests, and work.
 defaultTest:
+  # Pass/fail per cell is the aggregate weighted score against this bar, not
+  # "every assert must pass" — so one failed smell degrades the score instead
+  # of zeroing the cell, and the promptfoo pass-rate view keeps its meaning.
+  # The bar sits between "any gate failed" (a gate weighs 2/16, so at most
+  # 0.875) and "one smell fully failed" (15/16 ≈ 0.94): gates stay fatal,
+  # smells only cost score.
+  threshold: 0.9
   assert:
     - type: javascript
       value: file://habit-hooks-assert.js:validCode
@@ -80,3 +110,12 @@ tests:
     vars: { task: "Add rate limiting to a Java HTTP handler so each client can't make more than a few requests per minute." }
   - description: order
     vars: { task: "Write Java code that processes an order: validate the line items, compute the total with 21% VAT, apply a 10% discount when the pre-VAT total exceeds 100 euros, and produce a receipt string." }
+  # The three tasks below are deliberately multi-responsibility: parsing plus
+  # business rules plus reporting in one ask, so a baseline answer that keeps
+  # everything in one method trips the structural smells, not only ships_tests.
+  - description: statement
+    vars: { task: "Analyse a bank statement in Java: each line of statement.txt reads 'date;description;amount;currency' (e.g. 2026-01-15;ALBERT HEIJN;-23.95;EUR). Convert USD and GBP amounts to EUR with fixed rates, categorise every transaction as salary, rent, groceries, or other from description keywords, total each category per month, flag transactions above 2000 EUR and repeated identical amounts on the same day as suspicious, and print a month-by-month report." }
+  - description: booking
+    vars: { task: "Build an event seat booking engine in Java: a seat can be held for 15 minutes and the hold then expires, is confirmed, or is released; tickets are priced in adult, child, senior, and student tiers; bookings of 10 or more seats get a 5% group discount; cancelling refunds 100% more than 30 days before the event, 50% between 30 and 7 days, and nothing later; when the event is sold out, new requests join a waiting list served in order as seats free up." }
+  - description: config
+    vars: { task: "Write a Java parser for a small configuration language: sections in square brackets, key=value pairs, # comments and blank lines; values are typed integers, booleans, or durations such as 30s and 5m; malformed lines and unknown keys produce validation errors that name the line number; missing keys fall back to defaults. Parsing yields a typed configuration object, not a map of strings." }

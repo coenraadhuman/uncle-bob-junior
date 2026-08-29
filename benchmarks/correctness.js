@@ -1,8 +1,8 @@
 // Functional correctness assertion for the Java benchmark tasks: proves
 // "cleaner" is never quietly "broken". The email and csv tasks compile and run
 // the generated code with the local JDK (javac + java) against real checks;
-// the open-ended tasks (retry, ratelimit, order) get structural checks, since
-// their contracts have no single runnable shape.
+// the open-ended tasks (retry, ratelimit, order, statement, booking, config)
+// get structural checks, since their contracts have no single runnable shape.
 //
 // Metric: `correct` (1 = all checks pass, 0 = at least one fails). Without a
 // JDK the executable checks report "skipped" and pass, so a missing toolchain
@@ -36,6 +36,9 @@ function identifyTask(task) {
   if (t.includes('retry')) return 'retry';
   if (t.includes('rate limit') || t.includes('rate-limit') || t.includes('rate limiting')) return 'ratelimit';
   if (t.includes('order') && t.includes('vat')) return 'order';
+  if (t.includes('bank statement')) return 'statement';
+  if (t.includes('booking')) return 'booking';
+  if (t.includes('configuration') && t.includes('pars')) return 'config';
   return null;
 }
 
@@ -282,6 +285,51 @@ const CHECKS = {
     if (!/throw|IllegalArgument|isEmpty|isBlank|== null|!= null|Objects\.require/.test(code)) failures.push('no item validation');
     if (!/String\.format|StringBuilder|StringJoiner|"\s*\+|\+\s*"|formatted\(|text block/i.test(code)) failures.push('no receipt string building');
     if (failures.length === 0) return { pass: true, reason: 'Order processor has required structure' };
+    return { pass: false, reason: 'Missing: ' + failures.join(', ') };
+  },
+
+  statement(blocks) {
+    const java = javaBlocksOf(blocks);
+    if (!java) return { pass: false, reason: 'No Java code block found' };
+    const code = java.map((b) => b.code).join('\n');
+    const failures = [];
+    if (!/USD/.test(code) || !/GBP/.test(code)) failures.push('no USD/GBP conversion');
+    if (!(/salary/i.test(code) && /rent/i.test(code) && /grocer/i.test(code))) failures.push('no category rules');
+    if (!/2000/.test(code)) failures.push('no 2000 EUR suspicion threshold');
+    if (!/duplicat|seen|repeat/i.test(code)) failures.push('no duplicate detection');
+    if (!/YearMonth|Month|getMonth|substring\(0,\s*7\)|yyyy-MM/i.test(code)) failures.push('no per-month grouping');
+    if (!/String\.format|StringBuilder|StringJoiner|"\s*\+|\+\s*"|formatted\(/.test(code)) failures.push('no report building');
+    if (failures.length === 0) return { pass: true, reason: 'Statement analyser has required structure' };
+    return { pass: false, reason: 'Missing: ' + failures.join(', ') };
+  },
+
+  booking(blocks) {
+    const java = javaBlocksOf(blocks);
+    if (!java) return { pass: false, reason: 'No Java code block found' };
+    const code = java.map((b) => b.code).join('\n');
+    const failures = [];
+    if (!/hold/i.test(code)) failures.push('no hold lifecycle');
+    if (!/confirm/i.test(code)) failures.push('no confirm step');
+    if (!/cancel|release/i.test(code)) failures.push('no cancel path');
+    if (!/15/.test(code) || !/minute|Duration|Instant|currentTimeMillis|LocalDateTime|plusMinutes/i.test(code)) failures.push('no hold expiry');
+    if (!(/adult/i.test(code) && /child/i.test(code) && /senior/i.test(code) && /student/i.test(code))) failures.push('no price tiers');
+    if (!/refund/i.test(code)) failures.push('no refund policy');
+    if (!/wait/i.test(code) || !/Queue|Deque|LinkedList|List/.test(code)) failures.push('no waiting list');
+    if (failures.length === 0) return { pass: true, reason: 'Booking engine has required structure' };
+    return { pass: false, reason: 'Missing: ' + failures.join(', ') };
+  },
+
+  config(blocks) {
+    const java = javaBlocksOf(blocks);
+    if (!java) return { pass: false, reason: 'No Java code block found' };
+    const code = java.map((b) => b.code).join('\n');
+    const failures = [];
+    if (!/section/i.test(code)) failures.push('no section handling');
+    if (!/#/.test(code)) failures.push('no comment handling');
+    if (!/parseInt|Integer\.parse|parseBoolean|Boolean\.parse|parseLong|Duration/.test(code)) failures.push('no typed values');
+    if (!/line/i.test(code) || !/error|exception|invalid|throw/i.test(code)) failures.push('no line-numbered errors');
+    if (!/default/i.test(code)) failures.push('no defaults');
+    if (failures.length === 0) return { pass: true, reason: 'Config parser has required structure' };
     return { pass: false, reason: 'Missing: ' + failures.join(', ') };
   },
 };

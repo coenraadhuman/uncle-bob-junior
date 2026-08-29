@@ -80,12 +80,44 @@ function isAttachable(line) {
     || trimmed.startsWith('/*') || trimmed.startsWith('*');
 }
 
+// Member names of the JDK packages models import with wildcards. Copying a
+// wildcard import into every split unit manufactures unused-import findings
+// the author never wrote (the original single file used the package fine), so
+// wildcards are attributed like named imports: to the units that reference a
+// known member. Packages not listed here still go to every unit.
+const WILDCARD_PACKAGE_MEMBERS = {
+  'java.util': /\b(List|ArrayList|LinkedList|Map|HashMap|TreeMap|LinkedHashMap|EnumMap|Set|HashSet|TreeSet|EnumSet|Deque|ArrayDeque|Queue|PriorityQueue|Optional|OptionalInt|Iterator|Collections|Arrays|Objects|Comparator|Scanner|UUID|Random|StringJoiner|Locale|NoSuchElementException)\b/,
+  'java.util.stream': /\b(Stream|IntStream|LongStream|DoubleStream|Collectors)\b/,
+  'java.util.concurrent': /\b(ConcurrentHashMap|ConcurrentMap|ExecutorService|Executors|ScheduledExecutorService|TimeUnit|CountDownLatch|Semaphore|CompletableFuture|ConcurrentLinkedQueue|CopyOnWriteArrayList|BlockingQueue|LinkedBlockingQueue)\b/,
+  'java.util.concurrent.atomic': /\b(AtomicInteger|AtomicLong|AtomicBoolean|AtomicReference)\b/,
+  'java.util.function': /\b(Function|BiFunction|Supplier|Consumer|BiConsumer|Predicate|UnaryOperator|BinaryOperator)\b/,
+  'java.util.regex': /\b(Pattern|Matcher)\b/,
+  'java.io': /\b(BufferedReader|BufferedWriter|FileReader|FileWriter|InputStream|OutputStream|InputStreamReader|OutputStreamWriter|PrintWriter|PrintStream|Reader|Writer|IOException|UncheckedIOException|File)\b/,
+  'java.nio.file': /\b(Files|Path|Paths)\b/,
+  'java.time': /\b(LocalDate|LocalDateTime|LocalTime|Instant|Duration|Period|YearMonth|Year|MonthDay|Month|DayOfWeek|ZonedDateTime|OffsetDateTime|ZoneId|ZoneOffset|Clock)\b/,
+  'java.time.format': /\b(DateTimeFormatter|DateTimeParseException)\b/,
+  'java.math': /\b(BigDecimal|BigInteger|RoundingMode|MathContext)\b/,
+};
+
+// Whether one split unit references anything an import brings in. Named
+// imports match their imported name; wildcard imports of known JDK packages
+// match any known member; unknown wildcards count as referenced everywhere.
+function importReferenced(importLine, body) {
+  const wildcard = importLine.match(/import\s+(?:static\s+)?([\w.]+)\.\*\s*;/);
+  if (wildcard) {
+    const members = WILDCARD_PACKAGE_MEMBERS[wildcard[1]];
+    return members ? members.test(body) : true;
+  }
+  const imported = importLine.match(/(\w+)\s*;/)?.[1];
+  return Boolean(imported && new RegExp(`\\b${imported}\\b`).test(body));
+}
+
 // Split one Java compilation unit into one unit per top-level type. The
 // package line goes to every unit; each import goes to the units that
-// reference its imported name (wildcard imports go everywhere); an import no
-// unit references stays in the first unit, once, so a genuinely unused
-// import is still there for the unused-import rule to catch. Returns null
-// when there is nothing to split.
+// reference what it imports (see importReferenced); an import no unit
+// references stays in the first unit, once, so a genuinely unused import is
+// still there for the unused-import rule to catch. Returns null when there
+// is nothing to split.
 function splitJavaTypes(code) {
   const lines = String(code).split('\n');
   const depths = lineDepths(code);
@@ -124,16 +156,14 @@ function splitJavaTypes(code) {
   const units = bodies.map((body) => {
     const name = body.match(TYPE_DECLARATION)?.[1] || 'Snippet';
     const unitImports = imports.filter((imp) => {
-      if (/\.\*\s*;/.test(imp)) return true;
-      const imported = imp.match(/(\w+)\s*;/)?.[1];
-      const referenced = imported && new RegExp(`\\b${imported}\\b`).test(body);
+      const referenced = importReferenced(imp, body);
       if (referenced) used.add(imp);
       return referenced;
     });
     return { name, packageLines, imports: unitImports, body };
   });
 
-  const orphaned = imports.filter((imp) => !used.has(imp) && !/\.\*\s*;/.test(imp));
+  const orphaned = imports.filter((imp) => !used.has(imp));
   units[0].imports = [...new Set([...units[0].imports, ...orphaned])];
 
   return units.map((unit) => ({
@@ -188,4 +218,18 @@ function codeFiles(blocks) {
   });
 }
 
-module.exports = { pluginsFor, splitJavaTypes, fileNameFor, codeFiles };
+// A model reply sometimes keeps its test class in the same code block as the
+// production code (a hand-rolled runner called from main, or a JUnit class
+// below the implementation). Block-level test detection cannot see it, so the
+// judge would scan test code as production. Detected per extracted file.
+function isTestFile(file) {
+  return /Tests?\.\w+$/.test(file.name) || /@Test\b|org\.junit/.test(file.content);
+}
+
+// The files the smell judge scans: everything codeFiles extracts minus the
+// units that are themselves tests.
+function productionFiles(blocks) {
+  return codeFiles(blocks).filter((file) => !isTestFile(file));
+}
+
+module.exports = { pluginsFor, splitJavaTypes, fileNameFor, codeFiles, isTestFile, productionFiles };
