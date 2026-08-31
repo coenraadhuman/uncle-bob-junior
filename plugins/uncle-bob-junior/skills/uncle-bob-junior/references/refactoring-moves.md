@@ -4,18 +4,18 @@ The gate names the violation; this file names the move. Each smell has a
 standard, mechanical refactoring — reach for the named move instead of
 improvising.
 
-| Smell | Move |
-|-------|------|
-| Function over ten statements | **Extract Method** at a responsibility boundary |
-| More than three parameters | **Introduce Parameter Object** with a domain name |
-| Value object over three fields | **Extract Class** (nested smaller types) or **Builder** |
-| Nesting past two levels | **Guard Clause** / **Extract Method** on the inner block |
-| Same logic twice-plus | **Extract Method/Class** once a third use proves the shape |
-| Switch or if-chain on a type code | **Replace Conditional with Polymorphism** (or a map) |
-| Fields that travel together | **Extract Class** for the clump (`Money`, not amount+currency) |
-| Method living off another object's data | **Move Method** to the envied class |
-| Mode string or magic literal | **Replace with Enum / Named Constant** |
-| File over ~200 lines | **Extract Class/Module** along a seam, never at a line count |
+| Smell                                   | Move                                                           |
+|-----------------------------------------|----------------------------------------------------------------|
+| Function over ten statements            | **Extract Method** at a responsibility boundary                |
+| More than three parameters              | **Introduce Parameter Object** with a domain name              |
+| Value object over three fields          | **Extract Class** (nested smaller types) or **Builder**        |
+| Nesting past two levels                 | **Guard Clause** / **Extract Method** on the inner block       |
+| Same logic twice-plus                   | **Extract Method/Class** once a third use proves the shape     |
+| Switch or if-chain on a type code       | **Replace Conditional with Polymorphism** (or a map)           |
+| Fields that travel together             | **Extract Class** for the clump (`Money`, not amount+currency) |
+| Method living off another object's data | **Move Method** to the envied class                            |
+| Mode string or magic literal            | **Replace with Enum / Named Constant**                         |
+| File over ~200 lines                    | **Extract Class/Module** along a seam, never at a line count   |
 
 ## Extract Method, done right
 
