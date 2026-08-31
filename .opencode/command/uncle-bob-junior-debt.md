@@ -1,5 +1,0 @@
----
-description: Harvest ubj: deviation comments into a tracked cleanup ledger
----
-
-Collect every deliberate clean-code deviation marked with a ubj: comment into one ledger. Grep the repo for the markers (skip node_modules, .git, build output): grep -rnE '(#|//) ?ubj:' . One row per marker, grouped by file: <file>:<line>, <what was deferred>. reason: <why kept dirty>. trigger: <when to clean>. Tag any marker naming no cleanup trigger with no-trigger, those rot silently. End with '<N> markers, <M> with no trigger.' Nothing found: 'No ubj: debt. Clean ledger.' Report only, change nothing.

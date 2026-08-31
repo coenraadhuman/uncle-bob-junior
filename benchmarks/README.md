@@ -76,7 +76,13 @@ arm's prompt: the promptfoo web UI names its graph series by provider only,
 so carrying the arm in the provider label is what makes baseline and ruleset
 distinguishable on the graphs. Trim a run with `--filter-providers haiku`
 and/or `--filter-pattern email` while iterating. Single-shot generations, so expect
-run-to-run variance; repeat runs before quoting numbers. See
+run-to-run variance: for numbers you plan to quote, run with `--repeat 3` —
+the exporter writes one report row per repetition and the means average all
+of them (the exported source files and the site's task pages keep the last
+repetition per arm). Languages beyond Java are currently out: habit-hooks'
+typescript plugin needs eslint, knip, and ts-morph installed in the scanned
+project, which the benchmark's bare extraction dirs cannot provide, so a
+TS/JS task would judge as `incomplete-run`. See
 [`examples/`](../examples/) for how the generated comparisons are used, and
 `/uncle-bob-junior-gain` renders the newest eval as a scoreboard.
 
@@ -94,6 +100,10 @@ node benchmarks/export-results.js <eval-id>  # a specific one
 
 Each run directory under `benchmarks/results/<eval-id>/` contains:
 
+- `report.json` — the same run data machine-readable (rows with gates and
+  per-smell counts, means); `build-site.js` generates the Docusaurus site
+  content in `website/docs/` from it, automatically after every eval
+  (`npm --prefix website run build` renders the site into `/docs`).
 - `report.md` — scoreboard per task, model, and arm: weighted score, the
   habit-hooks pass/FAIL verdict, one occurrence-count column per smell,
   ships-tests and correctness, plus mean score per model and arm (as a

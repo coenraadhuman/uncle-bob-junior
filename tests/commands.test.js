@@ -1,9 +1,8 @@
 #!/usr/bin/env node
-// Every uncle-bob-junior command the pi extension registers must also ship as a
-// file-based command for the hosts that need one: Claude Code (commands/*.toml,
-// which Gemini CLI reuses) and OpenCode (.opencode/command/*.md). /uncle-bob-junior-help
-// was advertised in the README and the help card but missing both files; this
-// guards that drift -- a registered command with no adapter file fails here.
+// Every uncle-bob-junior skill must also ship as a Claude Code file-based
+// command (commands/*.toml). /uncle-bob-junior-help was once advertised in the
+// README and the help card but missing its file; this guards that drift: a
+// skill with no command adapter fails here.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -12,28 +11,23 @@ const path = require('path');
 
 const root = path.join(__dirname, '..');
 
-// pi-extension registers the canonical command set.
-const piSource = fs.readFileSync(path.join(root, 'pi-extension', 'index.js'), 'utf8');
-const commands = [...piSource.matchAll(/registerCommand\(["']([\w-]+)["']/g)].map((m) => m[1]);
+// The skills directory is the canonical command set.
+const commands = fs.readdirSync(path.join(root, 'skills'))
+  .filter((name) => fs.existsSync(path.join(root, 'skills', name, 'SKILL.md')))
+  // The debt/gain/help/audit/review skills all get commands; the base skill does too.
+  .concat('uncle-bob-junior')
+  .filter((name, index, all) => all.indexOf(name) === index);
 
-test('pi registers at least the base command', () => {
-  assert.ok(commands.includes('uncle-bob-junior'), 'expected pi to register a uncle-bob-junior command');
+test('skills exist to derive the command set from', () => {
+  assert.ok(commands.includes('uncle-bob-junior'), 'expected the base uncle-bob-junior skill');
+  assert.ok(commands.length > 1, 'expected the companion skills');
 });
 
-test('every registered command ships a Claude commands/*.toml', () => {
+test('every skill ships a Claude commands/*.toml', () => {
   for (const name of commands) {
     assert.ok(
       fs.existsSync(path.join(root, 'commands', `${name}.toml`)),
       `missing commands/${name}.toml`,
-    );
-  }
-});
-
-test('every registered command ships an OpenCode .opencode/command/*.md', () => {
-  for (const name of commands) {
-    assert.ok(
-      fs.existsSync(path.join(root, '.opencode', 'command', `${name}.md`)),
-      `missing .opencode/command/${name}.md`,
     );
   }
 });

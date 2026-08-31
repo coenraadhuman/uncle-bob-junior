@@ -10,13 +10,7 @@ const fs = require('fs');
 const path = require('path');
 const { getDefaultMode, getClaudeDir, isShellSafe } = require('./uncle-bob-junior-config');
 const { getUncleBobJuniorInstructions } = require('./uncle-bob-junior-instructions');
-const {
-  clearMode,
-  isCodex,
-  isCopilot,
-  setMode,
-  writeHookOutput,
-} = require('./uncle-bob-junior-runtime');
+const { clearMode, setMode, writeHookOutput } = require('./uncle-bob-junior-runtime');
 
 const claudeDir = getClaudeDir();
 const settingsPath = path.join(claudeDir, 'settings.json');
@@ -26,8 +20,7 @@ const mode = getDefaultMode();
 // "off" mode — skip activation entirely, don't write flag or emit rules
 if (mode === 'off') {
   clearMode();
-  const hookOutput = (isCodex || isCopilot) ? '' : 'OK';
-  writeHookOutput('SessionStart', 'off', hookOutput);
+  writeHookOutput('SessionStart', 'off', 'OK');
   process.exit(0);
 }
 
@@ -42,7 +35,7 @@ try {
 let output = getUncleBobJuniorInstructions(mode);
 
 // 3. Detect missing statusline config — nudge Claude to help set it up
-if (!isCodex && !isCopilot) try {
+try {
   let hasStatusline = false;
   if (fs.existsSync(settingsPath)) {
     // Strip UTF-8 BOM some editors prepend on Windows (breaks JSON.parse)

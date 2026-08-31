@@ -6,13 +6,15 @@
 # Dependencies
 node_modules/
 
+# Docusaurus build artifacts (website/ is the source; /docs is the committed output)
+website/.docusaurus/
+website/build/
+
 # promptfoo eval artifacts
 .promptfoo/
 benchmarks/output*
 benchmarks/benchmark-local-results.json
-
-# Python
-__pycache__/
+benchmarks/results/
 
 # one-off social/announcement art, not repo content
 announce-*.png

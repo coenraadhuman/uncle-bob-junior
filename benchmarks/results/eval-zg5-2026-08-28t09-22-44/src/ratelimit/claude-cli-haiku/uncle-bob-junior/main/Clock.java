@@ -1,3 +1,0 @@
-interface Clock {
-  long millis();
-}

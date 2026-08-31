@@ -43,89 +43,80 @@ const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'uncle-bob-junior-hooks-'));
 process.on('exit', () => fs.rmSync(temp, { recursive: true, force: true }));
 
 const home = path.join(temp, 'home');
-const pluginData = path.join(temp, 'plugin-data');
 fs.mkdirSync(home, { recursive: true });
 
 // USERPROFILE alongside HOME: os.homedir() reads USERPROFILE on Windows, HOME on POSIX.
-const codexEnv = {
+const baseEnv = {
   HOME: home,
   USERPROFILE: home,
-  PLUGIN_DATA: pluginData,
   UNCLE_BOB_JUNIOR_DEFAULT_MODE: 'ultra',
 };
-const codexState = path.join(pluginData, '.uncle-bob-junior-active');
+const baseState = path.join(home, '.claude', '.uncle-bob-junior-active');
 
-let result = run('uncle-bob-junior-activate.js', codexEnv);
+let result = run('uncle-bob-junior-activate.js', baseEnv);
 assert.equal(result.status, 0, result.stderr);
-assert.equal(fs.readFileSync(codexState, 'utf8'), 'ultra');
-let output = JSON.parse(result.stdout);
-assert.equal(output.systemMessage, 'UNCLE_BOB_JUNIOR:ULTRA');
-assert.equal(output.additionalContext, undefined, 'Codex must not emit additionalContext at top level (#573)');
-assert.equal(output.hookSpecificOutput.hookEventName, 'SessionStart');
-assert.match(
-  output.hookSpecificOutput.additionalContext,
-  /UNCLE_BOB_JUNIOR MODE ACTIVE — level: ultra/,
-);
+assert.equal(fs.readFileSync(baseState, 'utf8'), 'ultra');
+assert.match(result.stdout, /UNCLE_BOB_JUNIOR MODE ACTIVE — level: ultra/);
 
 result = run(
   'uncle-bob-junior-mode-tracker.js',
-  codexEnv,
+  baseEnv,
   JSON.stringify({ prompt: '@uncle-bob-junior lite' }),
 );
 assert.equal(result.status, 0, result.stderr);
-assert.equal(fs.readFileSync(codexState, 'utf8'), 'lite');
-output = JSON.parse(result.stdout);
-assert.equal(output.systemMessage, 'UNCLE_BOB_JUNIOR:LITE');
+assert.equal(fs.readFileSync(baseState, 'utf8'), 'lite');
+assert.match(result.stdout, /UNCLE_BOB_JUNIOR MODE CHANGED — level: lite/);
 
 // Querying bare @uncle-bob-junior should report the active level ('lite') without resetting it to default ('ultra')
 result = run(
   'uncle-bob-junior-mode-tracker.js',
-  codexEnv,
+  baseEnv,
   JSON.stringify({ prompt: '@uncle-bob-junior' }),
 );
 assert.equal(result.status, 0, result.stderr);
-assert.equal(fs.readFileSync(codexState, 'utf8'), 'lite');
-output = JSON.parse(result.stdout);
-assert.equal(output.additionalContext, undefined, 'Codex must not emit additionalContext at top level (#573)');
-assert.equal(output.hookSpecificOutput.hookEventName, 'UserPromptSubmit');
-assert.match(
-  output.hookSpecificOutput.additionalContext,
-  /UNCLE_BOB_JUNIOR MODE ACTIVE — level: lite/,
-);
+assert.equal(fs.readFileSync(baseState, 'utf8'), 'lite');
+assert.match(result.stdout, /UNCLE_BOB_JUNIOR MODE ACTIVE — level: lite/);
 
 result = run(
   'uncle-bob-junior-mode-tracker.js',
-  codexEnv,
+  baseEnv,
   JSON.stringify({ prompt: 'normal mode' }),
 );
 assert.equal(result.status, 0, result.stderr);
-assert.equal(fs.existsSync(codexState), false);
-output = JSON.parse(result.stdout);
-assert.equal(output.systemMessage, 'UNCLE_BOB_JUNIOR:OFF');
+assert.equal(fs.existsSync(baseState), false);
+assert.match(result.stdout, /UNCLE_BOB_JUNIOR MODE OFF/);
 
 // A request that merely mentions "normal mode" must not deactivate uncle-bob-junior.
-result = run('uncle-bob-junior-mode-tracker.js', codexEnv, JSON.stringify({ prompt: '@uncle-bob-junior lite' }));
+result = run('uncle-bob-junior-mode-tracker.js', baseEnv, JSON.stringify({ prompt: '@uncle-bob-junior lite' }));
 assert.equal(result.status, 0, result.stderr);
-assert.equal(fs.readFileSync(codexState, 'utf8'), 'lite');
+assert.equal(fs.readFileSync(baseState, 'utf8'), 'lite');
 
 result = run(
   'uncle-bob-junior-mode-tracker.js',
-  codexEnv,
+  baseEnv,
   JSON.stringify({ prompt: 'add a normal mode toggle next to dark mode' }),
 );
 assert.equal(result.status, 0, result.stderr);
 assert.equal(
-  fs.readFileSync(codexState, 'utf8'),
+  fs.readFileSync(baseState, 'utf8'),
   'lite',
   'incidental "normal mode" in a request must not turn uncle-bob-junior off',
 );
+
+// "stop uncle-bob-junior" is the other standalone deactivation phrase.
+result = run(
+  'uncle-bob-junior-mode-tracker.js',
+  baseEnv,
+  JSON.stringify({ prompt: 'stop uncle-bob-junior' }),
+);
+assert.equal(result.status, 0, result.stderr);
+assert.equal(fs.existsSync(baseState), false, 'flag must be cleared after stop uncle-bob-junior');
 
 const claudeEnv = {
   HOME: home,
   USERPROFILE: home,
   UNCLE_BOB_JUNIOR_DEFAULT_MODE: 'full',
 };
-delete claudeEnv.PLUGIN_DATA;
 
 result = run('uncle-bob-junior-activate.js', claudeEnv);
 assert.equal(result.status, 0, result.stderr);
@@ -179,75 +170,6 @@ assert.ok(
   'nudge must not repeat once the flag file exists (#483)',
 );
 
-const copilotData = path.join(temp, 'copilot-data');
-const codexData = path.join(temp, 'codex-data-shadow');
-result = run('uncle-bob-junior-activate.js', {
-  HOME: home,
-  USERPROFILE: home,
-  COPILOT_PLUGIN_DATA: copilotData,
-  PLUGIN_DATA: codexData,
-  UNCLE_BOB_JUNIOR_DEFAULT_MODE: 'full',
-});
-assert.equal(result.status, 0, result.stderr);
-assert.equal(fs.readFileSync(path.join(copilotData, '.uncle-bob-junior-active'), 'utf8'), 'full');
-assert.equal(
-  fs.existsSync(path.join(codexData, '.uncle-bob-junior-active')),
-  false,
-  'copilot hooks must not write mode state to codex PLUGIN_DATA',
-);
-output = JSON.parse(result.stdout);
-assert.match(output.additionalContext, /UNCLE_BOB_JUNIOR MODE ACTIVE — level: full/);
-
-// VS Code Copilot never sets COPILOT_PLUGIN_DATA — it only injects
-// CLAUDE_PLUGIN_ROOT pointed at an agent-plugins/.../.vscode install path
-// (#528). Without a fallback, isCopilot was false, so uncle-bob-junior assumed
-// native Claude Code and emitted the statusline nudge — noise, since VS
-// Code Copilot doesn't read Claude's statusLine setting.
-const vscodeHome = path.join(temp, 'vscode-copilot-home');
-const vscodePluginRoot = path.join(
-  vscodeHome, '.vscode', 'agent-plugins', 'github.com', 'coenraadhuman', 'uncle-bob-junior', 'hooks',
-);
-fs.mkdirSync(vscodeHome, { recursive: true });
-result = run('uncle-bob-junior-activate.js', {
-  HOME: vscodeHome,
-  USERPROFILE: vscodeHome,
-  CLAUDE_PLUGIN_ROOT: vscodePluginRoot,
-  UNCLE_BOB_JUNIOR_DEFAULT_MODE: 'full',
-});
-assert.equal(result.status, 0, result.stderr);
-assert.ok(
-  !result.stdout.includes('STATUSLINE SETUP NEEDED'),
-  'VS Code Copilot (detected via CLAUDE_PLUGIN_ROOT) must not get the Claude-only statusline nudge',
-);
-// isCopilot must still resolve a state dir even though COPILOT_PLUGIN_DATA
-// is unset under VS Code — falling back to ~/.claude, not crashing on an
-// undefined path.
-assert.equal(
-  fs.readFileSync(path.join(vscodeHome, '.claude', '.uncle-bob-junior-active'), 'utf8'),
-  'full',
-  'VS Code Copilot must persist mode state under getClaudeDir(), not a path built from the unset COPILOT_PLUGIN_DATA',
-);
-
-result = run(
-  'uncle-bob-junior-mode-tracker.js',
-  {
-    HOME: home,
-    USERPROFILE: home,
-    COPILOT_PLUGIN_DATA: copilotData,
-    PLUGIN_DATA: codexData,
-  },
-  JSON.stringify({ prompt: '/uncle-bob-junior ultra' }),
-);
-assert.equal(result.status, 0, result.stderr);
-assert.equal(fs.readFileSync(path.join(copilotData, '.uncle-bob-junior-active'), 'utf8'), 'ultra');
-assert.equal(
-  fs.existsSync(path.join(codexData, '.uncle-bob-junior-active')),
-  false,
-  'copilot mode tracker must keep codex PLUGIN_DATA untouched',
-);
-output = JSON.parse(result.stdout);
-assert.deepEqual(output, {});
-
 // SubagentStart hook: when uncle-bob-junior mode is active it injects the ruleset into
 // each subagent (issue #252). Native Claude must get the hookSpecificOutput JSON
 // form, not raw stdout, or the context is dropped.
@@ -259,7 +181,7 @@ const subEnv = { HOME: subHome, USERPROFILE: subHome };
 fs.writeFileSync(subFlag, 'full');
 result = run('uncle-bob-junior-subagent.js', subEnv);
 assert.equal(result.status, 0, result.stderr);
-output = JSON.parse(result.stdout);
+let output = JSON.parse(result.stdout);
 assert.equal(output.hookSpecificOutput.hookEventName, 'SubagentStart');
 assert.match(
   output.hookSpecificOutput.additionalContext,
@@ -271,19 +193,6 @@ fs.unlinkSync(subFlag);
 result = run('uncle-bob-junior-subagent.js', subEnv);
 assert.equal(result.status, 0, result.stderr);
 assert.equal(result.stdout, '', 'SubagentStart must stay silent when uncle-bob-junior is off');
-
-// Codex shares claude-codex-hooks.json, so SubagentStart is reachable under Codex
-// too — assert the codex branch emits the badge plus hookSpecificOutput.
-const subCodex = path.join(temp, 'sub-codex');
-fs.mkdirSync(subCodex, { recursive: true });
-fs.writeFileSync(path.join(subCodex, '.uncle-bob-junior-active'), 'full');
-result = run('uncle-bob-junior-subagent.js', { HOME: subHome, USERPROFILE: subHome, PLUGIN_DATA: subCodex });
-assert.equal(result.status, 0, result.stderr);
-output = JSON.parse(result.stdout);
-assert.equal(output.systemMessage, 'UNCLE_BOB_JUNIOR:FULL');
-assert.equal(output.additionalContext, undefined, 'Codex must not emit additionalContext at top level (#573)');
-assert.equal(output.hookSpecificOutput.hookEventName, 'SubagentStart');
-assert.match(output.hookSpecificOutput.additionalContext, /UNCLE_BOB_JUNIOR MODE ACTIVE — level: full/);
 
 // SubagentStart scoping (issue #506): UNCLE_BOB_JUNIOR_SUBAGENT_MATCHER limits the
 // injection to agent types whose name matches the regex. Unset keeps the
@@ -353,75 +262,6 @@ assert.equal(result.status, 0, result.stderr);
 output = JSON.parse(result.stdout);
 assert.match(output.hookSpecificOutput.additionalContext, /UNCLE_BOB_JUNIOR MODE ACTIVE — level: full/);
 
-// Qoder: no SessionStart event, so UserPromptSubmit does double duty —
-// it activates the default mode on first prompt (writes flag), then injects
-// the ruleset via additionalContext on every prompt. Output is
-// hookSpecificOutput JSON (same shape as Codex minus systemMessage).
-const qoderHome = path.join(temp, 'qoder-home');
-const qoderState = path.join(qoderHome, '.qoder', '.uncle-bob-junior-active');
-fs.mkdirSync(qoderHome, { recursive: true });
-
-const qoderEnv = {
-  HOME: qoderHome,
-  USERPROFILE: qoderHome,
-  QODER_SESSION_ID: 'test-session-123',
-  UNCLE_BOB_JUNIOR_DEFAULT_MODE: 'full',
-};
-
-// First prompt: no flag file yet → mode-tracker initializes from default,
-// writes flag, and injects the ruleset.
-result = run(
-  'uncle-bob-junior-mode-tracker.js',
-  qoderEnv,
-  JSON.stringify({ prompt: 'write a function' }),
-);
-assert.equal(result.status, 0, result.stderr);
-assert.equal(fs.readFileSync(qoderState, 'utf8'), 'full');
-output = JSON.parse(result.stdout);
-assert.equal(output.hookSpecificOutput.hookEventName, 'UserPromptSubmit');
-assert.match(
-  output.hookSpecificOutput.additionalContext,
-  /UNCLE_BOB_JUNIOR MODE ACTIVE — level: full/,
-);
-
-// /uncle-bob-junior ultra: mode tracker updates flag and injects ultra ruleset.
-result = run(
-  'uncle-bob-junior-mode-tracker.js',
-  qoderEnv,
-  JSON.stringify({ prompt: '/uncle-bob-junior ultra' }),
-);
-assert.equal(result.status, 0, result.stderr);
-assert.equal(fs.readFileSync(qoderState, 'utf8'), 'ultra');
-output = JSON.parse(result.stdout);
-assert.match(
-  output.hookSpecificOutput.additionalContext,
-  /UNCLE_BOB_JUNIOR MODE CHANGED — level: ultra/,
-);
-
-// "stop uncle-bob-junior": deactivates, clears flag, no ruleset output.
-result = run(
-  'uncle-bob-junior-mode-tracker.js',
-  qoderEnv,
-  JSON.stringify({ prompt: 'stop uncle-bob-junior' }),
-);
-assert.equal(result.status, 0, result.stderr);
-assert.equal(fs.existsSync(qoderState), false, 'flag must be cleared after stop uncle-bob-junior');
-output = JSON.parse(result.stdout);
-assert.equal(output.hookSpecificOutput.additionalContext, 'UNCLE_BOB_JUNIOR MODE OFF');
-
-// Subagent injection via PreToolUse (task|Task matcher): when uncle-bob-junior is
-// active, the subagent hook injects the ruleset. Qoder shares the same
-// uncle-bob-junior-subagent.js script; the isQoder branch outputs hookSpecificOutput
-// JSON instead of raw stdout.
-fs.writeFileSync(qoderState, 'full');
-result = run('uncle-bob-junior-subagent.js', qoderEnv);
-assert.equal(result.status, 0, result.stderr);
-output = JSON.parse(result.stdout);
-assert.equal(output.hookSpecificOutput.hookEventName, 'SubagentStart');
-assert.match(
-  output.hookSpecificOutput.additionalContext,
-  /UNCLE_BOB_JUNIOR MODE ACTIVE — level: full/,
-);
 // writeDefaultMode must merge into existing config, not overwrite it (#490).
 const mergeHome = path.join(temp, 'merge-home');
 const mergeConfigDir = path.join(mergeHome, '.config', 'uncle-bob-junior');

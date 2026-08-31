@@ -9,15 +9,10 @@ const path = require('path');
 
 const root = path.join(__dirname, '..');
 
-test('npm package ships the advertised cleanup script', () => {
-  const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-  assert.ok(
-    pkg.files.includes('scripts/uninstall.js'),
-    'package.json "files" must include scripts/uninstall.js (README tells users to run it)',
-  );
-  // And the file it points at must exist.
+test('the advertised cleanup script exists', () => {
+  // README tells users to run it to remove the mode flag, config, and statusline entry.
   assert.ok(
     fs.existsSync(path.join(root, 'scripts', 'uninstall.js')),
-    'scripts/uninstall.js is listed in files but missing on disk',
+    'scripts/uninstall.js is advertised in the README but missing on disk',
   );
 });

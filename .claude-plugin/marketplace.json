@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "uncle-bob-junior",
-  "description": "Clean-code mode for AI agents. Code that is easy to read, simple to understand, and safe to change.",
+  "description": "Clean-code mode for Claude Code. Code that is easy to read, simple to understand, and safe to change.",
   "owner": {
     "name": "Coenraad Human",
     "url": "https://github.com/coenraadhuman"

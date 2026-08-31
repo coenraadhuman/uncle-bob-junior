@@ -7,19 +7,14 @@ const path = require('path');
 
 const root = path.join(__dirname, '..');
 
-test('root npm test covers bundled subprojects', () => {
+test('root npm test runs the full suite', () => {
   const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-
-  assert.match(packageJson.scripts.test, /npm test --prefix pi-extension/);
-  assert.match(packageJson.scripts.test, /npm test --prefix uncle-bob-junior-mcp/);
+  assert.match(packageJson.scripts.test, /node --test tests\/\*\.test\.js/);
 });
 
-test('CI installs MCP dependencies before root npm test', () => {
+test('CI runs the rule-copy, version, and test gates', () => {
   const workflow = fs.readFileSync(path.join(root, '.github', 'workflows', 'test.yml'), 'utf8');
-
-  assert.match(workflow, /npm install --prefix uncle-bob-junior-mcp/);
-  assert.ok(
-    workflow.indexOf('npm install --prefix uncle-bob-junior-mcp') < workflow.indexOf('npm test'),
-    'MCP dependencies must be installed before the root test command runs',
-  );
+  assert.match(workflow, /node scripts\/check-rule-copies\.js/);
+  assert.match(workflow, /node scripts\/check-versions\.js/);
+  assert.match(workflow, /npm test/);
 });

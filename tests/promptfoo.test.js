@@ -452,6 +452,42 @@ test('extension hook only acts on afterAll', async () => {
   await extensionHook('afterAll', { evalId: 'eval-empty', results: [] });
 });
 
+test('extension hook rebuilds the site after a successful export, and site failures stay non-fatal', async () => {
+  const { extensionHook } = require('../benchmarks/promptfoo-extension.js');
+  const calls = [];
+  await extensionHook('afterAll', { evalId: 'eval-x', results: [] }, {
+    doExport: () => '/tmp/run-dir',
+    doBuildSite: (evalId) => { calls.push(evalId); return '/tmp/docs'; },
+  });
+  assert.deepEqual(calls, ['eval-x']);
+
+  await extensionHook('afterAll', { evalId: 'eval-x', results: [] }, {
+    doExport: () => '/tmp/run-dir',
+    doBuildSite: () => { throw new Error('boom'); },
+  }); // must not throw
+
+  const skipped = [];
+  await extensionHook('afterAll', { evalId: 'eval-x', results: [] }, {
+    doExport: () => null,
+    doBuildSite: () => skipped.push('built'),
+  });
+  assert.deepEqual(skipped, [], 'no export, no site rebuild');
+});
+
+test('report.json carries rows with gates and smell counts plus means', () => {
+  const data = exporter.runData(FIXTURE_EVAL.evalId, exporter.resultRows(FIXTURE_EVAL));
+  assert.equal(data.evalId, FIXTURE_EVAL.evalId);
+  const [baseline, ruleset] = data.rows;
+  assert.equal(baseline.arm, 'baseline (no ruleset)');
+  assert.equal(baseline.gates.shipsTests, false);
+  assert.equal(baseline.gates.correct, true);
+  assert.equal(baseline.habitPass, false);
+  assert.equal(baseline.smellCounts['oversized-function'], 3);
+  assert.equal(baseline.smellCounts['unused-import'], 0);
+  assert.equal(ruleset.habitPass, true);
+  assert.deepEqual(data.means.map((m) => m.mean), [0.4, 1]);
+});
+
 // One fixture per documented habit-hooks rule that fires on Java, so the
 // benchmark's judge provably covers the catch list it stipulates:
 // https://github.com/habit-hooks/habit-hooks#what-it-catches

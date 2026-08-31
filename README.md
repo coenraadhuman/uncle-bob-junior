@@ -11,7 +11,7 @@ says nothing, and leaves eleven comments that each name a function you should
 have extracted. A month later you thank them, because the change request that
 would have taken a day took twenty minutes.
 
-Uncle Bob Junior puts that reviewer inside your AI agent.
+Uncle Bob Junior puts that reviewer inside Claude Code.
 
 ## Before / After
 
@@ -619,6 +619,15 @@ data-loss handling, security, or accessibility. Deliberate deviations get a
 `ubj:` comment naming the reason and cleanup trigger, harvested later by
 `/uncle-bob-junior-debt`.
 
+**Trust, but verify.** In Claude Code, a Stop hook closes the loop
+mechanically: when the agent finishes a turn, it runs
+[habit-hooks](https://github.com/habit-hooks/habit-hooks) over the branch's
+changed files, and any findings block the finish once with the report as the
+fix-it prompt. Opt-in per project — it only fires where a
+`.habit-hooks/config.toml` exists (`habit-hooks init`) and the CLI is on
+PATH; it stays silent when uncle-bob-junior is off, and deliberate
+deviations are managed with habit-hooks' own snooze.
+
 ## Does it work? Measure it
 
 The repo ships its own with/without benchmark: the same tasks, once bare and
@@ -668,9 +677,11 @@ caveats, and how to read the numbers: [benchmarks/](benchmarks/).
 
 ## Install
 
-The Claude Code and Codex plugins run two tiny Node.js lifecycle hooks, so `node` needs to be on your PATH (note for Nix/nvm users: it must be on the non-interactive shell's PATH). If it isn't, the skills still work, the always-on activation just stays quiet instead of erroring on every prompt.
-
-### Claude Code
+Uncle Bob Junior is a Claude Code plugin. Its lifecycle hooks run tiny
+Node.js scripts, so `node` needs to be on your PATH (note for Nix/nvm users:
+it must be on the non-interactive shell's PATH). If it isn't, the skills
+still work, the always-on activation just stays quiet instead of erroring
+on every prompt.
 
 ```
 /plugin marketplace add coenraadhuman/uncle-bob-junior
@@ -682,140 +693,73 @@ The Claude Code and Codex plugins run two tiny Node.js lifecycle hooks, so `node
 
 Same steps in the Claude Code Desktop app's Code tab: type the two `/plugin` commands above into the prompt box, or click the **+** button next to it, choose **Plugins** → **Add plugin** to browse your configured marketplaces, and manage marketplaces from **Customize** in the sidebar.
 
-### Codex
-
-```bash
-codex plugin marketplace add coenraadhuman/uncle-bob-junior
-codex plugin add uncle-bob-junior@uncle-bob-junior
-```
-
-Run `codex` and open `/hooks`, review and trust its two lifecycle hooks, and start a new thread. The same install covers the Codex desktop app: restart the app after installing.
-
-### GitHub Copilot CLI
-
-```bash
-copilot plugin marketplace add coenraadhuman/uncle-bob-junior
-copilot plugin install uncle-bob-junior@uncle-bob-junior
-```
-
-In an interactive Copilot CLI session, use the slash equivalents of the two commands above. Copilot CLI namespaces plugin commands by plugin name, e.g. `/uncle-bob-junior:uncle-bob-junior ultra`.
-
-### Pi agent harness
-
-```
-pi install git:github.com/coenraadhuman/uncle-bob-junior
-```
-
-### OpenCode
-
-Add to `opencode.json`:
-
-```json
-{ "plugin": ["@coenraadhuman/uncle-bob-junior"] }
-```
-
-Or run from a checkout (the plugin reuses `hooks/` and `skills/`):
-
-```json
-{ "plugin": ["./.opencode/plugins/uncle-bob-junior.mjs"] }
-```
-
-Injects the ruleset every turn at the active level and adds the `/uncle-bob-junior` commands. OpenCode also auto-loads this repo's `AGENTS.md`, so the rules hold even without the plugin; the plugin adds the `lite/full/ultra/off` levels.
-
-### Gemini CLI
-
-```bash
-gemini extensions install https://github.com/coenraadhuman/uncle-bob-junior
-```
-
-Loads the ruleset as always-on context every session and registers the `/uncle-bob-junior` commands; the `skills/` ship too.
-
-### Qoder
-
-Qoder auto-loads `AGENTS.md` from the repo root, so running from a checkout works with zero setup. For per-project rules, copy [`.qoder/rules/uncle-bob-junior.md`](.qoder/rules/uncle-bob-junior.md) into your project's `.qoder/rules/`. For full plugin-tier support (mode activation + per-prompt injection), add the hooks from [`hooks/qoder-hooks.json`](hooks/qoder-hooks.json) to your `.qoder/settings.json`, replacing `UNCLE_BOB_JUNIOR_DIR` with your checkout path.
-
-### Hermes Agent
-
-```bash
-hermes plugins install coenraadhuman/uncle-bob-junior --enable
-```
-
-Restart Hermes after installing. In shared gateways, restrict `/uncle-bob-junior` to trusted users with Hermes slash-command access controls.
-
-### Devin CLI
-
-```bash
-devin plugins install coenraadhuman/uncle-bob-junior
-```
-
-### Grok Build
-
-```bash
-grok plugin install coenraadhuman/uncle-bob-junior --trust
-```
-
-Enable the plugin (off by default) via `/plugins` or `~/.grok/config.toml`, then start a new session.
-
-### OpenClaw
-
-```bash
-clawhub install uncle-bob-junior
-```
-
-The review, audit, debt, gain, and help skills install the same way. Without ClawHub, copy [`.openclaw/skills/uncle-bob-junior`](.openclaw/skills/) into `~/.openclaw/skills/`.
-
-### Instruction-only hosts
-
-Cursor, Windsurf, Cline, GitHub Copilot Chat, Kiro, Zed, CodeWhale, Swival, Amp, Jules, JetBrains Junie, VS Code + Codex, Antigravity: copy the matching rules file ([`.cursor/rules/`](.cursor/rules/), [`.windsurf/rules/`](.windsurf/rules/), [`.clinerules/`](.clinerules/), [`.github/copilot-instructions.md`](.github/copilot-instructions.md), [`.kiro/steering/`](.kiro/steering/), [`.qoder/rules/`](.qoder/rules/), or plain [`AGENTS.md`](AGENTS.md)). Which files map to which agent: [Agent portability](docs/agent-portability.md).
-
 Set the level for every new session with the `UNCLE_BOB_JUNIOR_DEFAULT_MODE` env var (`lite`/`full`/`ultra`/`off`), or a `defaultMode` field in `~/.config/uncle-bob-junior/config.json` (`%APPDATA%\uncle-bob-junior\config.json` on Windows). The default is `full`.
 
 While active, the ruleset is also injected into every subagent spawned via the Agent tool. To scope that to specific agent types, set `UNCLE_BOB_JUNIOR_SUBAGENT_MATCHER` to a regex tested against the subagent's `agent_type` (unanchored, case-insensitive; unset injects into every subagent).
 
+Agents working on a repo can also read the compact ruleset straight from a committed [`AGENTS.md`](AGENTS.md) — this repo keeps one for exactly that.
+
 ### Uninstall
 
-| Host | Command |
-|------|---------|
-| Claude Code | `/plugin remove uncle-bob-junior` |
-| Codex | `codex plugin remove uncle-bob-junior` |
-| Devin CLI | `devin plugins remove uncle-bob-junior` |
-| Grok Build | `grok plugin uninstall uncle-bob-junior` |
-| Pi agent | `pi uninstall uncle-bob-junior` |
-| Cursor / Windsurf / Cline / Qoder / etc. | Delete the copied rule file |
+```
+/plugin remove uncle-bob-junior
+```
 
-These remove the plugin's own files. Run `node scripts/uninstall.js` **before** the host remove command to also clean up the mode flag, `~/.config/uncle-bob-junior/config.json`, and (if you accepted the setup nudge) the statusline entry in `~/.claude/settings.json`.
+This removes the plugin's own files. Run `node scripts/uninstall.js` **before** it to also clean up the mode flag, `~/.config/uncle-bob-junior/config.json`, and (if you accepted the setup nudge) the statusline entry in `~/.claude/settings.json`.
 
 ## Commands
 
-| Command | What it does |
-|---------|--------------|
+| Command                                            | What it does                                                              |
+|----------------------------------------------------|---------------------------------------------------------------------------|
 | `/uncle-bob-junior [lite \| full \| ultra \| off]` | Set the intensity, or turn it off. No argument reports the current level. |
-| `/uncle-bob-junior-review` | Review the current diff for clean-code violations, one line per smell. |
-| `/uncle-bob-junior-audit` | Audit the whole repo, ranked by change friction, hot files first. |
-| `/uncle-bob-junior-debt` | Harvest the `ubj:` deviations you've deferred into a ledger. |
-| `/uncle-bob-junior-gain` | Render the newest with/without promptfoo eval as a scoreboard. |
-| `/uncle-bob-junior-help` | Quick reference for the commands above. |
+| `/uncle-bob-junior-review`                         | Review the current diff for clean-code violations, one line per smell.    |
+| `/uncle-bob-junior-audit`                          | Audit the whole repo, ranked by change friction, hot files first.         |
+| `/uncle-bob-junior-debt`                           | Harvest the `ubj:` deviations you've deferred into a ledger.              |
+| `/uncle-bob-junior-gain`                           | Render the newest with/without promptfoo eval as a scoreboard.            |
+| `/uncle-bob-junior-help`                           | Quick reference for the commands above.                                   |
 
-Commands need a skill-capable host (Claude Code, Codex, Devin CLI, OpenCode, Gemini, pi, Swival, Hermes Agent, Qoder, Grok Build). In Codex they're skills, invoke with `@`. The instruction-only adapters load the always-on ruleset without the commands.
+Commands ship both as skills (`skills/`) and as file-based commands (`commands/*.toml`).
 
 ## Levels
 
-| Level | What changes |
-|-------|--------------|
-| **lite** | Readability pass only: names, guard clauses, named constants on the code you touch. |
-| **full** | The whole checklist enforced on new and changed code, tests included. Default. |
+| Level     | What changes                                                                                                   |
+|-----------|----------------------------------------------------------------------------------------------------------------|
+| **lite**  | Readability pass only: names, guard clauses, named constants on the code you touch.                            |
+| **full**  | The whole checklist enforced on new and changed code, tests included. Default.                                 |
 | **ultra** | Hard limits (≤ 10 statements, ≤ 2 nesting), every branch tested, adjacent smells in touched files cleaned too. |
+
+## Showcase site
+
+The showcase site is a [Docusaurus](https://docusaurus.io/) project in
+`website/` — libraries over wheels, rule 13 applies to this repo too. It
+carries a landing page with the checklist, the benchmark scoreboard with a
+mean-score chart, and per-task pages showing the baseline and ruleset code
+in tabs with the habit-hooks findings annotated. The benchmark pages are
+generated content, never hand-edited:
+
+```bash
+node benchmarks/build-site.js            # MDX content from the newest exported run
+node benchmarks/build-site.js <eval-id>  # or a specific one
+npm --prefix website install             # once
+npm --prefix website run build           # render the static site into /docs
+npm --prefix website start               # or preview locally with live reload
+```
+
+Every eval regenerates the MDX content automatically (the same extension
+hook that exports run outcomes); rendering and committing `docs/` is the
+deliberate publish step. To serve it, enable Pages once in the repo
+settings: Settings → Pages → Deploy from a branch → `main` and `/docs`.
+All benchmark code on the site is model-generated output, labelled as such.
 
 ## Development
 
-When changing the compact rule text, keep the agent copies aligned:
+When changing a rule, keep `skills/uncle-bob-junior/SKILL.md` (the runtime
+source of truth) and `AGENTS.md` (the compact repo-local version) aligned:
 
 ```bash
 node scripts/check-rule-copies.js
 npm test
 ```
-
-The OpenClaw skill package (`.openclaw/skills/`) is generated from `skills/`; rerun `node scripts/build-openclaw-skills.js` after changing a skill — the test suite fails if it is stale.
 
 The benchmark tasks are Java: the correctness gate compiles and runs the generated email and CSV code with the local JDK (`javac` + `java` on PATH); without a JDK those checks report "skipped" and the tests skip cleanly.
 

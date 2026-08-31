@@ -1,0 +1,4 @@
+/* Theme defaults do the work; only benchmark-specific tweaks live here. */
+.markdown details > summary {
+  cursor: pointer;
+}

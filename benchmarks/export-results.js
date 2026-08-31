@@ -62,6 +62,7 @@ function resultRows(data) {
     // report has its own arm column, so only the model half is kept here.
     model: String(r.provider?.label || r.provider?.id || 'unknown-model').split(ARM_SEPARATOR)[0],
     task: r.testCase?.description || slug(r.vars?.task).slice(0, 40),
+    prompt: r.testCase?.vars?.task || r.vars?.task || '',
     output: String(r.response?.output || ''),
     score: r.gradingResult?.score ?? 0,
     components: (r.gradingResult?.componentResults || []).map((c) => ({
@@ -111,21 +112,44 @@ function rowSmellCount(row, rule) {
   return smellCount(row.components.find((c) => c.metric === `hh:${rule}`));
 }
 
-function reportRow(row, smellColumns) {
+// One row's judged outcome as plain data: gates, habit-hooks verdict, and a
+// count per catch-list smell. null means "not judged" (older exports carry a
+// single habit_hooks component with no per-smell counts). Shared by the
+// markdown report and the report.json the site builder consumes.
+function rowData(row) {
   const metric = (name) => row.components.find((c) => c.metric === name);
-  // One component per smell (hh:*); older exports carry a single
-  // habit_hooks component instead, whose reason has no per-smell counts.
-  const hasSmellMetrics = row.components.some((c) => c.metric.startsWith('hh:'));
-  const habitPass = hasSmellMetrics
-    ? row.components.filter((c) => c.metric.startsWith('hh:')).every((c) => c.pass)
-    : metric('habit_hooks')?.pass;
-  const counts = smellColumns.map((rule) => (hasSmellMetrics ? rowSmellCount(row, rule) : 'n/a'));
-  const gate = (name) => (metric(name)?.pass ? 'YES' : 'NO');
-  return `| ${row.task} | ${row.model} | ${row.arm} | ${row.score.toFixed(2)} | ` +
-    `${metric('valid_code') ? (metric('valid_code').pass ? 'YES' : 'NO') : 'n/a'} | ` +
-    `${habitPass === undefined ? 'n/a' : habitPass ? 'PASS' : 'FAIL'} |` +
+  const smells = row.components.filter((c) => c.metric.startsWith('hh:'));
+  const smellCounts = {};
+  for (const rule of REPORT_SMELL_COLUMNS) smellCounts[rule] = smells.length ? rowSmellCount(row, rule) : null;
+  return {
+    task: row.task,
+    model: row.model,
+    arm: row.arm,
+    prompt: row.prompt || '',
+    score: row.score,
+    gates: {
+      validCode: metric('valid_code')?.pass ?? null,
+      shipsTests: metric('ships_tests')?.pass ?? false,
+      correct: metric('correct')?.pass ?? false,
+    },
+    habitPass: smells.length ? smells.every((c) => c.pass) : (metric('habit_hooks')?.pass ?? null),
+    smellCounts,
+  };
+}
+
+function reportRow(row, smellColumns) {
+  const data = rowData(row);
+  const counts = smellColumns.map((rule) => data.smellCounts[rule] ?? 'n/a');
+  const gate = (pass) => (pass ? 'YES' : 'NO');
+  return `| ${data.task} | ${data.model} | ${data.arm} | ${data.score.toFixed(2)} | ` +
+    `${data.gates.validCode === null ? 'n/a' : gate(data.gates.validCode)} | ` +
+    `${data.habitPass === null ? 'n/a' : data.habitPass ? 'PASS' : 'FAIL'} |` +
     `${counts.map((count) => ` ${count} |`).join('')} ` +
-    `${gate('ships_tests')} | ${gate('correct')} |`;
+    `${gate(data.gates.shipsTests)} | ${gate(data.gates.correct)} |`;
+}
+
+function runData(evalId, rows) {
+  return { evalId, rows: rows.map(rowData), means: meanScores(rows) };
 }
 
 // The compact table's columns: only the smells at least one row hit.
@@ -243,6 +267,7 @@ function writeRunArtifacts(evalId, rows, runDir, { scan = scanDir } = {}) {
     fs.writeFileSync(path.join(runDir, 'habit-hooks', `${slug(row.task)}-${slug(row.model)}-${slug(row.arm)}.md`), report);
   }
   fs.writeFileSync(path.join(runDir, 'report.md'), buildReport(evalId, rows));
+  fs.writeFileSync(path.join(runDir, 'report.json'), JSON.stringify(runData(evalId, rows), null, 2) + '\n');
 }
 
 // Export one run's outcomes. `data` is an export JSON or a results array;
@@ -268,6 +293,6 @@ function main() {
 if (require.main === module) main();
 
 module.exports = {
-  slug, resultRows, buildReport, writeRunArtifacts, exportRun, loadEval, newestEvalId,
+  slug, resultRows, buildReport, runData, writeRunArtifacts, exportRun, loadEval, newestEvalId,
   ENFORCED_SMELL_COLUMNS, SUGGESTED_SMELL_COLUMNS, REPORT_SMELL_COLUMNS,
 };

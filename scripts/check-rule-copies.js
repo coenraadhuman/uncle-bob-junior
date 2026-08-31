@@ -1,4 +1,10 @@
 #!/usr/bin/env node
+// Rule-drift guard between the two rule texts: skills/uncle-bob-junior/SKILL.md
+// (the runtime source of truth the plugin injects) and AGENTS.md (the compact
+// version agents working on this repo read). SKILL.md is longer than the
+// compact body, so the two cannot be byte-compared. ubj: canary, not full
+// equality. Assert the load-bearing rules survive verbatim in both; changing
+// a rule's wording trips this, which is the reminder to propagate it.
 const fs = require('fs');
 const path = require('path');
 
@@ -8,45 +14,13 @@ function read(relPath) {
   return fs.readFileSync(path.join(root, relPath), 'utf8').replace(/\r\n/g, '\n').trim();
 }
 
-function stripFrontmatter(text) {
-  return text.replace(/^---\n[\s\S]*?\n---\n*/, '').trim();
-}
-
-const agents = read('AGENTS.md');
-const canonical = agents.replace(/\n\n\(Yes, this file also applies[\s\S]*?\)$/, '').trim();
-
-// Compact copies: same body as AGENTS.md, host-specific frontmatter stripped.
-const copies = [
-  ['.cursor/rules/uncle-bob-junior.mdc', stripFrontmatter],
-  ['.windsurf/rules/uncle-bob-junior.md', text => text.trim()],
-  ['.clinerules/uncle-bob-junior.md', text => text.trim()],
-  ['.agents/rules/uncle-bob-junior.md', text => text.trim()],
-  ['.qoder/rules/uncle-bob-junior.md', text => text.trim()],
-  ['.github/copilot-instructions.md', text => text.trim()],
-  ['.kiro/steering/uncle-bob-junior.md', stripFrontmatter],
-];
-
-let failed = false;
-
-for (const [relPath, normalize] of copies) {
-  const actual = normalize(read(relPath));
-  if (actual !== canonical) {
-    console.error(`${relPath} drifted from AGENTS.md`);
-    failed = true;
-  }
-}
-
-// SKILL.md is the runtime source of truth and is longer than the compact body,
-// so it cannot be byte-compared. ubj: canary, not full equality. Assert the
-// load-bearing rules survive verbatim in both the source and AGENTS.md. Changing
-// a rule's wording trips this, which is the reminder to propagate it everywhere.
-// Upgrade path: generate the copies from SKILL.md if this ever misses a real drift.
 const INVARIANTS = [
   'does one thing',                        // single responsibility
   'Names reveal intent',                   // naming rule
   'guard clause',                          // flat control flow
   'named constant',                        // no magic values
   'wrong abstraction',                     // DRY has a ceiling
+  'duty to search',                        // search before hand-rolling a wheel
   'cleaner than you found it',             // boy-scout closer
   // the safety carve-outs: pin each so a reword in either file
   // can't silently drop one.
@@ -57,8 +31,12 @@ const INVARIANTS = [
   'Changed behavior without its test is unfinished', // test reflex headline
 ];
 
-const skill = read('skills/uncle-bob-junior/SKILL.md');
-const sources = [['skills/uncle-bob-junior/SKILL.md', skill], ['AGENTS.md', agents]];
+const sources = [
+  ['skills/uncle-bob-junior/SKILL.md', read('skills/uncle-bob-junior/SKILL.md')],
+  ['AGENTS.md', read('AGENTS.md')],
+];
+
+let failed = false;
 for (const phrase of INVARIANTS) {
   for (const [label, text] of sources) {
     if (!text.includes(phrase)) {
@@ -69,8 +47,8 @@ for (const phrase of INVARIANTS) {
 }
 
 if (failed) {
-  console.error('Update the copied rule text, AGENTS.md, or SKILL.md so the shared rules match.');
+  console.error('Update AGENTS.md or SKILL.md so the shared rules match.');
   process.exit(1);
 }
 
-console.log(`Rule copies match AGENTS.md; ${INVARIANTS.length} rule invariants present in SKILL.md and AGENTS.md.`);
+console.log(`${INVARIANTS.length} rule invariants present in SKILL.md and AGENTS.md.`);

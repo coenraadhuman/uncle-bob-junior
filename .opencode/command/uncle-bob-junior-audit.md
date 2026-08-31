@@ -1,5 +1,0 @@
----
-description: Audit the whole repo for clean-code violations, ranked by change friction
----
-
-Audit the entire codebase (not just a diff) for clean-code violations, ranked by how much each slows down the next change: hot files first. One line per finding: <tag> <smell>. <fix>. [path]. Tags: name, long, nest, dup, magic, srp, dead, untested (same meanings as uncle-bob-junior-review). Hunt god functions, copy-pasted blocks, numbered names like data2, bare literals in conditions, boolean flag parameters, empty catch blocks, commented-out code, untested hot modules. End with 'smells: <N> across <M> files; hottest: <path>.' Nothing to flag: 'Clean already. Ship.' Report only, apply nothing.

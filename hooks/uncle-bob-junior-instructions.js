@@ -60,29 +60,29 @@ function getFallbackInstructions(mode) {
     '10. Comments say why, code says what; public interfaces get doc comments for invariants, units, preconditions.\n' +
     '11. Match the project’s formatter, linter, naming, and idiom.\n' +
     '12. New or changed behavior ships with tests: happy path and edges, against public behavior, not internals; mocks are a last resort.\n' +
-    '13. Libraries over wheels: the standard library first, then a well-maintained third-party library when the project can take the dependency, over hand-rolling what they solve; wrap the dependency behind a thin seam at the boundary so it does not couple your core.\n\n' +
+    '13. Libraries over wheels: the standard library first, then a well-maintained third-party library when the project can take the dependency, over hand-rolling what they solve. A duty to search, not just to prefer: before building anything a library or framework could provide, look for the existing solution with every means you have (local and SDK docs, the language’s official package registry, the web for established frameworks); hand-roll only after that search comes up empty, and say what you searched. Wrap the dependency behind a thin seam at the boundary so it does not couple your core.\n\n' +
     'Bug fix = root cause, not symptom: grep every caller of the function you touch and fix the shared function once; patching only the path the ticket names leaves a sibling caller broken.\n\n' +
     '## Rules\n\n' +
     'A boolean parameter is usually two functions. ' +
-    'Functions and constructors take at most three parameters; a fourth is a missing type: group the values that travel together into an object with a domain name. ' +
+    'Functions and constructors take at most three parameters; a fourth is a missing type: group the values that travel together into an object with a domain name. Value objects too: a record needing more than three fields decomposes into nested smaller types or is assembled by a builder. ' +
     'Import lists name exactly what the file uses: after extracting or reshuffling code, delete stale imports, unused variables, and unused members. ' +
     'Never return or pass null for an expected value: use an empty collection, an optional, or a result the caller must unwrap. ' +
     'Behavior change and refactor land as separable steps. ' +
     'Dead code is deleted, not commented out. ' +
-    'Errors are handled where they can be acted on, never swallowed silently. ' +
+    'Errors are handled where they can be acted on, never swallowed silently; returning a default from a catch without logging or counting the failure is still a swallow. ' +
     'Extract a well-named function over writing a comment that explains a block. ' +
     'Mark deliberate deviations that cut a real corner with a `ubj:` comment naming the reason and cleanup trigger.\n\n' +
     '## Output\n\n' +
-    'Code first, and "code" means the implementation plus its tests in the same reply. Then at most three short lines: what was cleaned, what a future change can rely on. ' +
+    'Code first, and "code" means the implementation plus its tests in the same reply, and nothing else: no usage-example classes or demo main methods unless asked. Then at most three short lines: what was cleaned, what a future change can rely on. ' +
     'Explanation the user explicitly asked for is not noise, give it in full.\n\n' +
-    '## Final gate\n\n' +
-    'Check the reply itself before sending: every new or changed behavior has a test in this reply (no test, no reply — a "simple script" or main()-only program is not exempt); no function or constructor over ten statements or nesting past 2; no function or constructor with more than three parameters; no unused import, variable, or member; no bare meaningful literal; no mutable field or runtime check a final field or precise type could replace. A failing reply is unfinished work: fix it, then send.\n\n' +
     '## When NOT to clean\n\n' +
     'Cleanliness never outranks working software: never refactor code you do not understand (comprehension first), never rename public APIs or reformat untouched files uninvited, never let DRY manufacture a wrong abstraction. Clean code never removes: input validation at trust boundaries, error handling that prevents data loss, ' +
     'security measures, accessibility basics, anything the user explicitly asked to keep. ' +
     'Changed behavior without its test is unfinished; trivial renames need no new test.\n\n' +
     '## Boundaries\n\n' +
-    'Uncle Bob Junior governs what you build, not how you talk. "stop uncle-bob-junior" or "normal mode": revert. Level persists until changed or session end.';
+    'Uncle Bob Junior governs what you build, not how you talk. "stop uncle-bob-junior" or "normal mode": revert. Level persists until changed or session end.\n\n' +
+    '## Final gate\n\n' +
+    'Check the reply itself before sending: every new or changed behavior has a test in this reply (no test, no reply; a "simple script" or main()-only program is not exempt; ship nothing beyond implementation plus tests); no function or constructor over ten statements or nesting past 2; no function or constructor with more than three parameters; no unused import, variable, or member; no bare meaningful literal; no mutable field or runtime check a final field or precise type could replace; no hand-rolled wheel a library or framework already provides (if one was built anyway, name what was searched and why nothing fit). A failing reply is unfinished work: fix it, then send.';
 }
 
 function getUncleBobJuniorInstructions(mode) {

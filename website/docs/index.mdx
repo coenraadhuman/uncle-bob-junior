@@ -1,0 +1,33 @@
+---
+title: Uncle Bob Junior
+slug: /
+sidebar_position: 1
+---
+
+A clean-code ruleset for Claude Code: software that is easy to read, simple to
+understand, and safe to change. It ships as a Claude Code plugin — always-on
+rules, slash commands, a mode statusline, and a habit-hooks verification Stop
+hook. See the [README](https://github.com/coenraadhuman/uncle-bob-junior#readme) for installation.
+
+## The checklist
+
+1. **One job each.** Every function and class does one thing. If describing it needs "and", split it. (Single Responsibility)
+2. **Names reveal intent.** A reader learns what a thing is for from its name alone: `remainingRetries`, not `n`; `isEligibleForRefund`, not `check2`. No abbreviations except universal ones, no single letters outside conventional loop indices.
+3. **Small functions, deep not shredded.** Keep every function and constructor to ten statements or fewer at one level of abstraction (count statements, not lines: blank lines and braces buy no room); extract until each fits in one thought. Don't extract mechanically to hit the number: find the responsibility boundary, then say what the function does in one sentence and make the code read like that sentence. But stop where extraction scatters one operation across fragments the reader must chase: a call chain you must follow to understand one step is one function again.
+4. **Flat control flow.** Handle the error or empty case first with a guard clause and return early; the happy path stays unindented. Nesting deeper than 2 levels means a function is hiding inside.
+5. **Logic exists once.** The second time the same logic appears, extract it. (DRY) But DRY is about knowledge, not keystrokes: duplication is cheaper than the wrong abstraction, so near-duplicates only merge when a third use proves the shape.
+6. **Simplest design that works.** Build only what the current task requires; no speculative generality, no interface with one implementation, no config for a value that never changes. (KISS, YAGNI)
+7. **No magic values.** Every literal with meaning gets a named constant: `MAX_LOGIN_ATTEMPTS = 5`, not a bare `5` in a condition.
+8. **Make invalid states unrepresentable.** Prefer a precise type over a runtime check: an enum over a mode string, a value object over a raw primitive, a non-nullable field over a null test. Parse raw input into typed data once, at the boundary.
+9. **Immutable by default.** Data does not change under the reader's feet: side effects live at the edges, and the core stays pure functions a test can call without setup. (functional core, imperative shell)
+10. **Comments say why.** The code says what; a comment earns its place only by recording a decision the code cannot show (a constraint, a trade-off, a spec quirk). Delete comments the code can say. Public interfaces still get doc comments for the contract no name can carry: invariants, units, preconditions.
+11. **House style.** Match the project's formatter, linter, naming, and idiom. Never hand-format against the tooling; never introduce a second style.
+12. **Tests prove behavior.** New or changed behavior ships with tests: the happy path and the edges (empty, boundary, invalid input). Tests exercise public behavior, not internals: a pure refactor breaks no test, and mocks are a last resort for boundaries you don't own. Untested changed behavior is unfinished.
+13. **Libraries over wheels.** Prefer the standard library, then a well-maintained third-party library when the project can take the dependency, over hand-rolling what they already solve: a hand-written date parser, CSV reader, crypto routine, or site generator is a liability, not an asset. This is a duty to search, not just a preference: before building anything a library or framework could provide, look for the existing solution with every means you have — the project and SDK docs locally, the language's official package registry (npm, Maven Central, PyPI, ...), and the web for established frameworks. Hand-roll only after that search comes up empty, and say what you searched and why it did not fit. Keep the dependency at arm's length — wrap it behind a thin seam at the boundary (the one single-implementation interface worth having) so its types and quirks don't spread through your core, and swapping it stays a one-place change.
+
+## Does it work?
+
+The repo benchmarks the ruleset against a no-ruleset baseline on the same models
+and tasks, judged by [habit-hooks](https://github.com/habit-hooks/habit-hooks),
+an independent smell detector. [See the scoreboard and the generated code side
+by side.](benchmark/scoreboard)
