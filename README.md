@@ -207,6 +207,25 @@ uncle-bob-junior/
 └── AGENTS.md                       # compact ruleset for agents working here
 ```
 
+### Versioning
+
+The plugin version is keyed to its content: a hash of everything under
+`plugins/uncle-bob-junior/` (skills, hooks, commands, scripts) is recorded
+next to the manifest, and `npm run version:bump` bumps the patch version in
+`plugin.json` and `package.json` whenever that content changed — so Claude
+Code's `/plugin update` always sees skill changes as a new plugin version.
+`--minor`/`--major` for bigger releases. The committable pre-commit hook
+runs the bump automatically; enable it once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+CI and `npm test` fail when plugin content changed without a bump, so the
+version can never silently fall behind the skills.
+
+### Rule copies
+
 When changing a rule, keep `plugins/uncle-bob-junior/skills/uncle-bob-junior/SKILL.md` (the runtime
 source of truth) and `AGENTS.md` (the compact repo-local version) aligned:
 

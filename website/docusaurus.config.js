@@ -37,7 +37,12 @@ const config = {
       navbar: {
         title: 'Uncle Bob Junior',
         items: [
+          { to: '/ruleset', label: 'The Ruleset', position: 'left' },
           { to: '/benchmark/scoreboard', label: 'Benchmark', position: 'left' },
+          { to: '/gameoflife', label: 'Game of Life', position: 'left' },
+          { to: '/plugin', label: 'Claude Code Plugin', position: 'left' },
+          { to: '/commands', label: 'Commands & Levels', position: 'left' },
+          { to: '/faq', label: 'FAQ', position: 'left' },
           { href: 'https://github.com/coenraadhuman/uncle-bob-junior', label: 'GitHub', position: 'right' },
         ],
       },

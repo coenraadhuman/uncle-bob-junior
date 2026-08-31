@@ -6,6 +6,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { status } = require('./bump-version');
 
 const root = path.join(__dirname, '..');
 const PINNED_SEMVER = /^\d+\.\d+\.\d+$/;
@@ -57,9 +58,16 @@ if (shared && process.env.GITHUB_REF_TYPE === 'tag') {
   }
 }
 
+// The plugin's content hash must match the recorded one: content changes
+// without a version bump would be invisible to Claude Code's update flow.
+if (!status().upToDate) {
+  console.error('plugin content changed without a version bump; run: node scripts/bump-version.js');
+  failed = true;
+}
+
 if (failed) {
   console.error('Align the version fields (see issue #260) so every manifest shares one version.');
   process.exit(1);
 }
 
-console.log(`All ${VERSION_FILES.length} version files pinned at ${shared}.`);
+console.log(`All ${VERSION_FILES.length} version files pinned at ${shared}; plugin content hash current.`);

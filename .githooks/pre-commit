@@ -1,0 +1,13 @@
+#!/bin/sh
+# Auto-bump the plugin version when the plugin payload changed, so Claude
+# Code's /plugin update flow sees every content change. One-time setup:
+#
+#   git config core.hooksPath .githooks
+#
+# The bump script is a no-op when the payload is unchanged. For a minor or
+# major release, run `node scripts/bump-version.js --minor|--major` before
+# committing; this hook only ever patches.
+node scripts/bump-version.js || exit 1
+git add plugins/uncle-bob-junior/.claude-plugin/plugin.json \
+        plugins/uncle-bob-junior/.claude-plugin/content.sha256 \
+        package.json

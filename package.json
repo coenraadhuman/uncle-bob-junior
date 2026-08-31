@@ -1,8 +1,14 @@
 {
   "name": "@coenraadhuman/uncle-bob-junior",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Clean-code mode for Claude Code. Code that is easy to read, simple to understand, and safe to change.",
-  "keywords": ["claude-code", "claude-code-plugin", "uncle-bob-junior", "clean-code", "skills"],
+  "keywords": [
+    "claude-code",
+    "claude-code-plugin",
+    "uncle-bob-junior",
+    "clean-code",
+    "skills"
+  ],
   "license": "MIT",
   "private": true,
   "author": {
@@ -19,6 +25,7 @@
   },
   "scripts": {
     "test": "node --test tests/*.test.js",
-    "site:update": "node scripts/update-site.js"
+    "site:update": "node scripts/update-site.js",
+    "version:bump": "node scripts/bump-version.js"
   }
 }
