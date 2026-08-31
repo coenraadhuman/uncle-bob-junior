@@ -14,7 +14,6 @@ website/build/
 .promptfoo/
 benchmarks/output*
 benchmarks/benchmark-local-results.json
-benchmarks/results/
 
 # one-off social/announcement art, not repo content
 announce-*.png

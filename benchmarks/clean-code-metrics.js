@@ -189,7 +189,9 @@ function countSetters(lines, isPython) {
 
 function hasTestSignal(code) {
   return /\b(assert|test\(|describe\(|it\(|expect\(|unittest|pytest|node:test)\b/.test(code)
-    || /@Test\b|\bassert\w+\s*\(|\borg\.junit\b/.test(code);
+    || /@Test\b|\bassert\w+\s*\(|\borg\.junit\b/.test(code)
+    // C#: xUnit/NUnit/MSTest attributes and their Assert classes.
+    || /\[(Fact|Theory|Test|TestMethod)\]|\bAssert\.\w+\s*\(|using\s+(Xunit|NUnit)/.test(code);
 }
 
 function analyze(rawCode, lang) {

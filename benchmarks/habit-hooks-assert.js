@@ -96,6 +96,9 @@ function scanDir(dir, plugins) {
     return { skipped: false, report, issues, total };
   } finally {
     fs.rmSync(configDir, { recursive: true, force: true });
+    // The python plugin's ruff sensor drops a cache dir next to the scanned
+    // files; exported run dirs must hold only the generated sources.
+    fs.rmSync(path.join(dir, '.ruff_cache'), { recursive: true, force: true });
   }
 }
 

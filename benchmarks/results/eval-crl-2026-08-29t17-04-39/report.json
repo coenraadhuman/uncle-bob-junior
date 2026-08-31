@@ -1,0 +1,95 @@
+{
+  "evalId": "eval-cRl-2026-08-29T17:04:39",
+  "rows": [
+    {
+      "task": "email",
+      "model": "claude-cli:haiku",
+      "arm": "baseline (no ruleset)",
+      "prompt": "Write a Java method that validates email addresses.",
+      "score": 0.75,
+      "gates": {
+        "validCode": false,
+        "shipsTests": false,
+        "correct": true
+      },
+      "habitPass": true,
+      "smellCounts": {
+        "oversized-function": 0,
+        "too-many-parameters": 0,
+        "high-complexity": 0,
+        "deep-nesting": 0,
+        "oversized-file": 0,
+        "unused-variable": 0,
+        "unused-import": 0,
+        "loose-equality": 0,
+        "var-declaration": 0,
+        "non-const-binding": 0,
+        "duplicate-import": 0,
+        "redundant-type-annotation": 0,
+        "unused-class-member": 0,
+        "unused-file": 0,
+        "unused-export": 0,
+        "unused-dependency": 0,
+        "test-only-dead-code": 0,
+        "parse-error": 0,
+        "warning-comment": 0,
+        "explicit-any": 0,
+        "non-null-assertion": 0,
+        "non-essential-comment": 0,
+        "duplicated-code": 0,
+        "swallowed-exception": 0
+      }
+    },
+    {
+      "task": "email",
+      "model": "claude-cli:haiku",
+      "arm": "uncle-bob-junior",
+      "prompt": "Write a Java method that validates email addresses.",
+      "score": 0.859375,
+      "gates": {
+        "validCode": true,
+        "shipsTests": true,
+        "correct": false
+      },
+      "habitPass": false,
+      "smellCounts": {
+        "oversized-function": 1,
+        "too-many-parameters": 0,
+        "high-complexity": 0,
+        "deep-nesting": 0,
+        "oversized-file": 0,
+        "unused-variable": 0,
+        "unused-import": 0,
+        "loose-equality": 0,
+        "var-declaration": 0,
+        "non-const-binding": 0,
+        "duplicate-import": 0,
+        "redundant-type-annotation": 0,
+        "unused-class-member": 0,
+        "unused-file": 0,
+        "unused-export": 0,
+        "unused-dependency": 0,
+        "test-only-dead-code": 0,
+        "parse-error": 0,
+        "warning-comment": 0,
+        "explicit-any": 0,
+        "non-null-assertion": 0,
+        "non-essential-comment": 0,
+        "duplicated-code": 0,
+        "swallowed-exception": 0
+      }
+    }
+  ],
+  "means": [
+    {
+      "key": "claude-cli:haiku / baseline (no ruleset)",
+      "mean": 0.75,
+      "n": 1
+    },
+    {
+      "key": "claude-cli:haiku / uncle-bob-junior",
+      "mean": 0.859375,
+      "n": 1
+    }
+  ]
+}

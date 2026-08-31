@@ -343,7 +343,87 @@ test('config: string map with no typing or errors fails', () => {
   assert.equal(result.pass, false);
 });
 
+// --- Access-log analyser (Python, structural) ---
+
+const LOGSCAN_TASK = "Write a Python program that analyses a web server access log: each line reads 'IP - - [timestamp] \"METHOD path\" status bytes'. Compute request counts per status class (2xx/3xx/4xx/5xx), the five most requested paths, the error rate per hour, and flag any IP with more than 100 requests in a single hour as suspicious; print a readable report.";
+
+test('logscan: parsing, status classes, top paths, hourly rates, threshold passes', () => {
+  const result = check(LOGSCAN_TASK, 'python', `
+import re
+from collections import Counter
+
+SUSPICIOUS_REQUESTS_PER_HOUR = 100
+TOP_PATHS = 5
+
+def status_class(status):
+    return f"{status // 100}xx"
+
+def analyse(lines):
+    paths = Counter()
+    for line in lines:
+        match = re.match(r'(\\S+) - - \\[(.+?)\\] "(\\S+) (\\S+)" (\\d+) (\\d+)', line)
+        if not match:
+            continue
+        hour = match.group(2)[:14]  # %d/%b/%Y:%H
+        paths[match.group(4)] += 1
+    return paths.most_common(TOP_PATHS)
+
+def report(top_paths, suspicious_ips):
+    print("Top paths:", top_paths)
+    print("Suspicious (flagged):", suspicious_ips)
+`);
+  assert.equal(result.pass, true, result.reason);
+});
+
+test('logscan: line echo with no analysis fails', () => {
+  const result = check(LOGSCAN_TASK, 'python',
+    'def analyse(lines):\n    for line in lines:\n        print(line)\n');
+  assert.equal(result.pass, false);
+});
+
+// --- Expense processor (C#, structural) ---
+
+const EXPENSE_TASK = 'Write a C# program that processes employee expense claims: validate each claim (positive amount, known category, receipt attached for amounts over 25 euros), enforce per-category monthly caps (travel 500, meals 150, equipment 1000 euros), route claims above 200 euros to manager approval and above 1000 euros to finance approval, and produce a per-employee monthly reimbursement report.';
+
+test('expense: validation, caps, routing, receipts, report passes', () => {
+  const result = check(EXPENSE_TASK, 'csharp', `
+using System;
+using System.Text;
+
+public class ExpenseProcessor
+{
+    private const decimal TravelCapEuros = 500m;
+    private const decimal MealsCapEuros = 150m;
+    private const decimal EquipmentCapEuros = 1000m;
+    private const decimal ReceiptRequiredAboveEuros = 25m;
+    private const decimal ManagerApprovalAboveEuros = 200m;
+
+    public string Process(Claim claim)
+    {
+        if (claim.Amount <= 0) throw new ArgumentException("Amount must be positive");
+        if (claim.Amount > ReceiptRequiredAboveEuros && !claim.HasReceipt) throw new ArgumentException("Receipt required");
+        var route = claim.Amount > ManagerApprovalAboveEuros ? "manager" : "auto";
+        if (claim.Amount > EquipmentCapEuros) route = "finance";
+        var report = new StringBuilder();
+        report.AppendLine($"{claim.Employee}: {claim.Amount} ({route})");
+        return report.ToString();
+    }
+}`);
+  assert.equal(result.pass, true, result.reason);
+});
+
+test('expense: unconditional payout with no rules fails', () => {
+  const result = check(EXPENSE_TASK, 'csharp',
+    'public class Payer\n{\n    public void Pay(object claim) { Send(claim); }\n}');
+  assert.equal(result.pass, false);
+});
+
 // --- Task routing ---
+
+test('the non-Java tasks route to their own checkers, not another task', () => {
+  assert.match(check(LOGSCAN_TASK, 'python', 'def x():\n    pass').reason, /^Missing:/);
+  assert.match(check(EXPENSE_TASK, 'csharp', 'public class X {}').reason, /^Missing:/);
+});
 
 test('unknown task skips the gate', () => {
   const result = check('Write a haiku about spring.', 'java', 'class X {}');

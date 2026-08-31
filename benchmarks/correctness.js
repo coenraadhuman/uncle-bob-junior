@@ -1,8 +1,9 @@
 // Functional correctness assertion for the Java benchmark tasks: proves
 // "cleaner" is never quietly "broken". The email and csv tasks compile and run
 // the generated code with the local JDK (javac + java) against real checks;
-// the open-ended tasks (retry, ratelimit, order, statement, booking, config)
-// get structural checks, since their contracts have no single runnable shape.
+// the open-ended tasks (retry, ratelimit, order, statement, booking, config,
+// logscan in Python, expense in C#) get structural checks, since their
+// contracts have no single runnable shape.
 //
 // Metric: `correct` (1 = all checks pass, 0 = at least one fails). Without a
 // JDK the executable checks report "skipped" and pass, so a missing toolchain
@@ -39,6 +40,8 @@ function identifyTask(task) {
   if (t.includes('bank statement')) return 'statement';
   if (t.includes('booking')) return 'booking';
   if (t.includes('configuration') && t.includes('pars')) return 'config';
+  if (t.includes('access log')) return 'logscan';
+  if (t.includes('expense')) return 'expense';
   return null;
 }
 
@@ -61,6 +64,16 @@ function hasJdk() {
 function javaBlocksOf(blocks) {
   const java = blocks.filter((b) => b.lang === 'java' || (!b.lang && /\b(class|public|void)\b/.test(b.code)));
   return java.length ? java : null;
+}
+
+function pythonBlocksOf(blocks) {
+  const python = blocks.filter((b) => b.lang === 'python' || b.lang === 'py' || (!b.lang && /^\s*(def|class)\s+\w+.*:/m.test(b.code)));
+  return python.length ? python : null;
+}
+
+function csharpBlocksOf(blocks) {
+  const csharp = blocks.filter((b) => b.lang === 'csharp' || b.lang === 'cs' || (!b.lang && /\busing\s+System\b|\bnamespace\s+\w+/.test(b.code)));
+  return csharp.length ? csharp : null;
 }
 
 // Replies often append a usage-example block of bare statements, or a JUnit
@@ -330,6 +343,35 @@ const CHECKS = {
     if (!/line/i.test(code) || !/error|exception|invalid|throw/i.test(code)) failures.push('no line-numbered errors');
     if (!/default/i.test(code)) failures.push('no defaults');
     if (failures.length === 0) return { pass: true, reason: 'Config parser has required structure' };
+    return { pass: false, reason: 'Missing: ' + failures.join(', ') };
+  },
+
+  logscan(blocks) {
+    const python = pythonBlocksOf(blocks);
+    if (!python) return { pass: false, reason: 'No Python code block found' };
+    const code = python.map((b) => b.code).join('\n');
+    const failures = [];
+    if (!/\bre\.|\.split\(|match|findall/.test(code)) failures.push('no log-line parsing');
+    if (!/[2345]xx|\b(2\d\d|4\d\d|5\d\d)\b|status/i.test(code)) failures.push('no status classes');
+    if (!/Counter|most_common|sorted/.test(code) || !/5/.test(code)) failures.push('no top-five paths');
+    if (!/100/.test(code) || !/suspicious|flag/i.test(code)) failures.push('no suspicious-IP threshold');
+    if (!/hour|%H/i.test(code)) failures.push('no per-hour grouping');
+    if (!/print|f["']|format/.test(code)) failures.push('no report output');
+    if (failures.length === 0) return { pass: true, reason: 'Log analyser has required structure' };
+    return { pass: false, reason: 'Missing: ' + failures.join(', ') };
+  },
+
+  expense(blocks) {
+    const csharp = csharpBlocksOf(blocks);
+    if (!csharp) return { pass: false, reason: 'No C# code block found' };
+    const code = csharp.map((b) => b.code).join('\n');
+    const failures = [];
+    if (!/throw|Exception|invalid|error/i.test(code)) failures.push('no claim validation');
+    if (!(/500/.test(code) && /150/.test(code) && /1000/.test(code))) failures.push('no per-category caps');
+    if (!/200/.test(code) || !/manager/i.test(code) || !/finance/i.test(code)) failures.push('no approval routing');
+    if (!/25/.test(code) || !/receipt/i.test(code)) failures.push('no receipt rule');
+    if (!/StringBuilder|string\.Format|\$"|AppendLine|Console\.Write/.test(code)) failures.push('no report building');
+    if (failures.length === 0) return { pass: true, reason: 'Expense processor has required structure' };
     return { pass: false, reason: 'Missing: ' + failures.join(', ') };
   },
 };

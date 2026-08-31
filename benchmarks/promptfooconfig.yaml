@@ -119,3 +119,11 @@ tests:
     vars: { task: "Build an event seat booking engine in Java: a seat can be held for 15 minutes and the hold then expires, is confirmed, or is released; tickets are priced in adult, child, senior, and student tiers; bookings of 10 or more seats get a 5% group discount; cancelling refunds 100% more than 30 days before the event, 50% between 30 and 7 days, and nothing later; when the event is sold out, new requests join a waiting list served in order as seats free up." }
   - description: config
     vars: { task: "Write a Java parser for a small configuration language: sections in square brackets, key=value pairs, # comments and blank lines; values are typed integers, booleans, or durations such as 30s and 5m; malformed lines and unknown keys produce validation errors that name the line number; missing keys fall back to defaults. Parsing yields a typed configuration object, not a map of strings." }
+  # Two non-Java tasks prove the ruleset is language-neutral. Python is fully
+  # judged (habit-hooks python plugin); C# gets the gates plus the generic
+  # plugin only — habit-hooks has no C# plugin, so structural smells there
+  # rest on file-level checks and the correctness gate.
+  - description: logscan
+    vars: { task: "Write a Python program that analyses a web server access log: each line reads 'IP - - [timestamp] \"METHOD path\" status bytes'. Compute request counts per status class (2xx/3xx/4xx/5xx), the five most requested paths, the error rate per hour, and flag any IP with more than 100 requests in a single hour as suspicious; print a readable report." }
+  - description: expense
+    vars: { task: "Write a C# program that processes employee expense claims: validate each claim (positive amount, known category, receipt attached for amounts over 25 euros), enforce per-category monthly caps (travel 500, meals 150, equipment 1000 euros), route claims above 200 euros to manager approval and above 1000 euros to finance approval, and produce a per-employee monthly reimbursement report." }

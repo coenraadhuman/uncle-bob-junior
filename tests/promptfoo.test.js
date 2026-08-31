@@ -55,7 +55,7 @@ test('uncle-bob-junior arm prepends the SKILL.md body as system prompt', () => {
 });
 
 test('the delivery contract demands fenced Java and forbids file edits', () => {
-  assert.ok(DELIVERY_INSTRUCTION.includes('Reply with the complete solution as Java code'));
+  assert.ok(DELIVERY_INSTRUCTION.includes('written in the language the task asks for'), 'contract must not hardcode one language (it once forced Java onto the Python/C# tasks)');
   assert.ok(DELIVERY_INSTRUCTION.includes('Do not create or edit files'));
 });
 
@@ -608,6 +608,64 @@ test('splitJavaTypes attributes wildcard imports to the units that use the packa
   assert.ok(byName.Store.includes('import java.io.*;'), 'a known wildcard nothing uses survives once, in the first unit');
   assert.ok(!byName.Config.includes('import java.io.*;'));
   assert.ok(byName.Config.includes('import com.example.legacy.*;'), 'unknown packages still go to every unit');
+});
+
+test('python and C# test code is recognized as tests, not production', () => {
+  const { isTestBlock, shipsTests } = require('../benchmarks/promptfoo-metrics.js');
+  assert.equal(isTestBlock('import pytest\n\ndef test_sum():\n    assert analyse([]) == {}'), true, 'pytest module is a test block');
+  assert.equal(isTestBlock('using Xunit;\n\npublic class ExpenseTests {\n    [Fact]\n    public void RejectsNegative() { }\n}'), true, 'xUnit class is a test block');
+  assert.equal(isTestBlock('def analyse(lines):\n    return {}'), false, 'plain python is production');
+
+  const csharpReply = '```csharp\npublic class Processor { }\n```\n\n```csharp\nusing Xunit;\npublic class ProcessorTests { [Fact] public void Works() { Assert.Equal(1, 1); } }\n```';
+  assert.equal(shipsTests(csharpReply).pass, true, 'C# xUnit tests count as shipped tests');
+  assert.equal(isTestFile({ name: 'test_analyser.py', content: 'def test_x(): pass' }), true, 'pytest file name marks a test file');
+  assert.equal(isTestFile({ name: 'Anything.cs', content: '[Fact]\npublic void X() {}' }), true, 'xUnit attribute marks a test file');
+});
+
+test('C# blocks get .cs files named after their type and only the generic plugin', () => {
+  const files = extractCodeFiles([{ lang: 'csharp', code: 'using System;\n\npublic class ExpenseProcessor { }' }]);
+  assert.deepEqual(files.map((f) => f.name), ['ExpenseProcessor.cs']);
+  assert.deepEqual(pluginsFor([{ lang: 'csharp' }]), ['generic'], 'no habit-hooks C# plugin: generic only');
+  assert.deepEqual(pluginsFor([{ lang: 'python' }]), ['python', 'generic']);
+});
+
+test('a single mixed file (implementation plus tests) stays production instead of vanishing', () => {
+  const blocks = [{
+    lang: 'python',
+    code: 'import pytest\n\ndef analyse(lines):\n    return {}\n\ndef test_analyse_empty():\n    assert analyse([]) == {}\n',
+  }];
+  assert.deepEqual(productionFiles(blocks).map((f) => f.name), ['analyse.py'],
+    'filtering must never leave the judge with nothing to scan');
+});
+
+test('a mixed single-file reply exports to main/, not an empty directory', () => {
+  const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ubj-mixed-export-'));
+  try {
+    const row = {
+      prompt: { label: 'uncle-bob-junior' },
+      provider: { label: 'haiku' },
+      testCase: { description: 'logscan' },
+      response: { output: '```python\nimport pytest\n\ndef analyse(lines):\n    return {}\n\ndef test_analyse_empty():\n    assert analyse([]) == {}\n```' },
+      gradingResult: { score: 1, componentResults: [] },
+    };
+    const fakeScan = () => ({ skipped: false, report: 'fake\n', issues: [], total: 0 });
+    const runDir = exporter.exportRun('eval-mixed', [row], { resultsDir, scan: fakeScan });
+    const armDir = path.join(runDir, 'src', 'logscan', 'haiku', 'uncle-bob-junior');
+    assert.deepEqual(fs.readdirSync(path.join(armDir, 'main')), ['analyse.py']);
+  } finally {
+    fs.rmSync(resultsDir, { recursive: true, force: true });
+  }
+});
+
+test('scanDir leaves no sensor cache behind in the scanned directory', { skip: !hasHabitHooks }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ubj-ruff-cache-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'analyser.py'), 'import os\n\ndef run():\n    return 1\n');
+    habitHooksAssert.scanDir(dir, ['python']);
+    assert.deepEqual(fs.readdirSync(dir), ['analyser.py'], 'only the scanned source may remain');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('a test class inside a production block is filtered from the judged files', () => {

@@ -20,7 +20,10 @@ function extractCode(text) {
 // Smell judges measure production code only: counting a test's expected-value
 // literals as smells would penalize exactly the arm that ships tests.
 function isTestBlock(code) {
-  return /@Test\b|\borg\.junit\b|\bclass\s+\w*Tests?\b/.test(code);
+  return /@Test\b|\borg\.junit\b|\bclass\s+\w*Tests?\b/.test(code)
+    // Python test modules and C# test classes.
+    || /^\s*def test_|import pytest|\bunittest\b/m.test(code)
+    || /\[(Fact|Theory|Test|TestMethod)\]|using\s+(Xunit|NUnit)/.test(code);
 }
 
 const NON_CODE_LANGS = new Set(['bash', 'sh', 'shell', 'xml', 'json', 'yaml', 'yml', 'properties', 'text', 'txt', 'sql']);

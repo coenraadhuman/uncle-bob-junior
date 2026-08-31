@@ -64,13 +64,17 @@ the asserts in [`promptfoo-metrics.js`](promptfoo-metrics.js) wrap the
 judges above, plus [`correctness.js`](correctness.js), which promptfoo calls
 directly.
 
-The tasks live in [`promptfooconfig.yaml`](promptfooconfig.yaml), all Java:
+The tasks live in [`promptfooconfig.yaml`](promptfooconfig.yaml). In Java:
 email validator, CSV sum, retry helper, rate limiter, order processor
 (validation + VAT + discount + receipt), plus three deliberately
 multi-responsibility ones — bank statement analyser, seat booking engine,
 and config-language parser — that mix parsing, branching business rules,
 and reporting in one ask, so a baseline answer that keeps everything in one
-method trips the structural smells rather than only the ships-tests gate. Providers are configured one per
+method trips the structural smells rather than only the ships-tests gate.
+Two more prove the ruleset is language-neutral: an access-log analyser in
+Python (fully judged — the habit-hooks python plugin runs in the bare
+extraction dirs) and an expense-claim processor in C# (judged by the gates
+plus the generic plugin only: habit-hooks has no C# plugin). Providers are configured one per
 model × arm (e.g. `claude-cli:haiku · uncle-bob-junior`), each bound to its
 arm's prompt: the promptfoo web UI names its graph series by provider only,
 so carrying the arm in the provider label is what makes baseline and ruleset
@@ -79,7 +83,7 @@ and/or `--filter-pattern email` while iterating. Single-shot generations, so exp
 run-to-run variance: for numbers you plan to quote, run with `--repeat 3` —
 the exporter writes one report row per repetition and the means average all
 of them (the exported source files and the site's task pages keep the last
-repetition per arm). Languages beyond Java are currently out: habit-hooks'
+repetition per arm). TypeScript/JavaScript tasks stay out: habit-hooks'
 typescript plugin needs eslint, knip, and ts-morph installed in the scanned
 project, which the benchmark's bare extraction dirs cannot provide, so a
 TS/JS task would judge as `incomplete-run`. See

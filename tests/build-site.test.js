@@ -157,6 +157,16 @@ test('landing page carries the checklist from SKILL.md', () => {
   });
 });
 
+test('sensor droppings inside main/ are not rendered as source files', () => {
+  inTempDirs((resultsDir, siteDocsDir) => {
+    const runDir = writeFixtureRun(resultsDir, 'eval-fix-2026-08-29t10-00-00');
+    fs.mkdirSync(path.join(runDir, 'src', 'order', 'claude-cli-haiku', 'baseline-no-ruleset', 'main', '.ruff_cache'));
+    buildSite(undefined, { resultsDir, siteDocsDir });
+    const page = fs.readFileSync(path.join(siteDocsDir, 'benchmark', 'order.mdx'), 'utf8');
+    assert.ok(!page.includes('.ruff_cache'), 'cache directories must not appear on the page');
+  });
+});
+
 test('repeated rows from a --repeat run collapse to one tab per arm', () => {
   inTempDirs((resultsDir, siteDocsDir) => {
     const repeated = { ...RUN_DATA, rows: [...RUN_DATA.rows, ...RUN_DATA.rows] };

@@ -1,0 +1,6 @@
+enum ApprovalStatus {
+    APPROVED,
+    MANAGER_APPROVAL_NEEDED,
+    FINANCE_APPROVAL_NEEDED,
+    REJECTED
+}

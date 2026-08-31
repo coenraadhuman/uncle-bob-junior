@@ -251,10 +251,17 @@ function writeRunArtifacts(evalId, rows, runDir, { scan = scanDir } = {}) {
     // judge scans main/ only — same split scanReply applies. A block holding
     // both production and test types reaches main/ and test/ through
     // different routes, so test/ drops any file main/ already owns.
-    const [strayTests, mainFiles] = codeFiles(production).reduce(
+    let [strayTests, mainFiles] = codeFiles(production).reduce(
       ([tests, main], file) => (isTestFile(file) ? [[...tests, file], main] : [tests, [...main, file]]),
       [[], []],
     );
+    // A single mixed file (implementation + tests in one) must not leave
+    // main/ empty — mirror productionFiles' fallback so the judge and the
+    // export stay in agreement.
+    if (mainFiles.length === 0 && strayTests.length > 0) {
+      mainFiles = strayTests;
+      strayTests = [];
+    }
     const mainNames = new Set(mainFiles.map((file) => file.name));
     const testFiles = [...codeFiles(testBlocks), ...strayTests]
       .filter((file, index, all) => all.findIndex((other) => other.name === file.name) === index)

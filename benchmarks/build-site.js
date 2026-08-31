@@ -65,7 +65,7 @@ sidebar_position: 1
 
 A clean-code ruleset for Claude Code: software that is easy to read, simple to
 understand, and safe to change. It ships as a Claude Code plugin — always-on
-rules, slash commands, a mode statusline, and a habit-hooks verification Stop
+rules, slash commands, a mode statusline, and a habit-hooks verification stop
 hook. See the [README](${REPO_URL}#readme) for installation.
 
 ## The checklist
@@ -75,7 +75,7 @@ ${items.map((item, index) => `${index + 1}. ${item}`).join('\n')}
 ## Does it work?
 
 The repo benchmarks the ruleset against a no-ruleset baseline on the same models
-and tasks, judged by [habit-hooks](https://github.com/habit-hooks/habit-hooks),
+and tasks using [promptfoo](https://github.com/promptfoo/promptfoo), judged by [habit-hooks](https://github.com/habit-hooks/habit-hooks),
 an independent smell detector. [See the scoreboard and the generated code side
 by side.](benchmark/scoreboard)
 `;
@@ -117,7 +117,7 @@ function scoreboardTable(rows) {
 
 function scoreboardPage(data) {
   return `---
-title: Benchmark scoreboard
+title: Benchmark Scoreboard
 sidebar_position: 1
 ---
 
@@ -154,7 +154,12 @@ function findingsByFile(runDir, row) {
 function sourceFiles(runDir, row, kind) {
   const dir = path.join(runDir, 'src', slug(row.task), slug(row.model), slug(row.arm), kind);
   if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir).sort().map((name) => ({ name, content: fs.readFileSync(path.join(dir, name), 'utf8') }));
+  return fs.readdirSync(dir, { withFileTypes: true })
+    // Older runs may carry sensor droppings (.ruff_cache/); only real sources render.
+    .filter((entry) => entry.isFile() && !entry.name.startsWith('.'))
+    .map((entry) => entry.name)
+    .sort()
+    .map((name) => ({ name, content: fs.readFileSync(path.join(dir, name), 'utf8') }));
 }
 
 function fileSection(file, findings, open) {

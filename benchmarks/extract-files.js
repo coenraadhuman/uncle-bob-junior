@@ -15,6 +15,8 @@ const EXTENSIONS = {
   js: 'js',
   jsx: 'jsx',
   php: 'php',
+  csharp: 'cs',
+  cs: 'cs',
 };
 
 // habit-hooks plugin per fence language; JS runs under the typescript plugin.
@@ -180,6 +182,7 @@ const NAME_PATTERNS = {
   js: /(?:class|function)\s+(\w+)/,
   jsx: /(?:class|function)\s+(\w+)/,
   php: /(?:class|function)\s+(\w+)/,
+  cs: /(?:class|interface|struct|record|enum)\s+(\w+)/,
 };
 
 function fileNameFor(code, ext, index) {
@@ -223,13 +226,22 @@ function codeFiles(blocks) {
 // below the implementation). Block-level test detection cannot see it, so the
 // judge would scan test code as production. Detected per extracted file.
 function isTestFile(file) {
-  return /Tests?\.\w+$/.test(file.name) || /@Test\b|org\.junit/.test(file.content);
+  return /Tests?\.\w+$/.test(file.name)
+    || /^test_.*\.py$/.test(file.name)
+    || /@Test\b|org\.junit/.test(file.content)
+    || /^\s*def test_|import pytest/m.test(file.content)
+    || /\[(Fact|Theory|Test|TestMethod)\]|using\s+(Xunit|NUnit)/.test(file.content);
 }
 
 // The files the smell judge scans: everything codeFiles extracts minus the
-// units that are themselves tests.
+// units that are themselves tests. When a reply is one mixed file (a Python
+// module with its tests appended, a C# file with an embedded test class),
+// the filter would remove everything — something to judge beats nothing, so
+// the mixed file stays production in that case.
 function productionFiles(blocks) {
-  return codeFiles(blocks).filter((file) => !isTestFile(file));
+  const files = codeFiles(blocks);
+  const kept = files.filter((file) => !isTestFile(file));
+  return kept.length ? kept : files;
 }
 
 module.exports = { pluginsFor, splitJavaTypes, fileNameFor, codeFiles, isTestFile, productionFiles };
