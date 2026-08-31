@@ -1,8 +1,3 @@
-import java.io.*;
-import java.time.*;
-import java.util.*;
-import java.util.stream.*;
-
 class BankStatementAnalyzerTest {
     
     static void runTests() {

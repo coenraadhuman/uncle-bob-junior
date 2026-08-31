@@ -1,7 +1,5 @@
-import java.io.*;
 import java.time.*;
 import java.util.*;
-import java.util.stream.*;
 
 class MonthlyReport {
     private static final double SUSPICIOUS_THRESHOLD = 2000.0;

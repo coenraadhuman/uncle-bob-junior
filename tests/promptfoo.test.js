@@ -452,24 +452,27 @@ test('extension hook only acts on afterAll', async () => {
   await extensionHook('afterAll', { evalId: 'eval-empty', results: [] });
 });
 
-test('extension hook rebuilds the site after a successful export, and site failures stay non-fatal', async () => {
+test('extension hook regenerates and renders the site after a successful export, and failures stay non-fatal', async () => {
   const { extensionHook } = require('../benchmarks/promptfoo-extension.js');
   const calls = [];
   await extensionHook('afterAll', { evalId: 'eval-x', results: [] }, {
     doExport: () => '/tmp/run-dir',
-    doBuildSite: (evalId) => { calls.push(evalId); return '/tmp/docs'; },
+    doBuildSite: (evalId) => { calls.push(`content:${evalId}`); return '/tmp/docs'; },
+    doRenderSite: () => { calls.push('render'); return { rendered: true }; },
   });
-  assert.deepEqual(calls, ['eval-x']);
+  assert.deepEqual(calls, ['content:eval-x', 'render'], 'content generation then a full static render');
 
   await extensionHook('afterAll', { evalId: 'eval-x', results: [] }, {
     doExport: () => '/tmp/run-dir',
     doBuildSite: () => { throw new Error('boom'); },
+    doRenderSite: () => { throw new Error('must not reach the render'); },
   }); // must not throw
 
   const skipped = [];
   await extensionHook('afterAll', { evalId: 'eval-x', results: [] }, {
     doExport: () => null,
     doBuildSite: () => skipped.push('built'),
+    doRenderSite: () => skipped.push('rendered'),
   });
   assert.deepEqual(skipped, [], 'no export, no site rebuild');
 });
@@ -755,44 +758,50 @@ const GAMEOFLIFE_EVAL_RESULTS = [
   GAMEOFLIFE_ROW('sonnet', 'uncle-bob-junior', '   '),
 ];
 
-test('gameoflife export stores one reply.md per model and arm, gameoflife rows only', () => {
-  const examplesDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ubj-examples-test-'));
+test('gameoflife export writes a full run directory, gameoflife rows only', () => {
+  const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ubj-gol-run-test-'));
   try {
-    const written = gameoflife.exportExamples(GAMEOFLIFE_EVAL_RESULTS, { examplesDir });
-    assert.deepEqual(written, [
-      path.join(examplesDir, 'haiku', 'baseline-no-ruleset', 'reply.md'),
-      path.join(examplesDir, 'haiku', 'uncle-bob-junior', 'reply.md'),
-      path.join(examplesDir, 'fable', 'uncle-bob-junior', 'reply.md'),
-    ]);
-    assert.ok(fs.readFileSync(written[0], 'utf8').includes('class Gol'), 'baseline reply survives next to the ruleset reply');
-    assert.ok(fs.readFileSync(written[1], 'utf8').includes('class GameOfLife'), 'arms of one model must not overwrite each other');
-    assert.deepEqual(fs.readdirSync(path.join(examplesDir, 'haiku', 'uncle-bob-junior')), ['reply.md'], 'reply.md is the only artifact');
-    assert.ok(!fs.existsSync(path.join(examplesDir, 'sonnet')), 'other tasks and blank replies are skipped');
+    const runDir = gameoflife.exportExamples('eval-GOL-2026-08-31T12:00:00', GAMEOFLIFE_EVAL_RESULTS, { resultsDir });
+    assert.equal(runDir, path.join(resultsDir, 'eval-gol-2026-08-31t12-00-00'));
+    const report = JSON.parse(fs.readFileSync(path.join(runDir, 'report.json'), 'utf8'));
+    assert.equal(report.rows.length, 3, 'other tasks and blank replies are skipped');
+    assert.ok(report.rows.every((row) => row.task === gameoflife.GAME_OF_LIFE_TASK));
+    assert.ok(fs.existsSync(path.join(runDir, 'src', 'gameoflife', 'haiku', 'baseline-no-ruleset', 'reply.md')), 'same structure as benchmarks/results/');
+    assert.ok(fs.existsSync(path.join(runDir, 'src', 'gameoflife', 'haiku', 'uncle-bob-junior', 'main', 'GameOfLife.java')), 'sources extracted per arm');
+    assert.ok(fs.existsSync(path.join(runDir, 'report.md')));
   } finally {
-    fs.rmSync(examplesDir, { recursive: true, force: true });
+    fs.rmSync(resultsDir, { recursive: true, force: true });
   }
 });
 
-test('gameoflife export accepts a full eval export JSON too', () => {
-  const examplesDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ubj-examples-json-'));
+test('gameoflife export accepts a full eval export JSON and skips empty evals', () => {
+  const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ubj-gol-json-test-'));
   try {
-    const written = gameoflife.exportExamples({ results: { results: GAMEOFLIFE_EVAL_RESULTS } }, { examplesDir });
-    assert.equal(written.length, 3);
+    const runDir = gameoflife.exportExamples('eval-GOL', { results: { results: GAMEOFLIFE_EVAL_RESULTS } }, { resultsDir });
+    assert.ok(runDir, 'export JSON shape accepted');
+    assert.equal(gameoflife.exportExamples('eval-NONE', [], { resultsDir }), null, 'no gameoflife replies means no run dir');
   } finally {
-    fs.rmSync(examplesDir, { recursive: true, force: true });
+    fs.rmSync(resultsDir, { recursive: true, force: true });
   }
 });
 
-test('gameoflife extension hook only acts on afterAll and never fails the eval', async () => {
+test('gameoflife extension hook only acts on afterAll, rebuilds the site, and never fails the eval', async () => {
   await gameoflife.extensionHook('beforeAll', {});
   await gameoflife.extensionHook('afterEach', { results: undefined });
   // afterAll with unusable results must be swallowed, not thrown.
-  await gameoflife.extensionHook('afterAll', {});
+  await gameoflife.extensionHook('afterAll', {}, { doBuildSite: () => { throw new Error('unreached'); } });
+  const calls = [];
+  await gameoflife.extensionHook('afterAll', { evalId: 'eval-x', results: [] }, {
+    doExport: () => '/tmp/gol-run',
+    doBuildSite: () => { calls.push('content'); return '/tmp/docs'; },
+    doRenderSite: () => { calls.push('render'); return { rendered: true }; },
+  });
+  assert.deepEqual(calls, ['content', 'render'], 'a new gameoflife run also refreshes the site');
 });
 
 test('gameoflife config is standalone: both arms, examples export, no judges', () => {
   const config = fs.readFileSync(path.join(root, 'benchmarks', 'promptfooconfig.gameoflife.yaml'), 'utf8');
-  assert.ok(config.includes('gameoflife-examples.js:extensionHook'), 'exports replies to examples/');
+  assert.ok(config.includes('gameoflife-examples.js:extensionHook'), 'exports runs to game-of-life-results/');
   assert.ok(!config.includes('promptfoo-extension.js'), 'must not export to results/');
   assert.ok(!config.includes('defaultTest'), 'no judges: the replies are the deliverable');
   assert.ok(config.includes('arms/uncle-bob-junior.js'));

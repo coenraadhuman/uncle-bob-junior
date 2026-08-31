@@ -1,4 +1,4 @@
-── unused-import (2 issues) ──
+── unused-import (1 issue) ──
 
 An import nothing in the module uses is noise the reader has to disprove: it makes the module look like it depends on something it does not, and it hides real signals — a leftover from code you deleted, a symbol you meant to call and forgot, or a re-export that belongs somewhere explicit.
 
@@ -6,5 +6,4 @@ Delete it. Don't comment it out or alias it to silence the warning — that keep
 
 Done right, the import list names exactly what the code below it uses — nothing to prove, nothing to explain.
 
-RateLimitFilter.java:2
 RateLimitingInterceptor.java:1

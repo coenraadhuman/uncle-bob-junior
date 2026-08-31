@@ -1,4 +1,4 @@
-── too-many-parameters (5 issues) ──
+── too-many-parameters (3 issues) ──
 
 High parameter count is a sign of coupling.
 Parameters that travel together across several calls are a missing abstraction.
@@ -13,13 +13,11 @@ Useful tip: rewrite each call site with the signature that feels natural there, 
 
 **AVOID**: A `{ ...everything }` bag that merely renames the list hides the coupling instead of removing it. A `FooProps` or options object named after the function that takes it is the same bag: organised by method rather than by abstraction, so the next function invents another one and the concept stays unnamed. You are done when the entity carries a domain name and no call site still passes its fields loose.
 
-EventSeatBookingEngine.java:40
-EventSeatBookingEngine.java:59
 SeatBookingEngine.java:28
 SeatBookingEngine.java:47
 SeatBookingEngine.java:84
 
-── oversized-function (9 issues) ──
+── oversized-function (5 issues) ──
 
 Functions over 12 lines almost always carry more than one responsibility, and that is the smell to chase — not the line count itself.
 
@@ -31,17 +29,13 @@ If responsibilities are tangled you may need to first *inline* methods to see th
 
 A concrete technique: write what the method does in one short sentence. Refactor until the code reads as close to that sentence as possible. If you cannot say what it does in one sentence, it almost certainly has more than one responsibility.
 
-EventSeatBookingEngine.java:125
-EventSeatBookingEngine.java:147
-EventSeatBookingEngine.java:183
-EventSeatBookingEngine.java:286
 SeatBookingEngine.java:117
 SeatBookingEngine.java:144
 SeatBookingEngine.java:191
 SeatBookingEngine.java:263
 SeatBookingEngine.java:293
 
-── oversized-file (2 issues) ──
+── oversized-file (1 issue) ──
 
 Files over 200 lines accumulate unrelated concerns. The smell is poor cohesion — a file that asks the reader to hold too many ideas at once — not the raw line count.
 
@@ -53,5 +47,4 @@ If the file's structure resists splitting, that is itself the signal: responsibi
 
 A concrete technique: write a one-sentence description of what each emerging seam *would* be responsible for. If you cannot, you have not found the seam yet — do not split.
 
-EventSeatBookingEngine.java
 SeatBookingEngine.java

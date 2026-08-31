@@ -1,4 +1,4 @@
-── oversized-function (2 issues) ──
+── oversized-function (1 issue) ──
 
 Functions over 12 lines almost always carry more than one responsibility, and that is the smell to chase — not the line count itself.
 
@@ -10,7 +10,6 @@ If responsibilities are tangled you may need to first *inline* methods to see th
 
 A concrete technique: write what the method does in one short sentence. Refactor until the code reads as close to that sentence as possible. If you cannot say what it does in one sentence, it almost certainly has more than one responsibility.
 
-SalesSum.java:4
 SalesSumCalculator.java:4
 
 ── swallowed-exception (1 issue) ──

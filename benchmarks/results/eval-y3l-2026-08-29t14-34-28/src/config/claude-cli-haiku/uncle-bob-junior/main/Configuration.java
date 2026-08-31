@@ -1,5 +1,4 @@
 import java.util.*;
-import java.util.regex.*;
 
 class Configuration {
     private final Map<String, Map<String, Object>> data = new HashMap<>();

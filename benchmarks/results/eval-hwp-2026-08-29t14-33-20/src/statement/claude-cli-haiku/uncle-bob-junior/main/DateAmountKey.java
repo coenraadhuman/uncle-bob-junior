@@ -1,7 +1,5 @@
-import java.io.*;
 import java.time.*;
 import java.util.*;
-import java.util.stream.*;
 
 record DateAmountKey(LocalDate date, double amount) {
     @Override

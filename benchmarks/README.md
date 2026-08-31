@@ -87,15 +87,30 @@ repetition per arm). TypeScript/JavaScript tasks stay out: habit-hooks'
 typescript plugin needs eslint, knip, and ts-morph installed in the scanned
 project, which the benchmark's bare extraction dirs cannot provide, so a
 TS/JS task would judge as `incomplete-run`. See
-[`examples/`](../examples/) for how the generated comparisons are used, and
+the site's Game of Life section for the standalone showcase, and
 `/uncle-bob-junior-gain` renders the newest eval as a scoreboard.
 
 ## Run outcomes in `results/`
 
 Every `eval` exports its outcomes automatically to
-`benchmarks/results/<eval-id>/` (the directory is gitignored) — the
-`extensions` entry in the config runs the exporter after each run. To
-re-export a past eval:
+`benchmarks/results/<eval-id>/` — the directory is committed, so the full
+run history stays in the repo — then regenerates the site content and
+renders the static site into `/docs` (the `extensions` entry in the config
+does all three). Runs covering the full task set become the site's featured
+scoreboard; anything else files under the site's subset-runs section, so a
+cheap `--filter-pattern` iteration run never displaces the headline numbers.
+Keep verification runs to a subset; full runs cost real Claude usage.
+
+The raw `reply.md` files are the ground truth; everything else in a run
+directory is derived. When the judges or the extraction improve, re-judge
+the whole history in place (a run directory with no reply.md at all is
+removed):
+
+```bash
+node benchmarks/reprocess-results.js
+```
+
+To re-export a single past eval from promptfoo's own store:
 
 ```bash
 node benchmarks/export-results.js            # newest eval
@@ -141,10 +156,13 @@ npx promptfoo@latest eval -c benchmarks/promptfooconfig.gameoflife.yaml
 
 One task (a terminal-only Conway's Game of Life with a Maven `pom.xml`, the
 grid redrawn in place with no new lines, each generation printed to stdout),
-both arms, all three models. There are no judges and no `results/` export:
-the run stores only each full reply as
-[`examples/`](../examples/)`<model>/<arm>/reply.md` in the repo root.
-Re-export a past run with `node benchmarks/gameoflife-examples.js <eval-id>`.
+both arms, all three models. There are no eval-time judges: each run is
+stored as a full run directory under `benchmarks/game-of-life-results/`
+(same structure as `results/` — report, extracted sources, habit-hooks
+findings, produced by the shared exporter), gets its own page in the site's
+Game of Life section, and is re-judged by `reprocess-results.js` alongside
+the regular runs. Re-export a past run with
+`node benchmarks/gameoflife-examples.js <eval-id>`.
 
 ## Reading the results
 

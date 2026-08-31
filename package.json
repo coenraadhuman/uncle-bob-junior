@@ -18,6 +18,7 @@
     "url": "https://github.com/coenraadhuman/uncle-bob-junior/issues"
   },
   "scripts": {
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/*.test.js",
+    "site:update": "node scripts/update-site.js"
   }
 }

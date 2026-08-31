@@ -1,5 +1,4 @@
 import java.util.*;
-import java.util.regex.*;
 
 public class ConfigValidationException extends Exception {
     private final List<String> errors;

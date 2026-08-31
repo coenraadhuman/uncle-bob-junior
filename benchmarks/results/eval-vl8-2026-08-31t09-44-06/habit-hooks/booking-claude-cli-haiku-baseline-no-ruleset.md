@@ -1,4 +1,4 @@
-── too-many-parameters (7 issues) ──
+── too-many-parameters (3 issues) ──
 
 High parameter count is a sign of coupling.
 Parameters that travel together across several calls are a missing abstraction.
@@ -14,14 +14,10 @@ Useful tip: rewrite each call site with the signature that feels natural there, 
 **AVOID**: A `{ ...everything }` bag that merely renames the list hides the coupling instead of removing it. A `FooProps` or options object named after the function that takes it is the same bag: organised by method rather than by abstraction, so the next function invents another one and the concept stays unnamed. You are done when the entity carries a domain name and no call site still passes its fields loose.
 
 Booking.java:18
-EventSeatBookingEngine.java:127
 Hold.java:16
-SeatBookingEngine.java:48
-SeatBookingEngine.java:73
-SeatBookingEngine.java:128
 WaitListEntry.java:10
 
-── oversized-function (13 issues) ──
+── oversized-function (2 issues) ──
 
 Functions over 12 lines almost always carry more than one responsibility, and that is the smell to chase — not the line count itself.
 
@@ -35,29 +31,3 @@ A concrete technique: write what the method does in one short sentence. Refactor
 
 BookingEngine.java:24
 BookingEngine.java:56
-EventSeatBookingEngine.java:196
-EventSeatBookingEngine.java:214
-EventSeatBookingEngine.java:244
-EventSeatBookingEngine.java:280
-EventSeatBookingEngine.java:312
-EventSeatBookingEngine.java:366
-SeatBookingEngine.java:185
-SeatBookingEngine.java:228
-SeatBookingEngine.java:276
-SeatBookingEngine.java:309
-SeatBookingEngine.java:377
-
-── oversized-file (2 issues) ──
-
-Files over 200 lines accumulate unrelated concerns. The smell is poor cohesion — a file that asks the reader to hold too many ideas at once — not the raw line count.
-
-First identify the seams: which exports, types, or helper clusters actually belong together? A long file usually splits cleanly along one of: a data type and its operations, a feature pipeline, or one concern per file.
-
-Avoid mechanical splits. Carving the file at line 200 into `foo-1.ts` and `foo-2.ts`, or moving every private helper into a `utils.ts`, satisfies the threshold without making anything clearer — the cohesion problem just hops to a new place.
-
-If the file's structure resists splitting, that is itself the signal: responsibilities are tangled. Look for a missing abstraction (a class, a small module with a focused interface) that would let related pieces move together as a unit.
-
-A concrete technique: write a one-sentence description of what each emerging seam *would* be responsible for. If you cannot, you have not found the seam yet — do not split.
-
-EventSeatBookingEngine.java
-SeatBookingEngine.java

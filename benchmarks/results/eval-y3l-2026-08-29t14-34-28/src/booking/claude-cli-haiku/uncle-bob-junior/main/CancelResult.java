@@ -1,6 +1,3 @@
-import java.time.*;
-import java.util.*;
-
 class CancelResult {
     private final boolean success;
     private final Money refund;

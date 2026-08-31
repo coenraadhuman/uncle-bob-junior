@@ -13,63 +13,63 @@ file; the generated code sits in `src/`.
 
 | task | model | arm | score | valid code | habit-hooks | oversized-function | too-many-parameters | high-complexity | unused-variable | ships tests | correct |
 | --- | --- | --- | ---: | :---: | :---: | ---: | ---: | ---: | ---: | :---: | :---: |
-| email | claude-cli:haiku | baseline (no ruleset) | 0.88 | YES | PASS | 0 | 0 | 0 | 0 | NO | YES |
-| email | claude-cli:sonnet | baseline (no ruleset) | 0.88 | YES | PASS | 0 | 0 | 0 | 0 | NO | YES |
-| email | claude-cli:haiku | uncle-bob-junior | 1.00 | YES | PASS | 0 | 0 | 0 | 0 | YES | YES |
-| email | claude-cli:sonnet | uncle-bob-junior | 1.00 | YES | PASS | 0 | 0 | 0 | 0 | YES | YES |
 | csv | claude-cli:haiku | baseline (no ruleset) | 0.86 | YES | FAIL | 1 | 0 | 0 | 0 | NO | YES |
-| csv | claude-cli:sonnet | baseline (no ruleset) | 0.84 | YES | FAIL | 1 | 0 | 1 | 0 | NO | YES |
 | csv | claude-cli:haiku | uncle-bob-junior | 0.98 | YES | FAIL | 1 | 0 | 0 | 0 | YES | YES |
+| csv | claude-cli:sonnet | baseline (no ruleset) | 0.84 | YES | FAIL | 1 | 0 | 1 | 0 | NO | YES |
 | csv | claude-cli:sonnet | uncle-bob-junior | 1.00 | YES | PASS | 0 | 0 | 0 | 0 | YES | YES |
-| retry | claude-cli:haiku | baseline (no ruleset) | 0.88 | YES | PASS | 0 | 0 | 0 | 0 | NO | YES |
-| retry | claude-cli:sonnet | baseline (no ruleset) | 0.83 | YES | FAIL | 1 | 0 | 1 | 1 | NO | YES |
-| retry | claude-cli:haiku | uncle-bob-junior | 1.00 | YES | PASS | 0 | 0 | 0 | 0 | YES | YES |
-| retry | claude-cli:sonnet | uncle-bob-junior | 1.00 | YES | PASS | 0 | 0 | 0 | 0 | YES | YES |
-| ratelimit | claude-cli:haiku | baseline (no ruleset) | 0.86 | YES | FAIL | 1 | 0 | 0 | 0 | NO | YES |
-| ratelimit | claude-cli:sonnet | baseline (no ruleset) | 0.84 | YES | FAIL | 1 | 1 | 0 | 0 | NO | YES |
-| ratelimit | claude-cli:haiku | uncle-bob-junior | 1.00 | YES | PASS | 0 | 0 | 0 | 0 | YES | YES |
-| ratelimit | claude-cli:sonnet | uncle-bob-junior | 1.00 | YES | PASS | 0 | 0 | 0 | 0 | YES | YES |
+| email | claude-cli:haiku | baseline (no ruleset) | 0.88 | YES | PASS | 0 | 0 | 0 | 0 | NO | YES |
+| email | claude-cli:haiku | uncle-bob-junior | 1.00 | YES | PASS | 0 | 0 | 0 | 0 | YES | YES |
+| email | claude-cli:sonnet | baseline (no ruleset) | 0.88 | YES | PASS | 0 | 0 | 0 | 0 | NO | YES |
+| email | claude-cli:sonnet | uncle-bob-junior | 1.00 | YES | PASS | 0 | 0 | 0 | 0 | YES | YES |
 | order | claude-cli:haiku | baseline (no ruleset) | 0.86 | YES | FAIL | 1 | 0 | 0 | 0 | NO | YES |
-| order | claude-cli:sonnet | baseline (no ruleset) | 0.83 | YES | FAIL | 1 | 1 | 1 | 0 | NO | YES |
 | order | claude-cli:haiku | uncle-bob-junior | 1.00 | YES | PASS | 0 | 0 | 0 | 0 | YES | YES |
+| order | claude-cli:sonnet | baseline (no ruleset) | 0.83 | YES | FAIL | 1 | 1 | 1 | 0 | NO | YES |
 | order | claude-cli:sonnet | uncle-bob-junior | 0.98 | YES | FAIL | 0 | 1 | 0 | 0 | YES | YES |
+| ratelimit | claude-cli:haiku | baseline (no ruleset) | 0.86 | YES | FAIL | 1 | 0 | 0 | 0 | NO | YES |
+| ratelimit | claude-cli:haiku | uncle-bob-junior | 1.00 | YES | PASS | 0 | 0 | 0 | 0 | YES | YES |
+| ratelimit | claude-cli:sonnet | baseline (no ruleset) | 0.84 | YES | FAIL | 1 | 1 | 0 | 0 | NO | YES |
+| ratelimit | claude-cli:sonnet | uncle-bob-junior | 1.00 | YES | PASS | 0 | 0 | 0 | 0 | YES | YES |
+| retry | claude-cli:haiku | baseline (no ruleset) | 0.88 | YES | PASS | 0 | 0 | 0 | 0 | NO | YES |
+| retry | claude-cli:haiku | uncle-bob-junior | 1.00 | YES | PASS | 0 | 0 | 0 | 0 | YES | YES |
+| retry | claude-cli:sonnet | baseline (no ruleset) | 0.83 | YES | FAIL | 1 | 0 | 1 | 1 | NO | YES |
+| retry | claude-cli:sonnet | uncle-bob-junior | 1.00 | YES | PASS | 0 | 0 | 0 | 0 | YES | YES |
 
 ## Full smell breakdown
 
 | task | model | arm | score | valid code | habit-hooks | oversized-function | too-many-parameters | high-complexity | deep-nesting | oversized-file | unused-variable | unused-import | loose-equality | var-declaration | non-const-binding | duplicate-import | redundant-type-annotation | unused-class-member | unused-file | unused-export | unused-dependency | test-only-dead-code | parse-error | warning-comment | explicit-any | non-null-assertion | non-essential-comment | duplicated-code | swallowed-exception | ships tests | correct |
 | --- | --- | --- | ---: | :---: | :---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :---: | :---: |
-| email | claude-cli:haiku | baseline (no ruleset) | 0.88 | YES | PASS | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | NO | YES |
-| email | claude-cli:sonnet | baseline (no ruleset) | 0.88 | YES | PASS | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | NO | YES |
-| email | claude-cli:haiku | uncle-bob-junior | 1.00 | YES | PASS | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | YES | YES |
-| email | claude-cli:sonnet | uncle-bob-junior | 1.00 | YES | PASS | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | YES | YES |
 | csv | claude-cli:haiku | baseline (no ruleset) | 0.86 | YES | FAIL | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | NO | YES |
-| csv | claude-cli:sonnet | baseline (no ruleset) | 0.84 | YES | FAIL | 1 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | NO | YES |
 | csv | claude-cli:haiku | uncle-bob-junior | 0.98 | YES | FAIL | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | YES | YES |
+| csv | claude-cli:sonnet | baseline (no ruleset) | 0.84 | YES | FAIL | 1 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | NO | YES |
 | csv | claude-cli:sonnet | uncle-bob-junior | 1.00 | YES | PASS | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | YES | YES |
-| retry | claude-cli:haiku | baseline (no ruleset) | 0.88 | YES | PASS | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | NO | YES |
-| retry | claude-cli:sonnet | baseline (no ruleset) | 0.83 | YES | FAIL | 1 | 0 | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | NO | YES |
-| retry | claude-cli:haiku | uncle-bob-junior | 1.00 | YES | PASS | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | YES | YES |
-| retry | claude-cli:sonnet | uncle-bob-junior | 1.00 | YES | PASS | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | YES | YES |
-| ratelimit | claude-cli:haiku | baseline (no ruleset) | 0.86 | YES | FAIL | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | NO | YES |
-| ratelimit | claude-cli:sonnet | baseline (no ruleset) | 0.84 | YES | FAIL | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | NO | YES |
-| ratelimit | claude-cli:haiku | uncle-bob-junior | 1.00 | YES | PASS | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | YES | YES |
-| ratelimit | claude-cli:sonnet | uncle-bob-junior | 1.00 | YES | PASS | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | YES | YES |
+| email | claude-cli:haiku | baseline (no ruleset) | 0.88 | YES | PASS | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | NO | YES |
+| email | claude-cli:haiku | uncle-bob-junior | 1.00 | YES | PASS | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | YES | YES |
+| email | claude-cli:sonnet | baseline (no ruleset) | 0.88 | YES | PASS | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | NO | YES |
+| email | claude-cli:sonnet | uncle-bob-junior | 1.00 | YES | PASS | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | YES | YES |
 | order | claude-cli:haiku | baseline (no ruleset) | 0.86 | YES | FAIL | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | NO | YES |
-| order | claude-cli:sonnet | baseline (no ruleset) | 0.83 | YES | FAIL | 1 | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | NO | YES |
 | order | claude-cli:haiku | uncle-bob-junior | 1.00 | YES | PASS | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | YES | YES |
+| order | claude-cli:sonnet | baseline (no ruleset) | 0.83 | YES | FAIL | 1 | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | NO | YES |
 | order | claude-cli:sonnet | uncle-bob-junior | 0.98 | YES | FAIL | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | YES | YES |
+| ratelimit | claude-cli:haiku | baseline (no ruleset) | 0.86 | YES | FAIL | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | NO | YES |
+| ratelimit | claude-cli:haiku | uncle-bob-junior | 1.00 | YES | PASS | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | YES | YES |
+| ratelimit | claude-cli:sonnet | baseline (no ruleset) | 0.84 | YES | FAIL | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | NO | YES |
+| ratelimit | claude-cli:sonnet | uncle-bob-junior | 1.00 | YES | PASS | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | YES | YES |
+| retry | claude-cli:haiku | baseline (no ruleset) | 0.88 | YES | PASS | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | NO | YES |
+| retry | claude-cli:haiku | uncle-bob-junior | 1.00 | YES | PASS | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | YES | YES |
+| retry | claude-cli:sonnet | baseline (no ruleset) | 0.83 | YES | FAIL | 1 | 0 | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | NO | YES |
+| retry | claude-cli:sonnet | uncle-bob-junior | 1.00 | YES | PASS | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | YES | YES |
 
 ## Mean score per model and arm
 
 - **claude-cli:haiku / baseline (no ruleset)**: 0.866 (n=5)
-- **claude-cli:sonnet / baseline (no ruleset)**: 0.844 (n=5)
 - **claude-cli:haiku / uncle-bob-junior**: 0.997 (n=5)
+- **claude-cli:sonnet / baseline (no ruleset)**: 0.844 (n=5)
 - **claude-cli:sonnet / uncle-bob-junior**: 0.997 (n=5)
 
 ```mermaid
 xychart-beta
     title "Mean score per model and arm"
-    x-axis ["claude-cli:haiku / baseline (no ruleset)", "claude-cli:sonnet / baseline (no ruleset)", "claude-cli:haiku / uncle-bob-junior", "claude-cli:sonnet / uncle-bob-junior"]
+    x-axis ["claude-cli:haiku / baseline (no ruleset)", "claude-cli:haiku / uncle-bob-junior", "claude-cli:sonnet / baseline (no ruleset)", "claude-cli:sonnet / uncle-bob-junior"]
     y-axis "mean score" 0 --> 1
-    bar [0.866, 0.844, 0.997, 0.997]
+    bar [0.866, 0.997, 0.844, 0.997]
 ```

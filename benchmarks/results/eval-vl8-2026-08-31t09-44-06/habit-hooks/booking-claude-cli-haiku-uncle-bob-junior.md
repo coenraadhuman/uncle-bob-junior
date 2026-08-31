@@ -15,7 +15,7 @@ Useful tip: rewrite each call site with the signature that feels natural there, 
 
 Booking.java:12
 
-── oversized-function (6 issues) ──
+── oversized-function (3 issues) ──
 
 Functions over 12 lines almost always carry more than one responsibility, and that is the smell to chase — not the line count itself.
 
@@ -27,9 +27,6 @@ If responsibilities are tangled you may need to first *inline* methods to see th
 
 A concrete technique: write what the method does in one short sentence. Refactor until the code reads as close to that sentence as possible. If you cannot say what it does in one sentence, it almost certainly has more than one responsibility.
 
-SeatBookingEngine.java:22
-SeatBookingEngine.java:43
-SeatBookingEngine.java:152
 SeatBookingService.java:23
 SeatBookingService.java:42
 SeatBookingService.java:114

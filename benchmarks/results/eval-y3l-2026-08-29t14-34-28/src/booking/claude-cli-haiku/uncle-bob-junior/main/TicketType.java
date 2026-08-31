@@ -1,6 +1,3 @@
-import java.time.*;
-import java.util.*;
-
 enum TicketType {
     ADULT(100.0),
     CHILD(50.0),

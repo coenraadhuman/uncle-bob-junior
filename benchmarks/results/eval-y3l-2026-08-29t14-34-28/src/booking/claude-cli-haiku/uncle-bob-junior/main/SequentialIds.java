@@ -1,6 +1,3 @@
-import java.time.*;
-import java.util.*;
-
 class SequentialIds implements IdSource {
     private long counter = 0;
 

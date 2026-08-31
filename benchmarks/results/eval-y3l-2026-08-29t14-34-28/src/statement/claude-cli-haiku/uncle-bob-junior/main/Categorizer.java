@@ -1,7 +1,4 @@
-import java.io.*;
-import java.time.*;
 import java.util.*;
-import java.util.stream.*;
 
 class Categorizer {
     private static final Map<String, List<String>> CATEGORY_KEYWORDS = Map.ofEntries(

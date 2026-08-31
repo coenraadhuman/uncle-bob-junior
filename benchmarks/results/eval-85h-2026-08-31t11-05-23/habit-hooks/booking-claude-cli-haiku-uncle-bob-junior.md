@@ -1,4 +1,4 @@
-── too-many-parameters (2 issues) ──
+── too-many-parameters (1 issue) ──
 
 High parameter count is a sign of coupling.
 Parameters that travel together across several calls are a missing abstraction.
@@ -14,7 +14,6 @@ Useful tip: rewrite each call site with the signature that feels natural there, 
 **AVOID**: A `{ ...everything }` bag that merely renames the list hides the coupling instead of removing it. A `FooProps` or options object named after the function that takes it is the same bag: organised by method rather than by abstraction, so the next function invents another one and the concept stays unnamed. You are done when the entity carries a domain name and no call site still passes its fields loose.
 
 Booking.java:14
-Hold.java:10
 
 ── oversized-function (1 issue) ──
 

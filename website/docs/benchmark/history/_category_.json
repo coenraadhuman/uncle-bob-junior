@@ -1,0 +1,9 @@
+{
+  "label": "Past runs",
+  "position": 90,
+  "link": {
+    "type": "generated-index",
+    "description": "Older full runs, newest first. All runs are re-judged with the current judges.",
+    "slug": "/benchmark/history"
+  }
+}

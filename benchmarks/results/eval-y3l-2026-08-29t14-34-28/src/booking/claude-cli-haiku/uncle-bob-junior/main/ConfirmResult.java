@@ -1,6 +1,3 @@
-import java.time.*;
-import java.util.*;
-
 class ConfirmResult {
     private final boolean success;
     private final String bookingId;

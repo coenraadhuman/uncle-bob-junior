@@ -1,4 +1,14 @@
-── too-many-parameters (9 issues) ──
+── unused-import (1 issue) ──
+
+An import nothing in the module uses is noise the reader has to disprove: it makes the module look like it depends on something it does not, and it hides real signals — a leftover from code you deleted, a symbol you meant to call and forgot, or a re-export that belongs somewhere explicit.
+
+Delete it. Don't comment it out or alias it to silence the warning — that keeps the lie. Two cases need more than deletion: if the name was imported purely for a side effect at import time, that side-effect-on-import is the smell — make the effect an explicit call. If the module is a package's public surface deliberately re-exporting the name, say so where the language makes re-exports explicit (an `__all__` entry, a barrel export) rather than leaning on an unused import to hold it.
+
+Done right, the import list names exactly what the code below it uses — nothing to prove, nothing to explain.
+
+EventBookingEngine.java:4
+
+── too-many-parameters (1 issue) ──
 
 High parameter count is a sign of coupling.
 Parameters that travel together across several calls are a missing abstraction.
@@ -13,27 +23,9 @@ Useful tip: rewrite each call site with the signature that feels natural there, 
 
 **AVOID**: A `{ ...everything }` bag that merely renames the list hides the coupling instead of removing it. A `FooProps` or options object named after the function that takes it is the same bag: organised by method rather than by abstraction, so the next function invents another one and the concept stays unnamed. You are done when the entity carries a domain name and no call site still passes its fields loose.
 
-Booking.java:17
 EventBookingEngine.java:95
-EventSeatBookingEngine.java:23
-EventSeatBookingEngine.java:51
-EventSeatBookingEngine.java:76
-EventSeatBookingEngine.java:118
-EventSeatBookingEngine.java:128
-EventSeatBookingEngine.java:233
-SeatHold.java:12
 
-── unused-import (1 issue) ──
-
-An import nothing in the module uses is noise the reader has to disprove: it makes the module look like it depends on something it does not, and it hides real signals — a leftover from code you deleted, a symbol you meant to call and forgot, or a re-export that belongs somewhere explicit.
-
-Delete it. Don't comment it out or alias it to silence the warning — that keeps the lie. Two cases need more than deletion: if the name was imported purely for a side effect at import time, that side-effect-on-import is the smell — make the effect an explicit call. If the module is a package's public surface deliberately re-exporting the name, say so where the language makes re-exports explicit (an `__all__` entry, a barrel export) rather than leaning on an unused import to hold it.
-
-Done right, the import list names exactly what the code below it uses — nothing to prove, nothing to explain.
-
-EventBookingEngine.java:4
-
-── oversized-function (10 issues) ──
+── oversized-function (4 issues) ──
 
 Functions over 12 lines almost always carry more than one responsibility, and that is the smell to chase — not the line count itself.
 
@@ -49,12 +41,6 @@ EventBookingEngine.java:149
 EventBookingEngine.java:174
 EventBookingEngine.java:248
 EventBookingEngine.java:295
-EventSeatBookingEngine.java:128
-EventSeatBookingEngine.java:158
-EventSeatBookingEngine.java:186
-EventSeatBookingEngine.java:204
-EventSeatBookingEngine.java:241
-EventSeatBookingEngine.java:293
 
 ── high-complexity (1 issue) ──
 
@@ -71,7 +57,7 @@ Useful tip: describe each branch in one sentence. Two branches with the same sen
 
 EventBookingEngine.java:174
 
-── oversized-file (2 issues) ──
+── oversized-file (1 issue) ──
 
 Files over 200 lines accumulate unrelated concerns. The smell is poor cohesion — a file that asks the reader to hold too many ideas at once — not the raw line count.
 
@@ -84,4 +70,3 @@ If the file's structure resists splitting, that is itself the signal: responsibi
 A concrete technique: write a one-sentence description of what each emerging seam *would* be responsible for. If you cannot, you have not found the seam yet — do not split.
 
 EventBookingEngine.java
-EventSeatBookingEngine.java

@@ -27,3 +27,11 @@ file; the generated code sits in `src/`.
 
 - **claude-cli:haiku / baseline (no ruleset)**: 0.875 (n=1)
 - **claude-cli:haiku / uncle-bob-junior**: 1.000 (n=1)
+
+```mermaid
+xychart-beta
+    title "Mean score per model and arm"
+    x-axis ["claude-cli:haiku / baseline (no ruleset)", "claude-cli:haiku / uncle-bob-junior"]
+    y-axis "mean score" 0 --> 1
+    bar [0.875, 1.000]
+```

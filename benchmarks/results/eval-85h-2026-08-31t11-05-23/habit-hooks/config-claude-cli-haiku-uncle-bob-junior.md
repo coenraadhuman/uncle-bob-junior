@@ -1,4 +1,4 @@
-── oversized-function (3 issues) ──
+── oversized-function (2 issues) ──
 
 Functions over 12 lines almost always carry more than one responsibility, and that is the smell to chase — not the line count itself.
 
@@ -12,9 +12,8 @@ A concrete technique: write what the method does in one short sentence. Refactor
 
 ConfigParser.java:23
 ConfigParser.java:86
-ConfigurationParser.java:23
 
-── too-many-parameters (4 issues) ──
+── too-many-parameters (2 issues) ──
 
 High parameter count is a sign of coupling.
 Parameters that travel together across several calls are a missing abstraction.
@@ -31,5 +30,3 @@ Useful tip: rewrite each call site with the signature that feels natural there, 
 
 ConfigParser.java:23
 ConfigParser.java:48
-ConfigurationParser.java:56
-ConfigurationParser.java:79

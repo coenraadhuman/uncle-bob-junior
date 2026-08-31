@@ -1,6 +1,3 @@
-import java.util.*;
-import java.util.regex.*;
-
 class ConfigurationException extends Exception {
     private final int lineNumber;
     

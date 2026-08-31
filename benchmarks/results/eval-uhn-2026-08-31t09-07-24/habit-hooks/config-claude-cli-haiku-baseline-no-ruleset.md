@@ -1,4 +1,4 @@
-── oversized-function (3 issues) ──
+── oversized-function (2 issues) ──
 
 Functions over 12 lines almost always carry more than one responsibility, and that is the smell to chase — not the line count itself.
 
@@ -12,7 +12,6 @@ A concrete technique: write what the method does in one short sentence. Refactor
 
 ConfigParser.java:49
 ConfigParser.java:108
-Example.java:5
 
 ── high-complexity (2 issues) ──
 

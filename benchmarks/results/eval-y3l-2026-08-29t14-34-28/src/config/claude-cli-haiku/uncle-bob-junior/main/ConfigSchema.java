@@ -1,5 +1,4 @@
 import java.util.*;
-import java.util.regex.*;
 
 class ConfigSchema {
     record KeyDef(Class<?> type, Object defaultValue) {}

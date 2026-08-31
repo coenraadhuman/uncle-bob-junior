@@ -1,6 +1,3 @@
-import java.time.*;
-import java.util.*;
-
 class WaitlistResult {
     private final boolean success;
     private final String entryId;

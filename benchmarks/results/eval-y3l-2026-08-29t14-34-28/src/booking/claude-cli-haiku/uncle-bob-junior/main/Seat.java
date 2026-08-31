@@ -1,6 +1,3 @@
-import java.time.*;
-import java.util.*;
-
 class Seat {
     private final String id;
     private final String section;

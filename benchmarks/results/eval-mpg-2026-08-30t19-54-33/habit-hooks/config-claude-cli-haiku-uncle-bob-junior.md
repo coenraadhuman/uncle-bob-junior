@@ -1,4 +1,4 @@
-── oversized-function (3 issues) ──
+── oversized-function (1 issue) ──
 
 Functions over 12 lines almost always carry more than one responsibility, and that is the smell to chase — not the line count itself.
 
@@ -11,10 +11,8 @@ If responsibilities are tangled you may need to first *inline* methods to see th
 A concrete technique: write what the method does in one short sentence. Refactor until the code reads as close to that sentence as possible. If you cannot say what it does in one sentence, it almost certainly has more than one responsibility.
 
 ConfigParser.java:38
-ConfigurationParser.java:10
-ConfigurationParser.java:128
 
-── too-many-parameters (6 issues) ──
+── too-many-parameters (1 issue) ──
 
 High parameter count is a sign of coupling.
 Parameters that travel together across several calls are a missing abstraction.
@@ -30,23 +28,3 @@ Useful tip: rewrite each call site with the signature that feels natural there, 
 **AVOID**: A `{ ...everything }` bag that merely renames the list hides the coupling instead of removing it. A `FooProps` or options object named after the function that takes it is the same bag: organised by method rather than by abstraction, so the next function invents another one and the concept stays unnamed. You are done when the entity carries a domain name and no call site still passes its fields loose.
 
 ConfigParser.java:38
-ConfigSchema.java:25
-ConfigurationParser.java:82
-ConfigurationParser.java:98
-ConfigurationParser.java:107
-ConfigurationParser.java:119
-
-── high-complexity (1 issue) ──
-
-High cyclomatic complexity means one function makes too many decisions at once. The count is the symptom; tangled responsibilities are the cause.
-
-**Untangle the decisions:**
-1. Lift guards out first — turn precondition checks into early returns so the happy path stays flat. Much of the count is preconditions wrapped around the real work.
-2. Change the shape of what remains: an `if`/`else` chain switching on one value is often a lookup table or polymorphism in disguise; a nested loop is often a filter/map pipeline.
-3. If the branches are genuinely separate jobs, extract one function per branch, each named for the responsibility it handles.
-
-Useful tip: describe each branch in one sentence. Two branches with the same sentence belong together; a branch you cannot name cleanly wants its own function.
-
-**AVOID**: merging conditions with and/or, or rewriting branches as ternaries, just to lower the score — the decisions remain, only the counter moves. You are done when a first-time reader can hold the whole function in their head.
-
-ConfigurationParser.java:10

@@ -1,0 +1,1674 @@
+---
+title: first-showcase
+sidebar_position: 2
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+> 
+
+## claude-cli:fable
+
+<Tabs>
+
+<TabItem value="baseline-no-ruleset" label="baseline (no ruleset) · 0.86">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests **No** ·
+correct Yes
+
+<details open>
+<summary><code>GameOfLife.java</code> · 1 smell</summary>
+
+- `oversized-function` at line 85
+
+````java
+package com.example.life;
+
+import java.util.Random;
+
+/**
+ * Conway's Game of Life rendered in-place in the terminal.
+ *
+ * The screen is cleared once at start-up; every subsequent generation is
+ * drawn by moving the cursor back to the top-left (ANSI "cursor home"),
+ * so the UI never scrolls and no new lines accumulate in the terminal.
+ *
+ * Usage: java -jar game-of-life.jar [width] [height] [generations]
+ * Defaults: 40 x 20, unlimited generations (Ctrl+C to stop).
+ */
+public final class GameOfLife {
+
+    private static final String ANSI_CLEAR_SCREEN = "\u001B[2J";
+    private static final String ANSI_CURSOR_HOME = "\u001B[H";
+    private static final String ANSI_HIDE_CURSOR = "\u001B[?25l";
+    private static final String ANSI_SHOW_CURSOR = "\u001B[?25h";
+
+    private static final char ALIVE = '\u2588'; // full block
+    private static final char DEAD = '\u00B7';  // middle dot
+    private static final long FRAME_DELAY_MS = 100;
+
+    private final int width;
+    private final int height;
+    private boolean[][] cells;
+
+    public GameOfLife(int width, int height, long seed) {
+        this.width = width;
+        this.height = height;
+        this.cells = new boolean[height][width];
+        Random random = new Random(seed);
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                cells[y][x] = random.nextInt(4) == 0; // ~25% initial density
+            }
+        }
+    }
+
+    /** Applies the standard B3/S23 rules on a toroidal (wrap-around) grid. */
+    private void step() {
+        boolean[][] next = new boolean[height][width];
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                int neighbours = countNeighbours(x, y);
+                next[y][x] = neighbours == 3 || (cells[y][x] && neighbours == 2);
+            }
+        }
+        cells = next;
+    }
+
+    private int countNeighbours(int x, int y) {
+        int count = 0;
+        for (int dy = -1; dy <= 1; dy++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                if (dx == 0 && dy == 0) {
+                    continue;
+                }
+                int nx = Math.floorMod(x + dx, width);
+                int ny = Math.floorMod(y + dy, height);
+                if (cells[ny][nx]) {
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
+
+    private String render(long generation) {
+        StringBuilder frame = new StringBuilder((width + 1) * (height + 2));
+        frame.append(ANSI_CURSOR_HOME);
+        frame.append("Conway's Game of Life  |  generation ").append(generation)
+             .append("  |  Ctrl+C to quit").append('\n');
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                frame.append(cells[y][x] ? ALIVE : DEAD);
+            }
+            frame.append('\n');
+        }
+        return frame.toString();
+    }
+
+    public void run(long maxGenerations) throws InterruptedException {
+        System.out.print(ANSI_HIDE_CURSOR + ANSI_CLEAR_SCREEN);
+        try {
+            long generation = 0;
+            while (maxGenerations < 0 || generation < maxGenerations) {
+                System.out.print(render(generation));
+                System.out.flush();
+                Thread.sleep(FRAME_DELAY_MS);
+                step();
+                generation++;
+            }
+        } finally {
+            System.out.print(ANSI_SHOW_CURSOR);
+            System.out.flush();
+        }
+    }
+
+    public static void main(String[] args) throws InterruptedException {
+        int width = args.length > 0 ? Integer.parseInt(args[0]) : 40;
+        int height = args.length > 1 ? Integer.parseInt(args[1]) : 20;
+        long maxGenerations = args.length > 2 ? Long.parseLong(args[2]) : -1;
+
+        // Restore the cursor if the process is killed mid-run (e.g. Ctrl+C).
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            System.out.print(ANSI_SHOW_CURSOR);
+            System.out.flush();
+        }));
+
+        new GameOfLife(width, height, System.nanoTime()).run(maxGenerations);
+    }
+}
+
+````
+
+</details>
+
+*No tests shipped.*
+
+</TabItem>
+
+<TabItem value="uncle-bob-junior" label="uncle-bob-junior · 1.00">
+
+Gates: valid code Yes ·
+habit-hooks Pass ·
+ships tests Yes ·
+correct Yes
+
+<details open>
+<summary><code>ConsoleRenderer.java</code></summary>
+
+
+````java
+package com.example.life;
+
+/** Renders a grid as terminal text, one line per row. */
+public final class ConsoleRenderer {
+
+    private static final char ALIVE_CELL = '█';
+    private static final char DEAD_CELL = '·';
+
+    public String render(Grid grid) {
+        StringBuilder frame = new StringBuilder();
+        for (int row = 0; row < grid.height(); row++) {
+            appendRow(frame, grid, row);
+        }
+        return frame.toString();
+    }
+
+    private void appendRow(StringBuilder frame, Grid grid, int row) {
+        for (int col = 0; col < grid.width(); col++) {
+            frame.append(grid.isAlive(row, col) ? ALIVE_CELL : DEAD_CELL);
+        }
+        frame.append('\n');
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>GameOfLife.java</code></summary>
+
+
+````java
+package com.example.life;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/** Terminal entry point: seeds a glider and animates it in place using ANSI cursor control. */
+public final class GameOfLife {
+
+    private static final String CLEAR_SCREEN = "\u001B[2J";
+    private static final String CURSOR_HOME = "\u001B[H";
+    private static final String HIDE_CURSOR = "\u001B[?25l";
+    private static final String SHOW_CURSOR = "\u001B[?25h";
+
+    private static final long FRAME_DELAY_MILLIS = 120;
+    private static final int GENERATIONS = 300;
+    private static final int FIELD_HEIGHT = 15;
+    private static final int FIELD_WIDTH = 40;
+    private static final String DEAD_CELL_MARK = ".";
+    private static final List<String> GLIDER = List.of(".#.", "..#", "###");
+
+    private GameOfLife() {
+    }
+
+    public static void main(String[] args) throws InterruptedException {
+        Grid grid = Grid.fromPattern(gliderSeed());
+        System.out.print(CLEAR_SCREEN + HIDE_CURSOR);
+        try {
+            runSimulation(grid, new ConsoleRenderer());
+        } finally {
+            System.out.print(SHOW_CURSOR);
+        }
+    }
+
+    private static void runSimulation(Grid grid, ConsoleRenderer renderer) throws InterruptedException {
+        for (int generation = 0; generation < GENERATIONS; generation++) {
+            System.out.print(CURSOR_HOME + renderer.render(grid));
+            System.out.flush();
+            Thread.sleep(FRAME_DELAY_MILLIS);
+            grid = grid.nextGeneration();
+        }
+    }
+
+    private static List<String> gliderSeed() {
+        List<String> rows = new ArrayList<>();
+        for (int row = 0; row < FIELD_HEIGHT; row++) {
+            rows.add(seedRow(row));
+        }
+        return rows;
+    }
+
+    private static String seedRow(int row) {
+        if (row >= GLIDER.size()) {
+            return DEAD_CELL_MARK.repeat(FIELD_WIDTH);
+        }
+        String glider = GLIDER.get(row);
+        return glider + DEAD_CELL_MARK.repeat(FIELD_WIDTH - glider.length());
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>Grid.java</code></summary>
+
+
+````java
+package com.example.life;
+
+import java.util.Arrays;
+import java.util.List;
+
+/**
+ * Immutable Game of Life grid on a toroidal board: neighbours wrap
+ * around the edges, so a glider re-enters on the opposite side.
+ */
+public final class Grid {
+
+    /** Character that marks a live cell in a seed pattern; any other character is dead. */
+    public static final char ALIVE_MARKER = '#';
+
+    private static final int SURVIVAL_MIN_NEIGHBOURS = 2;
+    private static final int SURVIVAL_MAX_NEIGHBOURS = 3;
+    private static final int BIRTH_NEIGHBOURS = 3;
+
+    private static final int[][] NEIGHBOUR_OFFSETS = {
+            {-1, -1}, {-1, 0}, {-1, 1},
+            {0, -1}, {0, 1},
+            {1, -1}, {1, 0}, {1, 1}
+    };
+
+    private final boolean[][] cells;
+
+    private Grid(boolean[][] cells) {
+        this.cells = cells;
+    }
+
+    /**
+     * Parses a rectangular pattern of equal-length rows.
+     *
+     * @throws IllegalArgumentException if the pattern is empty or ragged
+     */
+    public static Grid fromPattern(List<String> rows) {
+        if (rows.isEmpty() || rows.get(0).isEmpty()) {
+            throw new IllegalArgumentException("Pattern must have at least one non-empty row");
+        }
+        int width = rows.get(0).length();
+        boolean[][] cells = new boolean[rows.size()][];
+        for (int rowIndex = 0; rowIndex < rows.size(); rowIndex++) {
+            cells[rowIndex] = parseRow(rows.get(rowIndex), width);
+        }
+        return new Grid(cells);
+    }
+
+    private static boolean[] parseRow(String row, int expectedWidth) {
+        if (row.length() != expectedWidth) {
+            throw new IllegalArgumentException("All pattern rows must have length " + expectedWidth);
+        }
+        boolean[] parsed = new boolean[expectedWidth];
+        for (int col = 0; col < expectedWidth; col++) {
+            parsed[col] = row.charAt(col) == ALIVE_MARKER;
+        }
+        return parsed;
+    }
+
+    public Grid nextGeneration() {
+        boolean[][] next = new boolean[height()][width()];
+        for (int row = 0; row < height(); row++) {
+            for (int col = 0; col < width(); col++) {
+                next[row][col] = nextCellState(row, col);
+            }
+        }
+        return new Grid(next);
+    }
+
+    public boolean isAlive(int row, int col) {
+        return cells[row][col];
+    }
+
+    public int height() {
+        return cells.length;
+    }
+
+    public int width() {
+        return cells[0].length;
+    }
+
+    private boolean nextCellState(int row, int col) {
+        int neighbours = liveNeighbours(row, col);
+        if (isAlive(row, col)) {
+            return neighbours >= SURVIVAL_MIN_NEIGHBOURS && neighbours <= SURVIVAL_MAX_NEIGHBOURS;
+        }
+        return neighbours == BIRTH_NEIGHBOURS;
+    }
+
+    private int liveNeighbours(int row, int col) {
+        int count = 0;
+        for (int[] offset : NEIGHBOUR_OFFSETS) {
+            if (isAliveWrapped(row + offset[0], col + offset[1])) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private boolean isAliveWrapped(int row, int col) {
+        return cells[Math.floorMod(row, height())][Math.floorMod(col, width())];
+    }
+
+    @Override
+    public boolean equals(Object other) {
+        if (this == other) {
+            return true;
+        }
+        if (!(other instanceof Grid grid)) {
+            return false;
+        }
+        return Arrays.deepEquals(cells, grid.cells);
+    }
+
+    @Override
+    public int hashCode() {
+        return Arrays.deepHashCode(cells);
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary>Shipped tests (2 files)</summary>
+
+<details>
+<summary><code>ConsoleRendererTest.java</code></summary>
+
+
+````java
+package com.example.life;
+
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+class ConsoleRendererTest {
+
+    private final ConsoleRenderer renderer = new ConsoleRenderer();
+
+    @Test
+    void rendersLiveAndDeadCellsRowByRow() {
+        Grid grid = Grid.fromPattern(List.of(
+                "#.",
+                ".#"));
+
+        assertEquals("█·\n·█\n", renderer.render(grid));
+    }
+
+    @Test
+    void rendersFullyDeadGridAsDotsOnly() {
+        Grid grid = Grid.fromPattern(List.of("..."));
+
+        assertEquals("···\n", renderer.render(grid));
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>GridTest.java</code></summary>
+
+
+````java
+package com.example.life;
+
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class GridTest {
+
+    @Test
+    void blinkerOscillatesWithPeriodTwo() {
+        Grid vertical = Grid.fromPattern(List.of(
+                ".....",
+                "..#..",
+                "..#..",
+                "..#..",
+                "....."));
+        Grid horizontal = Grid.fromPattern(List.of(
+                ".....",
+                ".....",
+                ".###.",
+                ".....",
+                "....."));
+
+        assertEquals(horizontal, vertical.nextGeneration());
+        assertEquals(vertical, vertical.nextGeneration().nextGeneration());
+    }
+
+    @Test
+    void blockStillLifeIsStable() {
+        Grid block = Grid.fromPattern(List.of(
+                "....",
+                ".##.",
+                ".##.",
+                "...."));
+
+        assertEquals(block, block.nextGeneration());
+    }
+
+    @Test
+    void lonelyCellDiesOfUnderpopulation() {
+        Grid lonely = Grid.fromPattern(List.of(
+                ".....",
+                "..#..",
+                "....."));
+        Grid empty = Grid.fromPattern(List.of(
+                ".....",
+                ".....",
+                "....."));
+
+        assertEquals(empty, lonely.nextGeneration());
+    }
+
+    @Test
+    void deadCellWithExactlyThreeNeighboursIsBorn() {
+        Grid seed = Grid.fromPattern(List.of(
+                ".....",
+                ".#.#.",
+                "..#..",
+                "....."));
+
+        assertTrue(seed.nextGeneration().isAlive(1, 2));
+    }
+
+    @Test
+    void liveCellWithFourNeighboursDiesOfOvercrowding() {
+        Grid crowded = Grid.fromPattern(List.of(
+                ".....",
+                ".###.",
+                "..#..",
+                "..#..",
+                "....."));
+
+        assertFalse(crowded.nextGeneration().isAlive(2, 2));
+    }
+
+    @Test
+    void neighboursWrapAroundBoardEdges() {
+        Grid corners = Grid.fromPattern(List.of(
+                "#..#",
+                "....",
+                "....",
+                "#..."));
+
+        assertTrue(corners.nextGeneration().isAlive(3, 3),
+                "corner cell has three neighbours via wrapping and must be born");
+    }
+
+    @Test
+    void raggedPatternIsRejected() {
+        assertThrows(IllegalArgumentException.class,
+                () -> Grid.fromPattern(List.of("...", "....")));
+    }
+
+    @Test
+    void emptyPatternIsRejected() {
+        assertThrows(IllegalArgumentException.class, () -> Grid.fromPattern(List.of()));
+    }
+}
+
+````
+
+</details>
+
+</details>
+
+</TabItem>
+
+</Tabs>
+
+## claude-cli:haiku
+
+<Tabs>
+
+<TabItem value="baseline-no-ruleset" label="baseline (no ruleset) · 0.84">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests **No** ·
+correct Yes
+
+<details open>
+<summary><code>GameOfLife.java</code> · 1 smell</summary>
+
+- `oversized-function` at line 23
+
+````java
+public class GameOfLife {
+    private boolean[][] grid;
+    private boolean[][] nextGrid;
+    private int width;
+    private int height;
+
+    public GameOfLife(int width, int height) {
+        this.width = width;
+        this.height = height;
+        this.grid = new boolean[height][width];
+        this.nextGrid = new boolean[height][width];
+        initializeRandom();
+    }
+
+    private void initializeRandom() {
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                grid[y][x] = Math.random() < 0.3;
+            }
+        }
+    }
+
+    public void update() {
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                int neighbors = countNeighbors(x, y);
+                boolean alive = grid[y][x];
+                
+                if (alive && (neighbors == 2 || neighbors == 3)) {
+                    nextGrid[y][x] = true;
+                } else if (!alive && neighbors == 3) {
+                    nextGrid[y][x] = true;
+                } else {
+                    nextGrid[y][x] = false;
+                }
+            }
+        }
+        
+        boolean[][] temp = grid;
+        grid = nextGrid;
+        nextGrid = temp;
+    }
+
+    private int countNeighbors(int x, int y) {
+        int count = 0;
+        for (int dy = -1; dy <= 1; dy++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                if (dx == 0 && dy == 0) continue;
+                int nx = (x + dx + width) % width;
+                int ny = (y + dy + height) % height;
+                if (grid[ny][nx]) count++;
+            }
+        }
+        return count;
+    }
+
+    public void render() {
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                System.out.print(grid[y][x] ? "█" : "·");
+            }
+            System.out.println();
+        }
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>Main.java</code> · 1 smell</summary>
+
+- `oversized-function` at line 2
+
+````java
+public class Main {
+    public static void main(String[] args) throws InterruptedException {
+        int width = 50;
+        int height = 20;
+        GameOfLife game = new GameOfLife(width, height);
+        
+        int generation = 0;
+        while (true) {
+            clearScreen();
+            System.out.println("Generation: " + generation);
+            game.render();
+            System.out.flush();
+            
+            Thread.sleep(200);
+            game.update();
+            generation++;
+        }
+    }
+
+    private static void clearScreen() {
+        System.out.print("\u001B[2J\u001B[H");
+    }
+}
+
+````
+
+</details>
+
+*No tests shipped.*
+
+</TabItem>
+
+<TabItem value="uncle-bob-junior" label="uncle-bob-junior · 1.00">
+
+Gates: valid code Yes ·
+habit-hooks Pass ·
+ships tests Yes ·
+correct Yes
+
+<details open>
+<summary><code>Display.java</code></summary>
+
+
+````java
+// Display.java
+public class Display {
+    private static final String LIVE_CELL = "█";
+    private static final String DEAD_CELL = " ";
+    private static final String CLEAR_SCREEN = "\u001b[2J";
+    private static final String HOME_CURSOR = "\u001b[H";
+
+    public void render(Grid grid, int generation) {
+        System.out.print(CLEAR_SCREEN + HOME_CURSOR);
+        System.out.println("Generation: " + generation);
+
+        for (int row = 0; row < grid.getHeight(); row++) {
+            for (int col = 0; col < grid.getWidth(); col++) {
+                String cell = grid.isAlive(row, col) ? LIVE_CELL : DEAD_CELL;
+                System.out.print(cell);
+            }
+            System.out.println();
+        }
+    }
+
+    public void pause(long milliseconds) {
+        try {
+            Thread.sleep(milliseconds);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>GameOfLife.java</code></summary>
+
+
+````java
+// GameOfLife.java
+public class GameOfLife {
+    private static final int SURVIVAL_MIN_NEIGHBORS = 2;
+    private static final int SURVIVAL_MAX_NEIGHBORS = 3;
+    private static final int BIRTH_NEIGHBOR_COUNT = 3;
+
+    public Grid nextGeneration(Grid current) {
+        Grid next = new Grid(current.getWidth(), current.getHeight());
+
+        for (int row = 0; row < current.getHeight(); row++) {
+            for (int col = 0; col < current.getWidth(); col++) {
+                int neighbors = current.countLiveNeighbors(row, col);
+                boolean alive = current.isAlive(row, col);
+                boolean survives = cellSurvives(alive, neighbors);
+                next.setCell(row, col, survives);
+            }
+        }
+
+        return next;
+    }
+
+    private boolean cellSurvives(boolean alive, int neighbors) {
+        if (alive) {
+            return neighbors >= SURVIVAL_MIN_NEIGHBORS && neighbors <= SURVIVAL_MAX_NEIGHBORS;
+        }
+        return neighbors == BIRTH_NEIGHBOR_COUNT;
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>GameOfLifeApp.java</code></summary>
+
+
+````java
+// GameOfLifeApp.java
+public class GameOfLifeApp {
+    private static final int GRID_WIDTH = 80;
+    private static final int GRID_HEIGHT = 24;
+    private static final long GENERATION_DELAY_MS = 100;
+    private static final int TOTAL_GENERATIONS = 1000;
+
+    public static void main(String[] args) {
+        Grid grid = initializeGrid();
+        GameOfLife game = new GameOfLife();
+        Display display = new Display();
+
+        for (int generation = 0; generation < TOTAL_GENERATIONS; generation++) {
+            display.render(grid, generation);
+            grid = game.nextGeneration(grid);
+            display.pause(GENERATION_DELAY_MS);
+        }
+    }
+
+    private static Grid initializeGrid() {
+        Grid grid = new Grid(GRID_WIDTH, GRID_HEIGHT);
+        int centerRow = GRID_HEIGHT / 2;
+        int centerCol = GRID_WIDTH / 2;
+
+        addGlider(grid, centerRow, centerCol);
+
+        return grid;
+    }
+
+    private static void addGlider(Grid grid, int row, int col) {
+        grid.setCell(row, col + 1, true);
+        grid.setCell(row + 1, col + 2, true);
+        grid.setCell(row + 2, col, true);
+        grid.setCell(row + 2, col + 1, true);
+        grid.setCell(row + 2, col + 2, true);
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>Grid.java</code></summary>
+
+
+````java
+// Grid.java
+public class Grid {
+    private boolean[][] cells;
+    private int width;
+    private int height;
+
+    public Grid(int width, int height) {
+        this.width = width;
+        this.height = height;
+        this.cells = new boolean[height][width];
+    }
+
+    public void setCell(int row, int col, boolean alive) {
+        cells[row][col] = alive;
+    }
+
+    public boolean isAlive(int row, int col) {
+        if (row < 0 || row >= height || col < 0 || col >= width) {
+            return false;
+        }
+        return cells[row][col];
+    }
+
+    public int countLiveNeighbors(int row, int col) {
+        int count = 0;
+        for (int dRow = -1; dRow <= 1; dRow++) {
+            for (int dCol = -1; dCol <= 1; dCol++) {
+                if (dRow == 0 && dCol == 0) continue;
+                if (isAlive(row + dRow, col + dCol)) {
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
+
+    public int getWidth() {
+        return width;
+    }
+
+    public int getHeight() {
+        return height;
+    }
+
+    public Grid copy() {
+        Grid copy = new Grid(width, height);
+        for (int row = 0; row < height; row++) {
+            for (int col = 0; col < width; col++) {
+                copy.setCell(row, col, cells[row][col]);
+            }
+        }
+        return copy;
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary>Shipped tests (1 file)</summary>
+
+<details>
+<summary><code>GameOfLifeTest.java</code></summary>
+
+
+````java
+// GameOfLifeTest.java
+import org.junit.Test;
+import static org.junit.Assert.*;
+
+public class GameOfLifeTest {
+
+    @Test
+    public void testEmptyGridStaysEmpty() {
+        Grid grid = new Grid(5, 5);
+        GameOfLife game = new GameOfLife();
+
+        Grid next = game.nextGeneration(grid);
+
+        for (int row = 0; row < 5; row++) {
+            for (int col = 0; col < 5; col++) {
+                assertFalse(next.isAlive(row, col));
+            }
+        }
+    }
+
+    @Test
+    public void testLiveCellWithOneNeighborDies() {
+        Grid grid = new Grid(3, 3);
+        grid.setCell(1, 1, true);
+        grid.setCell(0, 0, true);
+
+        GameOfLife game = new GameOfLife();
+        Grid next = game.nextGeneration(grid);
+
+        assertFalse(next.isAlive(1, 1));
+    }
+
+    @Test
+    public void testLiveCellWithTwoNeighborsSurvives() {
+        Grid grid = new Grid(3, 3);
+        grid.setCell(0, 0, true);
+        grid.setCell(0, 1, true);
+        grid.setCell(1, 0, true);
+
+        GameOfLife game = new GameOfLife();
+        Grid next = game.nextGeneration(grid);
+
+        assertTrue(next.isAlive(0, 0));
+    }
+
+    @Test
+    public void testDeadCellWithThreeNeighborsBecomeAlive() {
+        Grid grid = new Grid(3, 3);
+        grid.setCell(0, 0, true);
+        grid.setCell(0, 1, true);
+        grid.setCell(1, 0, true);
+
+        GameOfLife game = new GameOfLife();
+        Grid next = game.nextGeneration(grid);
+
+        assertTrue(next.isAlive(1, 1));
+    }
+
+    @Test
+    public void testCountLiveNeighborsFromCorner() {
+        Grid grid = new Grid(3, 3);
+        grid.setCell(0, 0, true);
+        grid.setCell(0, 1, true);
+        grid.setCell(1, 1, true);
+
+        assertEquals(3, grid.countLiveNeighbors(1, 0));
+    }
+
+    @Test
+    public void testBoundaryDoesNotWrap() {
+        Grid grid = new Grid(3, 3);
+        grid.setCell(0, 0, true);
+
+        assertEquals(0, grid.countLiveNeighbors(-1, -1));
+    }
+}
+
+````
+
+</details>
+
+</details>
+
+</TabItem>
+
+</Tabs>
+
+## claude-cli:sonnet
+
+<Tabs>
+
+<TabItem value="baseline-no-ruleset" label="baseline (no ruleset) · 0.88">
+
+Gates: valid code Yes ·
+habit-hooks Pass ·
+ships tests **No** ·
+correct Yes
+
+<details open>
+<summary><code>GameOfLife.java</code></summary>
+
+
+````java
+package com.example.gameoflife;
+
+import java.util.Random;
+
+public final class GameOfLife {
+
+    private static final int WIDTH = 80;
+    private static final int HEIGHT = 24;
+    private static final long FRAME_DELAY_MS = 150L;
+    private static final double INITIAL_ALIVE_PROBABILITY = 0.25;
+    private static final char ALIVE_CHAR = '#';
+    private static final char DEAD_CHAR = ' ';
+
+    private boolean[][] grid;
+
+    public GameOfLife(long seed) {
+        this.grid = randomGrid(seed);
+    }
+
+    private boolean[][] randomGrid(long seed) {
+        Random random = new Random(seed);
+        boolean[][] result = new boolean[HEIGHT][WIDTH];
+        for (int y = 0; y < HEIGHT; y++) {
+            for (int x = 0; x < WIDTH; x++) {
+                result[y][x] = random.nextDouble() < INITIAL_ALIVE_PROBABILITY;
+            }
+        }
+        return result;
+    }
+
+    private int countLiveNeighbours(int row, int col) {
+        int count = 0;
+        for (int dy = -1; dy <= 1; dy++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                if (dy == 0 && dx == 0) {
+                    continue;
+                }
+                int ny = (row + dy + HEIGHT) % HEIGHT;
+                int nx = (col + dx + WIDTH) % WIDTH;
+                if (grid[ny][nx]) {
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
+
+    private void step() {
+        boolean[][] next = new boolean[HEIGHT][WIDTH];
+        for (int y = 0; y < HEIGHT; y++) {
+            for (int x = 0; x < WIDTH; x++) {
+                int neighbours = countLiveNeighbours(y, x);
+                boolean alive = grid[y][x];
+                next[y][x] = alive
+                        ? (neighbours == 2 || neighbours == 3)
+                        : (neighbours == 3);
+            }
+        }
+        grid = next;
+    }
+
+    private String render() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("\033[H");
+        for (int y = 0; y < HEIGHT; y++) {
+            for (int x = 0; x < WIDTH; x++) {
+                sb.append(grid[y][x] ? ALIVE_CHAR : DEAD_CHAR);
+            }
+            sb.append('\n');
+        }
+        return sb.toString();
+    }
+
+    public void run() throws InterruptedException {
+        System.out.print("\033[2J\033[H");
+        System.out.flush();
+        while (true) {
+            System.out.print(render());
+            System.out.flush();
+            step();
+            Thread.sleep(FRAME_DELAY_MS);
+        }
+    }
+
+    public static void main(String[] args) throws InterruptedException {
+        long seed = System.nanoTime();
+        new GameOfLife(seed).run();
+    }
+}
+
+````
+
+</details>
+
+*No tests shipped.*
+
+</TabItem>
+
+<TabItem value="uncle-bob-junior" label="uncle-bob-junior · 0.97">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests Yes ·
+correct Yes
+
+<details open>
+<summary><code>CellState.java</code></summary>
+
+
+````java
+// src/main/java/life/CellState.java
+package life;
+
+public enum CellState {
+    ALIVE,
+    DEAD
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>GameOfLifeApplication.java</code></summary>
+
+
+````java
+// src/main/java/life/GameOfLifeApplication.java
+package life;
+
+import java.util.Random;
+
+public final class GameOfLifeApplication {
+    private static final int GRID_WIDTH = 40;
+    private static final int GRID_HEIGHT = 20;
+    private static final double INITIAL_ALIVE_DENSITY = 0.35;
+    private static final int GENERATION_COUNT = 300;
+    private static final long FRAME_DELAY_MILLIS = 150L;
+
+    private GameOfLifeApplication() {
+    }
+
+    public static void main(String[] args) {
+        Grid initialGrid = GridFactory.randomGrid(GRID_WIDTH, GRID_HEIGHT, INITIAL_ALIVE_DENSITY, new Random());
+        SimulationRunner simulationRunner = new SimulationRunner(new TerminalRenderer(), FRAME_DELAY_MILLIS);
+        simulationRunner.run(initialGrid, GENERATION_COUNT);
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>Grid.java</code></summary>
+
+
+````java
+// src/main/java/life/Grid.java
+package life;
+
+import java.util.Arrays;
+import java.util.Objects;
+
+public final class Grid {
+    private final CellState[][] cells;
+    private final int height;
+    private final int width;
+
+    Grid(CellState[][] cells) {
+        Objects.requireNonNull(cells, "cells must not be null");
+        this.cells = deepCopy(cells);
+        this.height = cells.length;
+        this.width = cells[0].length;
+    }
+
+    private static CellState[][] deepCopy(CellState[][] source) {
+        CellState[][] copy = new CellState[source.length][];
+        for (int row = 0; row < source.length; row++) {
+            copy[row] = source[row].clone();
+        }
+        return copy;
+    }
+
+    public CellState cellAt(int row, int col) {
+        return cells[row][col];
+    }
+
+    public int height() {
+        return height;
+    }
+
+    public int width() {
+        return width;
+    }
+
+    public Grid nextGeneration() {
+        return new Grid(computeNextCells());
+    }
+
+    private CellState[][] computeNextCells() {
+        CellState[][] nextCells = new CellState[height][width];
+        for (int row = 0; row < height; row++) {
+            for (int col = 0; col < width; col++) {
+                nextCells[row][col] = nextStateForCell(row, col);
+            }
+        }
+        return nextCells;
+    }
+
+    private CellState nextStateForCell(int row, int col) {
+        int aliveNeighbors = NeighborCounter.countAliveNeighbors(this, row, col);
+        return LifeRules.nextState(cellAt(row, col), aliveNeighbors);
+    }
+
+    @Override
+    public boolean equals(Object other) {
+        if (this == other) {
+            return true;
+        }
+        if (!(other instanceof Grid otherGrid)) {
+            return false;
+        }
+        return Arrays.deepEquals(this.cells, otherGrid.cells);
+    }
+
+    @Override
+    public int hashCode() {
+        return Arrays.deepHashCode(cells);
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>GridFactory.java</code> · 1 smell</summary>
+
+- `too-many-parameters` at line 10
+
+````java
+// src/main/java/life/GridFactory.java
+package life;
+
+import java.util.Random;
+
+public final class GridFactory {
+    private GridFactory() {
+    }
+
+    public static Grid randomGrid(int width, int height, double aliveDensity, Random random) {
+        CellState[][] cells = new CellState[height][width];
+        for (int row = 0; row < height; row++) {
+            fillRow(cells[row], aliveDensity, random);
+        }
+        return new Grid(cells);
+    }
+
+    private static void fillRow(CellState[] row, double aliveDensity, Random random) {
+        for (int col = 0; col < row.length; col++) {
+            row[col] = random.nextDouble() < aliveDensity ? CellState.ALIVE : CellState.DEAD;
+        }
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>LifeRules.java</code></summary>
+
+
+````java
+// src/main/java/life/LifeRules.java
+package life;
+
+final class LifeRules {
+    private static final int MIN_SURVIVAL_NEIGHBORS = 2;
+    private static final int MAX_SURVIVAL_NEIGHBORS = 3;
+    private static final int BIRTH_NEIGHBOR_COUNT = 3;
+
+    private LifeRules() {
+    }
+
+    static CellState nextState(CellState current, int aliveNeighbors) {
+        if (current == CellState.ALIVE) {
+            return survives(aliveNeighbors) ? CellState.ALIVE : CellState.DEAD;
+        }
+        return isBirth(aliveNeighbors) ? CellState.ALIVE : CellState.DEAD;
+    }
+
+    private static boolean survives(int aliveNeighbors) {
+        return aliveNeighbors == MIN_SURVIVAL_NEIGHBORS || aliveNeighbors == MAX_SURVIVAL_NEIGHBORS;
+    }
+
+    private static boolean isBirth(int aliveNeighbors) {
+        return aliveNeighbors == BIRTH_NEIGHBOR_COUNT;
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>NeighborCounter.java</code> · 1 smell</summary>
+
+- `too-many-parameters` at line 24
+
+````java
+// src/main/java/life/NeighborCounter.java
+package life;
+
+final class NeighborCounter {
+    private static final int[][] NEIGHBOR_OFFSETS = {
+        {-1, -1}, {-1, 0}, {-1, 1},
+        {0, -1},           {0, 1},
+        {1, -1},  {1, 0},  {1, 1}
+    };
+
+    private NeighborCounter() {
+    }
+
+    static int countAliveNeighbors(Grid grid, int row, int col) {
+        int aliveCount = 0;
+        for (int[] offset : NEIGHBOR_OFFSETS) {
+            if (isNeighborAlive(grid, row, col, offset)) {
+                aliveCount++;
+            }
+        }
+        return aliveCount;
+    }
+
+    private static boolean isNeighborAlive(Grid grid, int row, int col, int[] offset) {
+        int neighborRow = wrapIndex(row + offset[0], grid.height());
+        int neighborCol = wrapIndex(col + offset[1], grid.width());
+        return grid.cellAt(neighborRow, neighborCol) == CellState.ALIVE;
+    }
+
+    private static int wrapIndex(int index, int size) {
+        return ((index % size) + size) % size;
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>SimulationRunner.java</code></summary>
+
+
+````java
+// src/main/java/life/SimulationRunner.java
+package life;
+
+public final class SimulationRunner {
+    private final TerminalRenderer renderer;
+    private final long frameDelayMillis;
+
+    public SimulationRunner(TerminalRenderer renderer, long frameDelayMillis) {
+        this.renderer = renderer;
+        this.frameDelayMillis = frameDelayMillis;
+    }
+
+    public void run(Grid initialGrid, int generationCount) {
+        renderer.clearScreen();
+        Grid currentGrid = initialGrid;
+        for (int generation = 1; generation <= generationCount; generation++) {
+            currentGrid = renderFrameAndAdvance(currentGrid, generation);
+            if (Thread.currentThread().isInterrupted()) {
+                break;
+            }
+        }
+    }
+
+    private Grid renderFrameAndAdvance(Grid currentGrid, int generation) {
+        renderer.render(currentGrid, generation);
+        Grid nextGrid = currentGrid.nextGeneration();
+        sleepBetweenFrames();
+        return nextGrid;
+    }
+
+    private void sleepBetweenFrames() {
+        try {
+            Thread.sleep(frameDelayMillis);
+        } catch (InterruptedException interruptedException) {
+            Thread.currentThread().interrupt();
+        }
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>TerminalRenderer.java</code></summary>
+
+
+````java
+// src/main/java/life/TerminalRenderer.java
+package life;
+
+public final class TerminalRenderer {
+    private static final char ALIVE_SYMBOL = 'O';
+    private static final char DEAD_SYMBOL = ' ';
+    private static final String CURSOR_HOME = "\u001b[H";
+    private static final String CLEAR_SCREEN = "\u001b[2J";
+    private static final int GENERATION_LABEL_WIDTH = 6;
+
+    public void clearScreen() {
+        System.out.print(CLEAR_SCREEN + CURSOR_HOME);
+        System.out.flush();
+    }
+
+    public void render(Grid grid, int generation) {
+        StringBuilder frame = new StringBuilder();
+        frame.append(CURSOR_HOME);
+        appendGrid(frame, grid);
+        appendStatusLine(frame, generation);
+        System.out.print(frame);
+        System.out.flush();
+    }
+
+    private void appendGrid(StringBuilder frame, Grid grid) {
+        for (int row = 0; row < grid.height(); row++) {
+            appendRow(frame, grid, row);
+        }
+    }
+
+    private void appendRow(StringBuilder frame, Grid grid, int row) {
+        for (int col = 0; col < grid.width(); col++) {
+            frame.append(grid.cellAt(row, col) == CellState.ALIVE ? ALIVE_SYMBOL : DEAD_SYMBOL);
+        }
+        frame.append('\n');
+    }
+
+    private void appendStatusLine(StringBuilder frame, int generation) {
+        frame.append(String.format("Generation: %-" + GENERATION_LABEL_WIDTH + "d%n", generation));
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>TestGridSupport.java</code></summary>
+
+
+````java
+// src/test/java/life/TestGridSupport.java
+package life;
+
+final class TestGridSupport {
+    private static final char ALIVE_CHAR = 'O';
+
+    private TestGridSupport() {
+    }
+
+    static Grid gridFrom(String... rows) {
+        CellState[][] cells = new CellState[rows.length][];
+        for (int row = 0; row < rows.length; row++) {
+            cells[row] = parseRow(rows[row]);
+        }
+        return new Grid(cells);
+    }
+
+    private static CellState[] parseRow(String row) {
+        CellState[] cells = new CellState[row.length()];
+        for (int col = 0; col < row.length(); col++) {
+            cells[col] = row.charAt(col) == ALIVE_CHAR ? CellState.ALIVE : CellState.DEAD;
+        }
+        return cells;
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary>Shipped tests (4 files)</summary>
+
+<details>
+<summary><code>GridFactoryTest.java</code></summary>
+
+
+````java
+// src/test/java/life/GridFactoryTest.java
+package life;
+
+import org.junit.jupiter.api.Test;
+
+import java.util.Random;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+class GridFactoryTest {
+    private static final int TEST_GRID_SIZE = 3;
+
+    @Test
+    void allCellsDeadWhenDensityIsZero() {
+        Grid grid = GridFactory.randomGrid(TEST_GRID_SIZE, TEST_GRID_SIZE, 0.0, new Random());
+        assertAllCellsAre(grid, CellState.DEAD);
+    }
+
+    @Test
+    void allCellsAliveWhenDensityIsOne() {
+        Grid grid = GridFactory.randomGrid(TEST_GRID_SIZE, TEST_GRID_SIZE, 1.0, new Random());
+        assertAllCellsAre(grid, CellState.ALIVE);
+    }
+
+    private void assertAllCellsAre(Grid grid, CellState expectedState) {
+        for (int row = 0; row < grid.height(); row++) {
+            for (int col = 0; col < grid.width(); col++) {
+                assertEquals(expectedState, grid.cellAt(row, col));
+            }
+        }
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>GridTest.java</code></summary>
+
+
+````java
+// src/test/java/life/GridTest.java
+package life;
+
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+class GridTest {
+
+    @Test
+    void blockStillLifeRemainsStable() {
+        Grid block = TestGridSupport.gridFrom(
+            "......",
+            ".OO...",
+            ".OO...",
+            "......"
+        );
+        assertEquals(block, block.nextGeneration());
+    }
+
+    @Test
+    void blinkerOscillatesWithPeriodTwo() {
+        Grid verticalBlinker = TestGridSupport.gridFrom(
+            ".....",
+            "..O..",
+            "..O..",
+            "..O..",
+            "....."
+        );
+        Grid horizontalBlinker = TestGridSupport.gridFrom(
+            ".....",
+            ".....",
+            ".OOO.",
+            ".....",
+            "....."
+        );
+        assertEquals(horizontalBlinker, verticalBlinker.nextGeneration());
+        assertEquals(verticalBlinker, verticalBlinker.nextGeneration().nextGeneration());
+    }
+
+    @Test
+    void isolatedAliveCellDiesFromUnderpopulation() {
+        Grid singleCell = TestGridSupport.gridFrom(
+            "...",
+            ".O.",
+            "..."
+        );
+        Grid expected = TestGridSupport.gridFrom(
+            "...",
+            "...",
+            "..."
+        );
+        assertEquals(expected, singleCell.nextGeneration());
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>LifeRulesTest.java</code></summary>
+
+
+````java
+// src/test/java/life/LifeRulesTest.java
+package life;
+
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+class LifeRulesTest {
+
+    @Test
+    void aliveCellWithTwoNeighborsSurvives() {
+        assertEquals(CellState.ALIVE, LifeRules.nextState(CellState.ALIVE, 2));
+    }
+
+    @Test
+    void aliveCellWithThreeNeighborsSurvives() {
+        assertEquals(CellState.ALIVE, LifeRules.nextState(CellState.ALIVE, 3));
+    }
+
+    @Test
+    void aliveCellWithOneNeighborDies() {
+        assertEquals(CellState.DEAD, LifeRules.nextState(CellState.ALIVE, 1));
+    }
+
+    @Test
+    void aliveCellWithFourNeighborsDies() {
+        assertEquals(CellState.DEAD, LifeRules.nextState(CellState.ALIVE, 4));
+    }
+
+    @Test
+    void deadCellWithThreeNeighborsIsBorn() {
+        assertEquals(CellState.ALIVE, LifeRules.nextState(CellState.DEAD, 3));
+    }
+
+    @Test
+    void deadCellWithTwoNeighborsStaysDead() {
+        assertEquals(CellState.DEAD, LifeRules.nextState(CellState.DEAD, 2));
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>NeighborCounterTest.java</code></summary>
+
+
+````java
+// src/test/java/life/NeighborCounterTest.java
+package life;
+
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+class NeighborCounterTest {
+
+    @Test
+    void countsAllEightNeighborsWhenAllAreAlive() {
+        Grid grid = TestGridSupport.gridFrom(
+            "OOO",
+            "O.O",
+            "OOO"
+        );
+        assertEquals(8, NeighborCounter.countAliveNeighbors(grid, 1, 1));
+    }
+
+    @Test
+    void countsZeroNeighborsWhenAllAreDead() {
+        Grid grid = TestGridSupport.gridFrom(
+            "...",
+            "...",
+            "..."
+        );
+        assertEquals(0, NeighborCounter.countAliveNeighbors(grid, 1, 1));
+    }
+
+    @Test
+    void wrapsAroundGridEdgesToCountDiagonalNeighbor() {
+        Grid grid = TestGridSupport.gridFrom(
+            "O..",
+            "...",
+            "..O"
+        );
+        assertEquals(1, NeighborCounter.countAliveNeighbors(grid, 0, 0));
+    }
+}
+
+````
+
+</details>
+
+</details>
+
+</TabItem>
+
+</Tabs>

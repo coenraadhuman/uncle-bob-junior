@@ -1,0 +1,9 @@
+{
+  "label": "The Ruleset",
+  "position": 2,
+  "link": {
+    "type": "generated-index",
+    "description": "The clean-code rules exactly as the plugin injects them, plus the on-demand reference files.",
+    "slug": "/ruleset"
+  }
+}

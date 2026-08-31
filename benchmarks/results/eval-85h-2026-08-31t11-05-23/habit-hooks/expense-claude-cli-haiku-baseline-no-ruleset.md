@@ -1,4 +1,4 @@
-── too-many-parameters (3 issues) ──
+── too-many-parameters (2 issues) ──
 
 High parameter count is a sign of coupling.
 Parameters that travel together across several calls are a missing abstraction.
@@ -14,10 +14,9 @@ Useful tip: rewrite each call site with the signature that feels natural there, 
 **AVOID**: A `{ ...everything }` bag that merely renames the list hides the coupling instead of removing it. A `FooProps` or options object named after the function that takes it is the same bag: organised by method rather than by abstraction, so the next function invents another one and the concept stays unnamed. You are done when the entity carries a domain name and no call site still passes its fields loose.
 
 Expense.java:15
-ExpenseClaim.java:15
 MonthlyReimbursementReport.java:10
 
-── oversized-function (5 issues) ──
+── oversized-function (4 issues) ──
 
 Functions over 12 lines almost always carry more than one responsibility, and that is the smell to chase — not the line count itself.
 
@@ -29,7 +28,6 @@ If responsibilities are tangled you may need to first *inline* methods to see th
 
 A concrete technique: write what the method does in one short sentence. Refactor until the code reads as close to that sentence as possible. If you cannot say what it does in one sentence, it almost certainly has more than one responsibility.
 
-ExpenseClaimProcessor.java:4
 ExpenseClaimSystem.java:7
 ExpenseProcessor.java:12
 ExpenseValidator.java:11

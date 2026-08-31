@@ -1,0 +1,23 @@
+---
+title: eval-guo-2026-08-31T11:51:53
+sidebar_position: 3
+---
+
+Run `eval-guo-2026-08-31T11:51:53`: the same tasks and models, once bare (baseline) and once
+with the uncle-bob-junior ruleset as system prompt, judged by
+[habit-hooks](https://github.com/habit-hooks/habit-hooks) plus valid-code,
+ships-tests, and correctness gates. Single-shot generations, so expect
+run-to-run variance.
+
+```mermaid
+xychart-beta
+    title "Mean score per model and arm"
+    x-axis ["claude-cli:haiku / baseline (no ruleset)", "claude-cli:haiku / uncle-bob-junior"]
+    y-axis "mean score" 0 --> 1
+    bar [0.875, 0.984]
+```
+
+| Task | Arm | Score | Valid code | Habit-hooks | Ships tests | Correct | Oversized file |
+|---|---|---:|:---:|:---:|:---:|:---:|---:|
+| logscan | claude-cli:haiku · baseline (no ruleset) | 0.88 | Yes | Pass | **No** | Yes | 0 |
+| logscan | claude-cli:haiku · uncle-bob-junior | 0.98 | Yes | **Fail** | Yes | Yes | 1 |

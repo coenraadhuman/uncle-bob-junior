@@ -1,5 +1,4 @@
 import java.time.*;
-import java.util.*;
 
 class WaitingListEntry {
     private final String id;

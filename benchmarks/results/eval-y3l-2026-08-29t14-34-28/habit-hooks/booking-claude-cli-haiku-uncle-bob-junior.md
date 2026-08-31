@@ -15,8 +15,8 @@ Useful tip: rewrite each call site with the signature that feels natural there, 
 
 Booking.java:15
 BookingEngine.java:13
-Seat.java:11
-WaitingListEntry.java:10
+Seat.java:8
+WaitingListEntry.java:9
 
 ── oversized-function (3 issues) ──
 
@@ -33,35 +33,3 @@ A concrete technique: write what the method does in one short sentence. Refactor
 BookingEngine.java:27
 BookingEngine.java:50
 BookingEngine.java:154
-
-── unused-import (23 issues) ──
-
-An import nothing in the module uses is noise the reader has to disprove: it makes the module look like it depends on something it does not, and it hides real signals — a leftover from code you deleted, a symbol you meant to call and forgot, or a re-export that belongs somewhere explicit.
-
-Delete it. Don't comment it out or alias it to silence the warning — that keeps the lie. Two cases need more than deletion: if the name was imported purely for a side effect at import time, that side-effect-on-import is the smell — make the effect an explicit call. If the module is a package's public surface deliberately re-exporting the name, say so where the language makes re-exports explicit (an `__all__` entry, a barrel export) rather than leaning on an unused import to hold it.
-
-Done right, the import list names exactly what the code below it uses — nothing to prove, nothing to explain.
-
-CancelResult.java:1
-CancelResult.java:2
-ConfirmResult.java:1
-ConfirmResult.java:2
-EventSnapshot.java:1
-EventSnapshot.java:2
-Hold.java:2
-HoldResult.java:2
-IdSource.java:1
-IdSource.java:2
-Money.java:1
-Money.java:2
-Seat.java:1
-Seat.java:2
-SeatStatus.java:1
-SeatStatus.java:2
-SequentialIds.java:1
-SequentialIds.java:2
-TicketType.java:1
-TicketType.java:2
-WaitingListEntry.java:2
-WaitlistResult.java:1
-WaitlistResult.java:2

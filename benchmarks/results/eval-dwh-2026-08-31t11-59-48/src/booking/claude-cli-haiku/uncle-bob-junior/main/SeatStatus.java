@@ -1,0 +1,1 @@
+enum SeatStatus { AVAILABLE, HELD, CONFIRMED }

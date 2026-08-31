@@ -1,60 +1,70 @@
 #!/usr/bin/env node
 // Exporter for the standalone Game of Life showcase
-// (promptfooconfig.gameoflife.yaml): stores each full reply as
-// examples/<model>/<arm>/reply.md in the repo root — nothing else, no
-// scoreboard, no habit-hooks reports. Registered as that config's extension hook.
+// (promptfooconfig.gameoflife.yaml): stores each run as a full run directory
+// under benchmarks/game-of-life-results/<eval-id>/ — the same structure as
+// benchmarks/results/ (report.json, report.md, src/, habit-hooks/) — so the
+// site and reprocess-results.js treat it like any other stored run.
 //
 //   node benchmarks/gameoflife-examples.js [evalId]   # re-export, defaults to the newest eval
-const fs = require('fs');
 const path = require('path');
 
-const { resultRows, slug, loadEval, newestEvalId } = require('./export-results');
+const { resultRows, slug, writeRunArtifacts, loadEval, newestEvalId } = require('./export-results');
+const site = require('./build-site');
 
-const EXAMPLES_DIR = path.join(__dirname, '..', 'examples');
+const GAME_OF_LIFE_RESULTS_DIR = path.join(__dirname, 'game-of-life-results');
 // Matches the test description in promptfooconfig.gameoflife.yaml. Rows from
 // other tasks are ignored, so re-exporting the wrong eval is a harmless no-op
-// instead of overwriting the examples with unrelated replies.
+// instead of writing unrelated replies into the showcase.
 const GAME_OF_LIFE_TASK = 'gameoflife';
 
-// Writes one examples/<model>/<arm>/reply.md per Game of Life reply and
-// returns the written paths — the arm level keeps a model's baseline and
-// ruleset replies from overwriting each other. `data` is a promptfoo export
-// JSON or a bare results array.
-function exportExamples(data, { examplesDir = EXAMPLES_DIR } = {}) {
+// Export one Game of Life eval as a run directory. Returns the run dir, or
+// null when the eval carries no Game of Life replies. `data` is a promptfoo
+// export JSON or a bare results array.
+function exportExamples(evalId, data, { resultsDir = GAME_OF_LIFE_RESULTS_DIR } = {}) {
   const rows = resultRows(data).filter(
     (row) => row.task === GAME_OF_LIFE_TASK && row.output.trim() !== '',
   );
-  return rows.map((row) => {
-    const armDir = path.join(examplesDir, slug(row.model), slug(row.arm));
-    fs.mkdirSync(armDir, { recursive: true });
-    const file = path.join(armDir, 'reply.md');
-    fs.writeFileSync(file, row.output);
-    return file;
-  });
+  if (rows.length === 0) return null;
+  const runDir = path.join(resultsDir, slug(evalId));
+  writeRunArtifacts(evalId, rows, runDir);
+  return runDir;
 }
 
-async function extensionHook(hookName, context) {
+async function extensionHook(hookName, context, {
+  doExport = exportExamples,
+  doBuildSite = site.buildSite,
+  doRenderSite = site.renderSite,
+} = {}) {
   if (hookName !== 'afterAll') return;
+  let runDir = null;
   try {
-    const written = exportExamples(context.results);
-    if (written.length) console.log(`\nExample replies written to ${EXAMPLES_DIR}`);
+    runDir = doExport(context.evalId, context.results);
+    if (runDir) console.log(`\nGame of Life run exported to ${runDir}`);
   } catch (error) {
     // A failed export must never fail the eval itself; the data stays
     // recoverable via `node benchmarks/gameoflife-examples.js <eval-id>`.
-    console.error(`examples export failed: ${error.message}`);
+    console.error(`game of life export failed: ${error.message}`);
+  }
+  if (!runDir) return;
+  try {
+    console.log(`Site content regenerated in ${doBuildSite(context.evalId)}`);
+    const render = doRenderSite();
+    console.log(render.rendered ? 'Static site rendered into docs/' : `Site render skipped: ${render.reason}`);
+  } catch (error) {
+    console.error(`site build failed: ${error.message}`);
   }
 }
 
 function main() {
   const evalId = process.argv[2] || newestEvalId();
-  const written = exportExamples(loadEval(evalId));
-  if (written.length === 0) {
+  const runDir = exportExamples(evalId, loadEval(evalId));
+  if (!runDir) {
     console.error(`Eval ${evalId} has no ${GAME_OF_LIFE_TASK} replies to export.`);
     process.exit(1);
   }
-  console.log(`wrote:\n${written.join('\n')}`);
+  console.log(`wrote ${runDir}`);
 }
 
 if (require.main === module) main();
 
-module.exports = { exportExamples, extensionHook, EXAMPLES_DIR, GAME_OF_LIFE_TASK };
+module.exports = { exportExamples, extensionHook, GAME_OF_LIFE_RESULTS_DIR, GAME_OF_LIFE_TASK };

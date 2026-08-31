@@ -58,25 +58,39 @@ fix-it prompt. Opt-in per project — it only fires where a
 PATH; it stays silent when uncle-bob-junior is off, and deliberate
 deviations are managed with habit-hooks' own snooze.
 
+## Benchmark Results
+
+**The site is the place to read the results:**
+https://coenraadhuman.github.io/uncle-bob-junior/
+
+It carries the ruleset itself (the slim core and its reference files), the
+newest full-run scoreboard with the generated code side by side per task,
+past runs, subset runs, and the Game of Life showcase — all regenerated from
+the repository's current state on every site build, so what you read is
+always what the repo measures.
+
 ## Does it work? Measure it
 
-The repo ships its own with/without benchmark: the same tasks, once bare and
-once with the ruleset as system prompt, scored by deterministic
-judges — code LOC, longest function, nesting depth, magic numbers, short
-names, duplication, mutable fields and setters, whether tests ship, and a
-functional correctness gate.
-No LLM grading, no hand-picked outputs. It runs through
-[promptfoo](https://promptfoo.dev), with a web UI showing both arms side by
-side; the provider drives your logged-in Claude Code CLI, so no API key is
-needed:
+The repo ships its own with/without benchmark: the same tasks (Java, Python,
+and C#), once bare and once with the ruleset as system prompt, judged by
+[habit-hooks](https://github.com/habit-hooks/habit-hooks) — an independent
+smell detector — plus valid-code, ships-tests, and functional-correctness
+gates. No LLM grading, no hand-picked outputs. It runs through
+[promptfoo](https://promptfoo.dev); the provider drives your logged-in
+Claude Code CLI, so no API key is needed:
 
 ```bash
-npx promptfoo@latest eval -c benchmarks/promptfooconfig.yaml
-npx promptfoo@latest view
+npx promptfoo@latest eval -c benchmarks/promptfooconfig.yaml   # full run
+npx promptfoo@latest eval -c benchmarks/promptfooconfig.yaml \
+  --filter-pattern email --filter-providers haiku              # cheap subset
 ```
 
-`/uncle-bob-junior-gain` renders the newest eval as a scoreboard. Method,
-caveats, and how to read the numbers: [benchmarks/](benchmarks/).
+Every eval automatically exports its outcomes, regenerates the site content,
+and renders the static site into `docs/` — publishing is just committing.
+Full runs become the featured scoreboard; subset runs file into their own
+site section. Stored runs are re-judged from their raw replies whenever the
+judges improve: `node benchmarks/reprocess-results.js`. Method, caveats, and
+how to read the numbers: [benchmarks/](benchmarks/).
 
 ## Install
 
@@ -101,6 +115,19 @@ Set the level for every new session with the `UNCLE_BOB_JUNIOR_DEFAULT_MODE` env
 While active, the ruleset is also injected into every subagent spawned via the Agent tool. To scope that to specific agent types, set `UNCLE_BOB_JUNIOR_SUBAGENT_MATCHER` to a regex tested against the subagent's `agent_type` (unanchored, case-insensitive; unset injects into every subagent).
 
 Agents working on a repo can also read the compact ruleset straight from a committed [`AGENTS.md`](AGENTS.md) — this repo keeps one for exactly that.
+
+### Plugin Update
+
+```
+/plugin marketplace update uncle-bob-junior
+```
+```
+/plugin update uncle-bob-junior@uncle-bob-junior
+```
+
+```
+/reload-plugins 
+```
 
 ### Uninstall
 
@@ -134,25 +161,26 @@ Commands ship both as skills and as file-based commands inside the plugin (`plug
 ## Showcase site
 
 The showcase site is a [Docusaurus](https://docusaurus.io/) project in
-`website/` — libraries over wheels, rule 13 applies to this repo too. It
-carries a landing page with the checklist, the benchmark scoreboard with a
-mean-score chart, and per-task pages showing the baseline and ruleset code
-in tabs with the habit-hooks findings annotated. The benchmark pages are
-generated content, never hand-edited:
+`website/` — libraries over wheels, rule 13 applies to this repo too. Its
+sections: the ruleset (SKILL.md and its reference files, verbatim), the
+featured scoreboard (the newest run covering the full task set) with
+per-task pages showing baseline and ruleset code in tabs and habit-hooks
+findings annotated, past full runs, subset runs, and the Game of Life
+showcase. Every page is generated from the repository's current state on
+each build — never hand-edited:
 
 ```bash
-node benchmarks/build-site.js            # MDX content from the newest exported run
-node benchmarks/build-site.js <eval-id>  # or a specific one
-npm --prefix website install             # once
-npm --prefix website run build           # render the static site into /docs
-npm --prefix website start               # or preview locally with live reload
+npm run site:update              # full refresh: re-judge stored runs, regenerate content, render into /docs
+node benchmarks/build-site.js    # content + render only, from the runs as stored
+npm --prefix website install     # once, before the first render
+npm --prefix website start       # preview locally with live reload (restart after config or section changes)
 ```
 
-Every eval regenerates the MDX content automatically (the same extension
-hook that exports run outcomes); rendering and committing `docs/` is the
-deliberate publish step. To serve it, enable Pages once in the repo
-settings: Settings → Pages → Deploy from a branch → `main` and `/docs`.
-All benchmark code on the site is model-generated output, labelled as such.
+Every eval does all of this automatically (export, content, static render);
+committing `docs/` is the publish step. To serve it, enable Pages once in
+the repo settings: Settings → Pages → Deploy from a branch → `main` and
+`/docs`. All benchmark code on the site is model-generated output, labelled
+as such.
 
 ## Development
 

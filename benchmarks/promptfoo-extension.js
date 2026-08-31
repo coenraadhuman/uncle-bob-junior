@@ -1,12 +1,17 @@
 // Promptfoo extension hook: after every eval, export the run's outcomes to
 // benchmarks/results/<eval-id>/ automatically — report.md, report.json, the
-// generated sources, and the full habit-hooks report per answer — and rebuild
-// the docs/ showcase site from that run, so the site always reflects the
-// latest eval. Registered in promptfooconfig.yaml under `extensions`.
+// generated sources, and the full habit-hooks report per answer — then
+// regenerate the site content from every stored run and render the static
+// site into docs/, so the published site always reflects the latest state.
+// Registered in promptfooconfig.yaml under `extensions`.
 const { exportRun } = require('./export-results');
 const site = require('./build-site');
 
-async function extensionHook(hookName, context, { doExport = exportRun, doBuildSite = site.buildSite } = {}) {
+async function extensionHook(hookName, context, {
+  doExport = exportRun,
+  doBuildSite = site.buildSite,
+  doRenderSite = site.renderSite,
+} = {}) {
   if (hookName !== 'afterAll') return;
   let runDir = null;
   try {
@@ -19,10 +24,12 @@ async function extensionHook(hookName, context, { doExport = exportRun, doBuildS
   }
   if (!runDir) return;
   try {
-    console.log(`Site content regenerated in ${doBuildSite(context.evalId)}; publish with: npm --prefix website run build`);
+    console.log(`Site content regenerated in ${doBuildSite(context.evalId)}`);
+    const render = doRenderSite();
+    console.log(render.rendered ? 'Static site rendered into docs/' : `Site render skipped: ${render.reason}`);
   } catch (error) {
-    // Same rule for the site: recoverable via `node benchmarks/build-site.js <eval-id>`.
-    console.error(`site content generation failed: ${error.message}`);
+    // Same rule for the site: recoverable via `node benchmarks/build-site.js`.
+    console.error(`site build failed: ${error.message}`);
   }
 }
 

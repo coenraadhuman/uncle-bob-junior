@@ -1,6 +1,3 @@
-import java.time.*;
-import java.util.*;
-
 class EventSnapshot {
     private final int available;
     private final int booked;

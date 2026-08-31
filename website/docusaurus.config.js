@@ -12,7 +12,9 @@ const config = {
   organizationName: 'coenraadhuman',
   projectName: 'uncle-bob-junior',
   onBrokenLinks: 'throw',
-  markdown: { mermaid: true },
+  // 'detect': .md renders as CommonMark (the ruleset pages embed SKILL.md and
+  // its references verbatim, which MDX parsing could mangle), .mdx as MDX.
+  markdown: { mermaid: true, format: 'detect' },
   themes: ['@docusaurus/theme-mermaid'],
   presets: [
     [

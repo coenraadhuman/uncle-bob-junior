@@ -1,5 +1,4 @@
 import java.util.*;
-import java.util.regex.*;
 
 public class Configuration {
     private final Map<String, Object> values;

@@ -1,6 +1,3 @@
-import java.time.*;
-import java.util.*;
-
 class Money {
     private final double euros;
 

@@ -11,27 +11,27 @@ file; the generated code sits in `src/`.
 
 ## Smells with hits
 
-| task | model | arm | score | valid code | habit-hooks | ships tests | correct |
-| --- | --- | --- | ---: | :---: | :---: | :---: | :---: |
-| logscan | claude-cli:haiku | baseline (no ruleset) | 0.88 | YES | PASS | NO | YES |
-| logscan | claude-cli:haiku | uncle-bob-junior | 0.88 | NO | PASS | YES | YES |
+| task | model | arm | score | valid code | habit-hooks | oversized-file | ships tests | correct |
+| --- | --- | --- | ---: | :---: | :---: | ---: | :---: | :---: |
+| logscan | claude-cli:haiku | baseline (no ruleset) | 0.88 | YES | PASS | 0 | NO | YES |
+| logscan | claude-cli:haiku | uncle-bob-junior | 0.98 | YES | FAIL | 1 | YES | YES |
 
 ## Full smell breakdown
 
 | task | model | arm | score | valid code | habit-hooks | oversized-function | too-many-parameters | high-complexity | deep-nesting | oversized-file | unused-variable | unused-import | loose-equality | var-declaration | non-const-binding | duplicate-import | redundant-type-annotation | unused-class-member | unused-file | unused-export | unused-dependency | test-only-dead-code | parse-error | warning-comment | explicit-any | non-null-assertion | non-essential-comment | duplicated-code | swallowed-exception | ships tests | correct |
 | --- | --- | --- | ---: | :---: | :---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :---: | :---: |
 | logscan | claude-cli:haiku | baseline (no ruleset) | 0.88 | YES | PASS | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | NO | YES |
-| logscan | claude-cli:haiku | uncle-bob-junior | 0.88 | NO | PASS | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | YES | YES |
+| logscan | claude-cli:haiku | uncle-bob-junior | 0.98 | YES | FAIL | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | YES | YES |
 
 ## Mean score per model and arm
 
 - **claude-cli:haiku / baseline (no ruleset)**: 0.875 (n=1)
-- **claude-cli:haiku / uncle-bob-junior**: 0.875 (n=1)
+- **claude-cli:haiku / uncle-bob-junior**: 0.984 (n=1)
 
 ```mermaid
 xychart-beta
     title "Mean score per model and arm"
     x-axis ["claude-cli:haiku / baseline (no ruleset)", "claude-cli:haiku / uncle-bob-junior"]
     y-axis "mean score" 0 --> 1
-    bar [0.875, 0.875]
+    bar [0.875, 0.984]
 ```

@@ -6,7 +6,7 @@ sidebar_position: 1
 
 A clean-code ruleset for Claude Code: software that is easy to read, simple to
 understand, and safe to change. It ships as a Claude Code plugin — always-on
-rules, slash commands, a mode statusline, and a habit-hooks verification Stop
+rules, slash commands, a mode statusline, and a habit-hooks verification stop
 hook. See the [README](https://github.com/coenraadhuman/uncle-bob-junior#readme) for installation.
 
 ## The checklist
@@ -25,9 +25,17 @@ hook. See the [README](https://github.com/coenraadhuman/uncle-bob-junior#readme)
 12. **Tests prove behavior.** New or changed behavior ships with tests: the happy path and the edges, against public behavior, not internals. Arrange-Act-Assert, named after the concrete behavior. Untested changed behavior is unfinished. (Details: `references/tests.md`)
 13. **Libraries over wheels.** Standard library first, then a well-maintained dependency, over hand-rolling what they solve. This is a duty to search, not just a preference: check local docs, the official package registry, and the web before building; hand-roll only after that search comes up empty, saying what you searched. Wrap the dependency behind a thin seam at the boundary.
 
+[Read the full ruleset and its reference files](ruleset/skill) — the slim
+core above is what every session gets; the depth loads on demand.
+
+[Install, update, or remove the plugin](plugin), browse the
+[commands and intensity levels](commands), or check the [FAQ](faq).
+
 ## Does it work?
 
 The repo benchmarks the ruleset against a no-ruleset baseline on the same models
-and tasks, judged by [habit-hooks](https://github.com/habit-hooks/habit-hooks),
+and tasks using [promptfoo](https://github.com/promptfoo/promptfoo), judged by [habit-hooks](https://github.com/habit-hooks/habit-hooks),
 an independent smell detector. [See the scoreboard and the generated code side
-by side.](benchmark/scoreboard)
+by side](benchmark/scoreboard), browse [past runs](benchmark/history) and
+[subset runs](benchmark/subset), or watch the ruleset play
+[Conway's Game of Life](gameoflife).

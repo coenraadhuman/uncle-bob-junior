@@ -2,7 +2,7 @@
 
 ⚠️ Habit Hooks: this run did not complete — a tool broke, so a clean result cannot be trusted.
 
-habit-sensors: sensor 'pmd' failed: ${python} ${dir}/pmd_sensor.py ${args} -- ${files}
+habit-sensors: sensor 'pmd' failed: '${python}' '${dir}/pmd_sensor.py' '${detector:pmd}' '${args}' -- '${files}'
 InvalidLineItemException.java: ParseException: Parse exception in file 'InvalidLineItemException.java' at line 9, column 1: Encountered "import".
 Was expecting one of:
     <EOF> 

@@ -45,19 +45,19 @@
       "model": "claude-cli:haiku",
       "arm": "uncle-bob-junior",
       "prompt": "Write a Python program that analyses a web server access log: each line reads 'IP - - [timestamp] \"METHOD path\" status bytes'. Compute request counts per status class (2xx/3xx/4xx/5xx), the five most requested paths, the error rate per hour, and flag any IP with more than 100 requests in a single hour as suspicious; print a readable report.",
-      "score": 0.875,
+      "score": 0.984375,
       "gates": {
-        "validCode": false,
+        "validCode": true,
         "shipsTests": true,
         "correct": true
       },
-      "habitPass": true,
+      "habitPass": false,
       "smellCounts": {
         "oversized-function": 0,
         "too-many-parameters": 0,
         "high-complexity": 0,
         "deep-nesting": 0,
-        "oversized-file": 0,
+        "oversized-file": 1,
         "unused-variable": 0,
         "unused-import": 0,
         "loose-equality": 0,
@@ -88,7 +88,7 @@
     },
     {
       "key": "claude-cli:haiku / uncle-bob-junior",
-      "mean": 0.875,
+      "mean": 0.984375,
       "n": 1
     }
   ]

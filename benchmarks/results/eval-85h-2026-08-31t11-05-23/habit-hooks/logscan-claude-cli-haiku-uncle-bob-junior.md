@@ -1,4 +1,4 @@
-── too-many-parameters (4 issues) ──
+── too-many-parameters (2 issues) ──
 
 High parameter count is a sign of coupling.
 Parameters that travel together across several calls are a missing abstraction.
@@ -15,10 +15,8 @@ Useful tip: rewrite each call site with the signature that feels natural there, 
 
 AccessLogAnalyzer.java:24
 AccessLogAnalyzer.java:53
-LogEntry.java:12
-WebAccessLogAnalyzer.java:18
 
-── oversized-function (2 issues) ──
+── oversized-function (1 issue) ──
 
 Functions over 12 lines almost always carry more than one responsibility, and that is the smell to chase — not the line count itself.
 
@@ -31,18 +29,3 @@ If responsibilities are tangled you may need to first *inline* methods to see th
 A concrete technique: write what the method does in one short sentence. Refactor until the code reads as close to that sentence as possible. If you cannot say what it does in one sentence, it almost certainly has more than one responsibility.
 
 AccessLogAnalyzer.java:64
-LogLineParser.java:13
-
-── oversized-file (1 issue) ──
-
-Files over 200 lines accumulate unrelated concerns. The smell is poor cohesion — a file that asks the reader to hold too many ideas at once — not the raw line count.
-
-First identify the seams: which exports, types, or helper clusters actually belong together? A long file usually splits cleanly along one of: a data type and its operations, a feature pipeline, or one concern per file.
-
-Avoid mechanical splits. Carving the file at line 200 into `foo-1.ts` and `foo-2.ts`, or moving every private helper into a `utils.ts`, satisfies the threshold without making anything clearer — the cohesion problem just hops to a new place.
-
-If the file's structure resists splitting, that is itself the signal: responsibilities are tangled. Look for a missing abstraction (a class, a small module with a focused interface) that would let related pieces move together as a unit.
-
-A concrete technique: write a one-sentence description of what each emerging seam *would* be responsible for. If you cannot, you have not found the seam yet — do not split.
-
-WebAccessLogAnalyzer.java

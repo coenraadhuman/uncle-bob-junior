@@ -1,0 +1,243 @@
+---
+title: csv
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+> Write a Java program that reads sales.csv and prints the sum of the 'amount' column.
+
+## claude-cli:haiku
+
+<Tabs>
+
+<TabItem value="baseline-no-ruleset" label="baseline (no ruleset) · 0.83">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests **No** ·
+correct Yes
+
+<details open>
+<summary><code>SalesSum.java</code> · 3 smells</summary>
+
+- `unused-import` at line 2
+- `oversized-function` at line 5
+- `high-complexity` at line 5
+
+````java
+import java.io.*;
+import java.util.*;
+
+public class SalesSum {
+    public static void main(String[] args) {
+        String filename = "sales.csv";
+        double total = 0;
+        int amountColumnIndex = -1;
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(filename))) {
+            String line;
+            boolean isHeader = true;
+
+            while ((line = reader.readLine()) != null) {
+                String[] values = line.split(",");
+
+                if (isHeader) {
+                    for (int i = 0; i < values.length; i++) {
+                        if (values[i].trim().equalsIgnoreCase("amount")) {
+                            amountColumnIndex = i;
+                            break;
+                        }
+                    }
+                    isHeader = false;
+                } else {
+                    if (amountColumnIndex >= 0 && amountColumnIndex < values.length) {
+                        try {
+                            total += Double.parseDouble(values[amountColumnIndex].trim());
+                        } catch (NumberFormatException e) {
+                            System.err.println("Invalid number: " + values[amountColumnIndex]);
+                        }
+                    }
+                }
+            }
+
+            System.out.println("Sum of amount column: " + total);
+
+        } catch (FileNotFoundException e) {
+            System.err.println("File not found: " + filename);
+        } catch (IOException e) {
+            System.err.println("Error reading file: " + e.getMessage());
+        }
+    }
+}
+
+````
+
+</details>
+
+*No tests shipped.*
+
+</TabItem>
+
+<TabItem value="uncle-bob-junior" label="uncle-bob-junior · 0.98">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests Yes ·
+correct Yes
+
+<details open>
+<summary><code>SalesAnalyzer.java</code> · 1 smell</summary>
+
+- `oversized-function` at line 20
+
+````java
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.io.IOException;
+
+public class SalesAnalyzer {
+    private static final String CSV_FILE = "sales.csv";
+    private static final String DELIMITER = ",";
+
+    public static void main(String[] args) {
+        try {
+            double total = sumAmountColumn(CSV_FILE);
+            System.out.println("Total amount: " + total);
+        } catch (IOException e) {
+            System.err.println("Error reading file: " + e.getMessage());
+        } catch (IllegalArgumentException e) {
+            System.err.println("Error: " + e.getMessage());
+        }
+    }
+
+    static double sumAmountColumn(String filename) throws IOException {
+        try (BufferedReader reader = new BufferedReader(new FileReader(filename))) {
+            String headerLine = reader.readLine();
+            if (headerLine == null) {
+                return 0.0;
+            }
+
+            int amountColumnIndex = findAmountColumnIndex(headerLine);
+            if (amountColumnIndex == -1) {
+                throw new IllegalArgumentException("'amount' column not found in CSV header");
+            }
+
+            double sum = 0.0;
+            String line;
+            while ((line = reader.readLine()) != null) {
+                sum += parseAmount(line, amountColumnIndex);
+            }
+            return sum;
+        }
+    }
+
+    private static int findAmountColumnIndex(String headerLine) {
+        String[] headers = headerLine.split(DELIMITER);
+        for (int i = 0; i < headers.length; i++) {
+            if (headers[i].trim().equalsIgnoreCase("amount")) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static double parseAmount(String line, int columnIndex) {
+        String[] values = line.split(DELIMITER);
+        if (columnIndex >= values.length) {
+            return 0.0;
+        }
+        try {
+            return Double.parseDouble(values[columnIndex].trim());
+        } catch (NumberFormatException e) {
+            return 0.0;
+        }
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary>Shipped tests (1 file)</summary>
+
+<details>
+<summary><code>SalesAnalyzerTest.java</code></summary>
+
+
+````java
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+class SalesAnalyzerTest {
+    public static void main(String[] args) throws IOException {
+        testSumWithValidCsv();
+        testSumWithEmptyFile();
+        testSumWithMissingAmountColumn();
+        testSumWithInvalidNumbers();
+        System.out.println("All tests passed!");
+    }
+
+    private static void testSumWithValidCsv() throws IOException {
+        Path tempFile = Files.createTempFile("test_sales_", ".csv");
+        try {
+            String csv = "id,product,amount\n1,Widget,100.50\n2,Gadget,200.75\n3,Tool,50.25";
+            Files.writeString(tempFile, csv);
+            double sum = SalesAnalyzer.sumAmountColumn(tempFile.toString());
+            assert sum == 351.50 : "Expected 351.50, got " + sum;
+        } finally {
+            Files.delete(tempFile);
+        }
+    }
+
+    private static void testSumWithEmptyFile() throws IOException {
+        Path tempFile = Files.createTempFile("test_sales_", ".csv");
+        try {
+            Files.writeString(tempFile, "");
+            double sum = SalesAnalyzer.sumAmountColumn(tempFile.toString());
+            assert sum == 0.0 : "Expected 0.0 for empty file";
+        } finally {
+            Files.delete(tempFile);
+        }
+    }
+
+    private static void testSumWithMissingAmountColumn() throws IOException {
+        Path tempFile = Files.createTempFile("test_sales_", ".csv");
+        try {
+            String csv = "id,product\n1,Widget";
+            Files.writeString(tempFile, csv);
+            try {
+                SalesAnalyzer.sumAmountColumn(tempFile.toString());
+                assert false : "Should throw IllegalArgumentException";
+            } catch (IllegalArgumentException e) {
+                assert e.getMessage().contains("'amount' column not found");
+            }
+        } finally {
+            Files.delete(tempFile);
+        }
+    }
+
+    private static void testSumWithInvalidNumbers() throws IOException {
+        Path tempFile = Files.createTempFile("test_sales_", ".csv");
+        try {
+            String csv = "id,product,amount\n1,Widget,100.50\n2,Gadget,invalid\n3,Tool,50.25";
+            Files.writeString(tempFile, csv);
+            double sum = SalesAnalyzer.sumAmountColumn(tempFile.toString());
+            assert sum == 150.75 : "Expected 150.75 (skipping invalid)";
+        } finally {
+            Files.delete(tempFile);
+        }
+    }
+}
+
+````
+
+</details>
+
+</details>
+
+</TabItem>
+
+</Tabs>
