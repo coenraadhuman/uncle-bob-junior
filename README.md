@@ -6,13 +6,6 @@
 
 ---
 
-You know the reviewer. Never raises their voice. Reads your fifty-line handler,
-says nothing, and leaves eleven comments that each name a function you should
-have extracted. A month later you thank them, because the change request that
-would have taken a day took twenty minutes.
-
-Uncle Bob Junior puts that reviewer inside Claude Code.
-
 ## How it works
 
 Before code leaves the agent's hands, every checklist item holds:

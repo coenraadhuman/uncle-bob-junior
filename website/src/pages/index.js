@@ -48,15 +48,17 @@ function Feature({ title, body, to, cta }) {
 
 export default function Home() {
   return (
-    <Layout description="A clean-code ruleset for Claude Code: easy to read, simple to understand, safe to change.">
+    <Layout description="Makes your AI agent think like the meticulous senior dev in the room: clean code that is easy to read, simple to understand, and safe to change.">
       <header className="homeHero">
         <div className="container homeHeroInner">
           <div className="homeHeroText">
             <h1>Uncle Bob Junior</h1>
             <p className="homeTagline">
-              Easy to read. Simple to understand. Safe to change.
+              Makes your AI agent think like the meticulous senior dev in the room.
               <br />
-              The meticulous senior reviewer, inside Claude Code.
+              Code is read far more often than it is written, so it writes for
+              the reader: clean code that is easy to read, simple to
+              understand, and safe to change.
             </p>
             <div className="homeButtons">
               <Link className="button button--secondary button--lg" to="/plugin">

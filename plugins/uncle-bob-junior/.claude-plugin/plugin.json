@@ -1,7 +1,7 @@
 {
   "name": "uncle-bob-junior",
-  "version": "1.1.1",
-  "description": "Clean-code mode. Enforces code that is easy to read, simple to understand, and safe to change: one job per function, intent-revealing names, flat flow, tests.",
+  "version": "1.1.2",
+  "description": "Makes your AI agent think like the meticulous senior dev in the room. Code is read far more often than it is written, so it writes for the reader: clean code that is easy to read, simple to understand, and safe to change.",
   "author": {
     "name": "Coenraad Human",
     "url": "https://github.com/coenraadhuman"

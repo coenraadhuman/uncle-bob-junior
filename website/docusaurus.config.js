@@ -6,7 +6,7 @@
 /** @type {import('@docusaurus/types').Config} */
 const config = {
   title: 'Uncle Bob Junior',
-  tagline: 'A clean-code ruleset for coding agents',
+  tagline: 'Makes your AI agent think like the meticulous senior dev in the room',
   url: 'https://coenraadhuman.github.io',
   baseUrl: '/uncle-bob-junior/',
   organizationName: 'coenraadhuman',

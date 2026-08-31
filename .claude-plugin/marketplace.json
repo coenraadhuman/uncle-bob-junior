@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "uncle-bob-junior",
-  "description": "Clean-code mode for Claude Code. Code that is easy to read, simple to understand, and safe to change.",
+  "description": "Makes your AI agent think like the meticulous senior dev in the room. Code is read far more often than it is written, so it writes for the reader: clean code that is easy to read, simple to understand, and safe to change.",
   "owner": {
     "name": "Coenraad Human",
     "url": "https://github.com/coenraadhuman"
@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "uncle-bob-junior",
-      "description": "Enforces clean code: one job per function, names that reveal intent, flat control flow, tests.",
+      "description": "Makes your AI agent think like the meticulous senior dev in the room. Code is read far more often than it is written, so it writes for the reader: clean code that is easy to read, simple to understand, and safe to change.",
       "source": "./plugins/uncle-bob-junior",
       "category": "productivity"
     }

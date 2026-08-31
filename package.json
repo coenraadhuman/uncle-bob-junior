@@ -1,7 +1,7 @@
 {
   "name": "@coenraadhuman/uncle-bob-junior",
-  "version": "1.1.1",
-  "description": "Clean-code mode for Claude Code. Code that is easy to read, simple to understand, and safe to change.",
+  "version": "1.1.2",
+  "description": "Makes your AI agent think like the meticulous senior dev in the room. Code is read far more often than it is written, so it writes for the reader: clean code that is easy to read, simple to understand, and safe to change.",
   "keywords": [
     "claude-code",
     "claude-code-plugin",
