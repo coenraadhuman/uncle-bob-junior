@@ -1,0 +1,298 @@
+---
+title: email
+sidebar_position: 2
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+> Write a Java method that validates email addresses.
+
+## claude-cli&#58;haiku
+
+<Tabs>
+
+<TabItem value="baseline-no-ruleset" label="baseline (no ruleset) · 0.88">
+
+Gates: valid code Yes ·
+habit-hooks Pass ·
+ships tests **No** ·
+correct Yes
+
+<details open>
+<summary><code>EmailValidator-2.java</code></summary>
+
+
+````java
+import jakarta.mail.internet.InternetAddress;
+
+public class EmailValidator {
+    public static boolean isValidEmail(String email) {
+        if (email == null || email.isBlank()) {
+            return false;
+        }
+        try {
+            new InternetAddress(email).validate();
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>EmailValidator.java</code></summary>
+
+
+````java
+import java.util.regex.Pattern;
+
+public class EmailValidator {
+    private static final Pattern EMAIL_PATTERN = Pattern.compile(
+        "^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$"
+    );
+    
+    public static boolean isValidEmail(String email) {
+        if (email == null || email.isBlank()) {
+            return false;
+        }
+        return EMAIL_PATTERN.matcher(email.trim()).matches();
+    }
+}
+
+````
+
+</details>
+
+*No tests shipped.*
+
+</TabItem>
+
+<TabItem value="uncle-bob-junior" label="uncle-bob-junior · 1.00">
+
+Gates: valid code Yes ·
+habit-hooks Pass ·
+ships tests Yes ·
+correct Yes
+
+<details open>
+<summary><code>EmailValidator.java</code></summary>
+
+
+````java
+public class EmailValidator {
+    private static final String EMAIL_PATTERN = 
+        "^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$";
+
+    public static boolean isValidEmail(String email) {
+        if (email == null || email.isBlank()) {
+            return false;
+        }
+        return email.matches(EMAIL_PATTERN);
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary>Shipped tests (1 file)</summary>
+
+<details>
+<summary><code>EmailValidatorTest.java</code></summary>
+
+
+````java
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
+
+class EmailValidatorTest {
+    
+    @Test
+    void validEmails() {
+        assertTrue(EmailValidator.isValidEmail("user@example.com"));
+        assertTrue(EmailValidator.isValidEmail("john.doe@company.co.uk"));
+        assertTrue(EmailValidator.isValidEmail("test+tag@domain.org"));
+        assertTrue(EmailValidator.isValidEmail("coenraad.human@postcodeloterij.nl"));
+    }
+
+    @Test
+    void invalidEmails() {
+        assertFalse(EmailValidator.isValidEmail("plaintext"));
+        assertFalse(EmailValidator.isValidEmail("user@"));
+        assertFalse(EmailValidator.isValidEmail("@example.com"));
+        assertFalse(EmailValidator.isValidEmail("user@.com"));
+        assertFalse(EmailValidator.isValidEmail("user@domain"));
+        assertFalse(EmailValidator.isValidEmail("user name@example.com"));
+    }
+
+    @Test
+    void nullAndBlank() {
+        assertFalse(EmailValidator.isValidEmail(null));
+        assertFalse(EmailValidator.isValidEmail(""));
+        assertFalse(EmailValidator.isValidEmail("   "));
+    }
+}
+
+````
+
+</details>
+
+</details>
+
+</TabItem>
+
+</Tabs>
+
+## claude-cli&#58;sonnet
+
+<Tabs>
+
+<TabItem value="baseline-no-ruleset" label="baseline (no ruleset) · 0.88">
+
+Gates: valid code Yes ·
+habit-hooks Pass ·
+ships tests **No** ·
+correct Yes
+
+<details open>
+<summary><code>EmailValidator.java</code></summary>
+
+
+````java
+import java.util.regex.Pattern;
+
+public final class EmailValidator {
+
+    private static final int MAX_LENGTH = 254;
+
+    private static final Pattern EMAIL_PATTERN = Pattern.compile(
+        "^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$"
+    );
+
+    private EmailValidator() {
+    }
+
+    public static boolean isValid(String email) {
+        if (email == null || email.isEmpty() || email.length() > MAX_LENGTH) {
+            return false;
+        }
+        return EMAIL_PATTERN.matcher(email).matches();
+    }
+}
+
+````
+
+</details>
+
+*No tests shipped.*
+
+</TabItem>
+
+<TabItem value="uncle-bob-junior" label="uncle-bob-junior · 1.00">
+
+Gates: valid code Yes ·
+habit-hooks Pass ·
+ships tests Yes ·
+correct Yes
+
+<details open>
+<summary><code>EmailValidator.java</code></summary>
+
+
+````java
+import java.util.regex.Pattern;
+
+public final class EmailValidator {
+
+    private static final int MAX_EMAIL_LENGTH = 254;
+
+    private static final Pattern EMAIL_PATTERN = Pattern.compile(
+        "^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$"
+    );
+
+    private EmailValidator() {
+    }
+
+    public static boolean isValid(String candidateEmail) {
+        if (candidateEmail == null || candidateEmail.isBlank()) {
+            return false;
+        }
+        if (candidateEmail.length() > MAX_EMAIL_LENGTH) {
+            return false;
+        }
+        return EMAIL_PATTERN.matcher(candidateEmail).matches();
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary>Shipped tests (1 file)</summary>
+
+<details>
+<summary><code>EmailValidatorTest.java</code></summary>
+
+
+````java
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+
+class EmailValidatorTest {
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "participant@example.com",
+        "first.last@sub.example.co.uk",
+        "user+tag@example.org"
+    })
+    void acceptsWellFormedAddresses(String email) {
+        assertTrue(EmailValidator.isValid(email));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "",
+        "   ",
+        "no-at-sign.example.com",
+        "missing-domain@",
+        "@missing-local.com",
+        "double@@example.com",
+        "trailing.dot@example.com."
+    })
+    void rejectsMalformedAddresses(String email) {
+        assertFalse(EmailValidator.isValid(email));
+    }
+
+    @Test
+    void rejectsNull() {
+        assertFalse(EmailValidator.isValid(null));
+    }
+
+    @Test
+    void rejectsAddressLongerThanMaxLength() {
+        String tooLongLocalPart = "a".repeat(255);
+        assertFalse(EmailValidator.isValid(tooLongLocalPart + "@example.com"));
+    }
+}
+
+````
+
+</details>
+
+</details>
+
+</TabItem>
+
+</Tabs>

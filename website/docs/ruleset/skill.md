@@ -1,5 +1,5 @@
 ---
-title: The ruleset (SKILL.md)
+title: SKILL.md
 sidebar_position: 1
 ---
 

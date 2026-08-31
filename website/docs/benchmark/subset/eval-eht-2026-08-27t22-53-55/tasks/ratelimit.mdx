@@ -1,0 +1,1317 @@
+---
+title: ratelimit
+sidebar_position: 4
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+> Add rate limiting to a Java HTTP handler so each client can't make more than a few requests per minute.
+
+## claude-cli&#58;fable
+
+<Tabs>
+
+<TabItem value="baseline-no-ruleset" label="baseline (no ruleset) · 0.88">
+
+Gates: valid code Yes ·
+habit-hooks Pass ·
+ships tests **No** ·
+correct Yes
+
+<details open>
+<summary><code>Main.java</code></summary>
+
+
+````java
+import com.sun.net.httpserver.HttpServer;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.concurrent.Executors;
+
+/** Example wiring: 5 requests per client per minute. */
+public final class Main {
+
+    public static void main(String[] args) throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0);
+
+        RateLimiter limiter = new RateLimiter(5, Duration.ofMinutes(1));
+
+        server.createContext("/api", new RateLimitedHandler(exchange -> {
+            byte[] body = "Hello!\n".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+        }, limiter));
+
+        server.setExecutor(Executors.newFixedThreadPool(8));
+        server.start();
+        System.out.println("Listening on http://localhost:8080/api");
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>RateLimitedHandler.java</code></summary>
+
+
+````java
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+
+/**
+ * Wraps any HttpHandler with per-client rate limiting.
+ * Over-limit requests get 429 Too Many Requests with a Retry-After header.
+ */
+public final class RateLimitedHandler implements HttpHandler {
+
+    private final HttpHandler delegate;
+    private final RateLimiter limiter;
+
+    public RateLimitedHandler(HttpHandler delegate, RateLimiter limiter) {
+        this.delegate = delegate;
+        this.limiter = limiter;
+    }
+
+    @Override
+    public void handle(HttpExchange exchange) throws IOException {
+        String clientId = clientId(exchange);
+
+        if (limiter.tryAcquire(clientId)) {
+            delegate.handle(exchange);
+            return;
+        }
+
+        byte[] body = "Too many requests. Please try again later.\n"
+                .getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Retry-After",
+                String.valueOf(limiter.retryAfterSeconds(clientId)));
+        exchange.getResponseHeaders().set("Content-Type", "text/plain; charset=utf-8");
+        exchange.sendResponseHeaders(429, body.length);
+        try (OutputStream out = exchange.getResponseBody()) {
+            out.write(body);
+        }
+    }
+
+    private static String clientId(HttpExchange exchange) {
+        // If you sit behind a trusted reverse proxy, prefer the first entry of
+        // X-Forwarded-For here instead. Do not trust that header from the open
+        // internet, since clients can spoof it to dodge the limit.
+        return exchange.getRemoteAddress().getAddress().getHostAddress();
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>RateLimiter.java</code></summary>
+
+
+````java
+import java.time.Duration;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * Sliding-window rate limiter, keyed by client identifier.
+ * Thread-safe and self-cleaning: idle clients are evicted lazily.
+ */
+public final class RateLimiter {
+
+    private final int maxRequests;
+    private final long windowNanos;
+    private final Map<String, Window> windows = new ConcurrentHashMap<>();
+
+    public RateLimiter(int maxRequests, Duration window) {
+        this.maxRequests = maxRequests;
+        this.windowNanos = window.toNanos();
+    }
+
+    /** Returns true if the request is allowed, false if the client is over the limit. */
+    public boolean tryAcquire(String clientId) {
+        long now = System.nanoTime();
+        Window w = windows.computeIfAbsent(clientId, k -> new Window(maxRequests));
+        boolean allowed = w.tryAcquire(now, windowNanos);
+        // Occasionally sweep out entries for clients that have gone quiet,
+        // so the map does not grow without bound.
+        if (windows.size() > 10_000) {
+            windows.entrySet().removeIf(e -> e.getValue().isIdle(now, windowNanos));
+        }
+        return allowed;
+    }
+
+    /** Seconds until the oldest tracked request leaves the window; used for Retry-After. */
+    public long retryAfterSeconds(String clientId) {
+        Window w = windows.get(clientId);
+        if (w == null) {
+            return 0;
+        }
+        return w.retryAfterSeconds(System.nanoTime(), windowNanos);
+    }
+
+    /** Ring buffer of the timestamps of the last maxRequests requests. */
+    private static final class Window {
+        private final long[] timestamps;
+        private int index;
+        private int count;
+
+        Window(int capacity) {
+            this.timestamps = new long[capacity];
+        }
+
+        synchronized boolean tryAcquire(long now, long windowNanos) {
+            if (count == timestamps.length) {
+                long oldest = timestamps[index];
+                if (now - oldest < windowNanos) {
+                    return false;
+                }
+                // Oldest request has aged out; overwrite it.
+                timestamps[index] = now;
+                index = (index + 1) % timestamps.length;
+                return true;
+            }
+            timestamps[(index + count) % timestamps.length] = now;
+            count++;
+            return true;
+        }
+
+        synchronized long retryAfterSeconds(long now, long windowNanos) {
+            if (count < timestamps.length) {
+                return 0;
+            }
+            long oldest = timestamps[index];
+            long remaining = windowNanos - (now - oldest);
+            return remaining <= 0 ? 0 : Math.max(1, remaining / 1_000_000_000L);
+        }
+
+        synchronized boolean isIdle(long now, long windowNanos) {
+            if (count == 0) {
+                return true;
+            }
+            int newest = (index + count - 1) % timestamps.length;
+            return now - timestamps[newest] > windowNanos;
+        }
+    }
+}
+
+````
+
+</details>
+
+*No tests shipped.*
+
+</TabItem>
+
+<TabItem value="uncle-bob-junior" label="uncle-bob-junior · 1.00">
+
+Gates: valid code Yes ·
+habit-hooks Pass ·
+ships tests Yes ·
+correct Yes
+
+<details open>
+<summary><code>RateLimitingHandler.java</code></summary>
+
+
+````java
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.time.Clock;
+import java.time.Duration;
+
+/**
+ * Wraps any HttpHandler and answers 429 Too Many Requests once a client
+ * exceeds its per-window limit. Keys clients by remote IP address.
+ */
+public final class RateLimitingHandler implements HttpHandler {
+
+    public static final int DEFAULT_MAX_REQUESTS_PER_MINUTE = 5;
+    private static final int STATUS_TOO_MANY_REQUESTS = 429;
+    private static final Duration ONE_MINUTE = Duration.ofMinutes(1);
+
+    private final SlidingWindowRateLimiter rateLimiter;
+    private final HttpHandler delegate;
+
+    public RateLimitingHandler(SlidingWindowRateLimiter rateLimiter, HttpHandler delegate) {
+        this.rateLimiter = rateLimiter;
+        this.delegate = delegate;
+    }
+
+    public static RateLimitingHandler withDefaultLimit(HttpHandler delegate) {
+        SlidingWindowRateLimiter limiter = new SlidingWindowRateLimiter(
+                DEFAULT_MAX_REQUESTS_PER_MINUTE, ONE_MINUTE, Clock.systemUTC());
+        return new RateLimitingHandler(limiter, delegate);
+    }
+
+    @Override
+    public void handle(HttpExchange exchange) throws IOException {
+        if (!rateLimiter.tryAcquire(clientIdOf(exchange))) {
+            rejectTooManyRequests(exchange);
+            return;
+        }
+        delegate.handle(exchange);
+    }
+
+    // ubj: remote IP is correct only when clients connect directly; behind a
+    // trusted proxy, switch to the proxy-supplied client address header
+    private static String clientIdOf(HttpExchange exchange) {
+        return exchange.getRemoteAddress().getAddress().getHostAddress();
+    }
+
+    private void rejectTooManyRequests(HttpExchange exchange) throws IOException {
+        byte[] body = "Too many requests, please retry later.".getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Retry-After", String.valueOf(rateLimiter.windowSeconds()));
+        exchange.sendResponseHeaders(STATUS_TOO_MANY_REQUESTS, body.length);
+        try (OutputStream responseBody = exchange.getResponseBody()) {
+            responseBody.write(body);
+        }
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>SlidingWindowRateLimiter.java</code></summary>
+
+
+````java
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+
+/**
+ * Sliding-window rate limiter: at most {@code maxRequestsPerWindow} calls
+ * per client within any rolling {@code window}. Thread-safe.
+ */
+public final class SlidingWindowRateLimiter {
+
+    private final int maxRequestsPerWindow;
+    private final Duration window;
+    private final Clock clock;
+    // ubj: idle-client entries are never evicted; add scheduled cleanup if client cardinality grows large
+    private final ConcurrentMap<String, Deque<Instant>> requestTimesByClient = new ConcurrentHashMap<>();
+
+    public SlidingWindowRateLimiter(int maxRequestsPerWindow, Duration window, Clock clock) {
+        if (maxRequestsPerWindow <= 0) {
+            throw new IllegalArgumentException("maxRequestsPerWindow must be positive");
+        }
+        if (window.isZero() || window.isNegative()) {
+            throw new IllegalArgumentException("window must be positive");
+        }
+        this.maxRequestsPerWindow = maxRequestsPerWindow;
+        this.window = window;
+        this.clock = clock;
+    }
+
+    /** Returns true and records the request if the client is under its limit. */
+    public boolean tryAcquire(String clientId) {
+        Deque<Instant> requestTimes =
+                requestTimesByClient.computeIfAbsent(clientId, id -> new ArrayDeque<>());
+        synchronized (requestTimes) {
+            evictOlderThanWindow(requestTimes);
+            if (requestTimes.size() >= maxRequestsPerWindow) {
+                return false;
+            }
+            requestTimes.addLast(clock.instant());
+            return true;
+        }
+    }
+
+    private void evictOlderThanWindow(Deque<Instant> requestTimes) {
+        Instant windowStart = clock.instant().minus(window);
+        while (!requestTimes.isEmpty() && requestTimes.peekFirst().isBefore(windowStart)) {
+            requestTimes.removeFirst();
+        }
+    }
+
+    long windowSeconds() {
+        return window.toSeconds();
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary>Shipped tests (2 files)</summary>
+
+<details>
+<summary><code>RateLimitingHandlerTest.java</code></summary>
+
+
+````java
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import com.sun.net.httpserver.HttpServer;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Clock;
+import java.time.Duration;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+class RateLimitingHandlerTest {
+
+    private static final int MAX_REQUESTS = 2;
+    private static final Duration WINDOW = Duration.ofMinutes(1);
+    private static final int STATUS_OK = 200;
+    private static final int STATUS_TOO_MANY_REQUESTS = 429;
+    private static final int NO_RESPONSE_BODY = -1;
+
+    private HttpServer server;
+    private URI endpoint;
+    private final HttpClient client = HttpClient.newHttpClient();
+
+    @BeforeEach
+    void startServer() throws IOException {
+        SlidingWindowRateLimiter limiter =
+                new SlidingWindowRateLimiter(MAX_REQUESTS, WINDOW, Clock.systemUTC());
+        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/", new RateLimitingHandler(limiter,
+                exchange -> exchange.sendResponseHeaders(STATUS_OK, NO_RESPONSE_BODY)));
+        server.start();
+        endpoint = URI.create("http://localhost:" + server.getAddress().getPort() + "/");
+    }
+
+    @AfterEach
+    void stopServer() {
+        server.stop(0);
+    }
+
+    @Test
+    void passesRequestsThroughUntilTheLimitThenReturns429WithRetryAfter() throws Exception {
+        for (int request = 0; request < MAX_REQUESTS; request++) {
+            assertEquals(STATUS_OK, send().statusCode());
+        }
+        HttpResponse<Void> rejected = send();
+        assertEquals(STATUS_TOO_MANY_REQUESTS, rejected.statusCode());
+        assertEquals(String.valueOf(WINDOW.toSeconds()),
+                rejected.headers().firstValue("Retry-After").orElse(""));
+    }
+
+    private HttpResponse<Void> send() throws Exception {
+        return client.send(HttpRequest.newBuilder(endpoint).GET().build(),
+                HttpResponse.BodyHandlers.discarding());
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>SlidingWindowRateLimiterTest.java</code></summary>
+
+
+````java
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
+import org.junit.jupiter.api.Test;
+
+class SlidingWindowRateLimiterTest {
+
+    private static final int MAX_REQUESTS = 3;
+    private static final Duration WINDOW = Duration.ofMinutes(1);
+    private static final String CLIENT_A = "10.0.0.1";
+    private static final String CLIENT_B = "10.0.0.2";
+
+    /** Test clock that only moves when the test advances it. */
+    private static final class MutableClock extends Clock {
+        private Instant now = Instant.parse("2026-08-28T12:00:00Z");
+
+        void advance(Duration amount) { now = now.plus(amount); }
+
+        @Override public Instant instant() { return now; }
+        @Override public ZoneId getZone() { return ZoneOffset.UTC; }
+        @Override public Clock withZone(ZoneId zone) { return this; }
+    }
+
+    private final MutableClock clock = new MutableClock();
+    private final SlidingWindowRateLimiter limiter =
+            new SlidingWindowRateLimiter(MAX_REQUESTS, WINDOW, clock);
+
+    @Test
+    void allowsRequestsUpToTheLimit() {
+        for (int request = 0; request < MAX_REQUESTS; request++) {
+            assertTrue(limiter.tryAcquire(CLIENT_A));
+        }
+    }
+
+    @Test
+    void deniesTheRequestOverTheLimit() {
+        for (int request = 0; request < MAX_REQUESTS; request++) {
+            limiter.tryAcquire(CLIENT_A);
+        }
+        assertFalse(limiter.tryAcquire(CLIENT_A));
+    }
+
+    @Test
+    void allowsAgainOnceTheWindowHasPassed() {
+        for (int request = 0; request < MAX_REQUESTS; request++) {
+            limiter.tryAcquire(CLIENT_A);
+        }
+        clock.advance(WINDOW.plusSeconds(1));
+        assertTrue(limiter.tryAcquire(CLIENT_A));
+    }
+
+    @Test
+    void limitsClientsIndependently() {
+        for (int request = 0; request < MAX_REQUESTS; request++) {
+            limiter.tryAcquire(CLIENT_A);
+        }
+        assertFalse(limiter.tryAcquire(CLIENT_A));
+        assertTrue(limiter.tryAcquire(CLIENT_B));
+    }
+
+    @Test
+    void slidesRatherThanResettingInFixedBlocks() {
+        limiter.tryAcquire(CLIENT_A);
+        clock.advance(Duration.ofSeconds(30));
+        limiter.tryAcquire(CLIENT_A);
+        limiter.tryAcquire(CLIENT_A);
+        clock.advance(Duration.ofSeconds(31)); // first request has expired, later two have not
+        assertTrue(limiter.tryAcquire(CLIENT_A));
+        assertFalse(limiter.tryAcquire(CLIENT_A));
+    }
+
+    @Test
+    void rejectsInvalidConfiguration() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new SlidingWindowRateLimiter(0, WINDOW, clock));
+        assertThrows(IllegalArgumentException.class,
+                () -> new SlidingWindowRateLimiter(MAX_REQUESTS, Duration.ZERO, clock));
+    }
+
+    @Test
+    void reportsWindowLengthInSeconds() {
+        assertEquals(WINDOW.toSeconds(), limiter.windowSeconds());
+    }
+}
+
+````
+
+</details>
+
+</details>
+
+</TabItem>
+
+</Tabs>
+
+## claude-cli&#58;haiku
+
+<Tabs>
+
+<TabItem value="baseline-no-ruleset" label="baseline (no ruleset) · 0.86">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests **No** ·
+correct Yes
+
+<details open>
+<summary><code>RateLimitedHttpHandler.java</code> · 1 smell</summary>
+
+- `oversized-function` at line 14
+
+````java
+import com.sun.net.httpserver.*;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.util.concurrent.Executors;
+
+public class RateLimitedHttpHandler implements HttpHandler {
+    private final RateLimiter rateLimiter;
+    
+    public RateLimitedHttpHandler(int requestsPerMinute) {
+        this.rateLimiter = new RateLimiter(requestsPerMinute);
+    }
+    
+    @Override
+    public void handle(HttpExchange exchange) throws IOException {
+        String clientIp = exchange.getRemoteAddress().getAddress().getHostAddress();
+        
+        if (!rateLimiter.allowRequest(clientIp)) {
+            exchange.getResponseHeaders().set("Retry-After", "60");
+            exchange.sendResponseHeaders(429, -1); // 429 Too Many Requests
+            exchange.close();
+            return;
+        }
+        
+        // Handle request normally
+        String response = "OK";
+        exchange.getResponseHeaders().set("Content-Type", "text/plain");
+        exchange.sendResponseHeaders(200, response.getBytes().length);
+        exchange.getResponseBody().write(response.getBytes());
+        exchange.close();
+    }
+    
+    public static void main(String[] args) throws IOException {
+        HttpServer server = HttpServer.create(new InetSocketAddress(8000), 0);
+        server.createContext("/", new RateLimitedHttpHandler(5)); // 5 requests/minute
+        server.setExecutor(Executors.newCachedThreadPool());
+        server.start();
+        System.out.println("Server listening on port 8000 with rate limiting (5 req/min)");
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>RateLimiter.java</code></summary>
+
+
+````java
+import java.util.*;
+import java.util.concurrent.*;
+
+public class RateLimiter {
+    private final int maxRequests;
+    private final long windowMs = 60_000; // 1 minute
+    private final ConcurrentHashMap<String, Deque<Long>> requestTimestamps;
+    
+    public RateLimiter(int maxRequestsPerMinute) {
+        this.maxRequests = maxRequestsPerMinute;
+        this.requestTimestamps = new ConcurrentHashMap<>();
+    }
+    
+    public boolean allowRequest(String clientId) {
+        long now = System.currentTimeMillis();
+        Deque<Long> timestamps = requestTimestamps.computeIfAbsent(clientId, k -> new ConcurrentLinkedDeque<>());
+        
+        // Remove timestamps outside the sliding window
+        while (!timestamps.isEmpty() && now - timestamps.peekFirst() > windowMs) {
+            timestamps.removeFirst();
+        }
+        
+        // Allow if under limit
+        if (timestamps.size() < maxRequests) {
+            timestamps.addLast(now);
+            return true;
+        }
+        return false;
+    }
+}
+
+````
+
+</details>
+
+*No tests shipped.*
+
+</TabItem>
+
+<TabItem value="uncle-bob-junior" label="uncle-bob-junior · 0.97">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests Yes ·
+correct Yes
+
+<details open>
+<summary><code>FilterConfig.java</code></summary>
+
+
+````java
+@Configuration
+public class FilterConfig {
+    @Bean
+    public FilterRegistrationBean<RateLimitFilter> rateLimitFilter() {
+        FilterRegistrationBean<RateLimitFilter> bean = new FilterRegistrationBean<>();
+        bean.setFilter(new RateLimitFilter());
+        bean.addUrlPatterns("/*");
+        bean.setOrder(1);
+        return bean;
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>RateLimitFilter.java</code> · 2 smells</summary>
+
+- `unused-import` at line 1
+- `unused-import` at line 2
+
+````java
+import jakarta.servlet.*;
+import jakarta.servlet.http.*;
+
+public class RateLimitFilter implements Filter {
+    private RateLimiter rateLimiter;
+    
+    @Override
+    public void init(FilterConfig config) {
+        rateLimiter = new RateLimiter(10, 60_000);
+    }
+    
+    @Override
+    public void doFilter(ServletRequest request, ServletResponse response,
+            FilterChain chain) throws IOException, ServletException {
+        HttpServletRequest httpRequest = (HttpServletRequest) request;
+        String clientId = httpRequest.getRemoteAddr();
+        
+        if (!rateLimiter.allowRequest(clientId)) {
+            HttpServletResponse httpResponse = (HttpServletResponse) response;
+            httpResponse.sendError(429, "Too Many Requests");
+            return;
+        }
+        
+        chain.doFilter(request, response);
+    }
+    
+    @Override
+    public void destroy() {}
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>RateLimiter.java</code></summary>
+
+
+````java
+import java.util.*;
+import java.util.concurrent.*;
+
+public class RateLimiter {
+    private static final int MAX_REQUESTS = 10;
+    private static final long WINDOW_MILLIS = 60_000; // 1 minute
+    
+    private final int maxRequests;
+    private final long windowMillis;
+    private final ConcurrentHashMap<String, ClientRequestHistory> history;
+    
+    public RateLimiter(int maxRequests, long windowMillis) {
+        this.maxRequests = maxRequests;
+        this.windowMillis = windowMillis;
+        this.history = new ConcurrentHashMap<>();
+    }
+    
+    public boolean allowRequest(String clientId) {
+        long now = System.currentTimeMillis();
+        ClientRequestHistory clientHistory = history.computeIfAbsent(clientId,
+            _ -> new ClientRequestHistory());
+        
+        return clientHistory.recordRequest(now, maxRequests, windowMillis);
+    }
+    
+    private static class ClientRequestHistory {
+        private final Queue<Long> timestamps = new ConcurrentLinkedQueue<>();
+        
+        synchronized boolean recordRequest(long now, int maxRequests, long windowMillis) {
+            timestamps.removeIf(ts -> now - ts > windowMillis);
+            
+            if (timestamps.size() >= maxRequests) {
+                return false;
+            }
+            
+            timestamps.offer(now);
+            return true;
+        }
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary>Shipped tests (1 file)</summary>
+
+<details>
+<summary><code>RateLimiterTest.java</code></summary>
+
+
+````java
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
+
+class RateLimiterTest {
+    private static final String CLIENT = "192.168.1.1";
+    
+    @Test
+    void allowsRequestsUnderLimit() {
+        RateLimiter limiter = new RateLimiter(3, 60_000);
+        
+        assertTrue(limiter.allowRequest(CLIENT));
+        assertTrue(limiter.allowRequest(CLIENT));
+        assertTrue(limiter.allowRequest(CLIENT));
+    }
+    
+    @Test
+    void rejectsRequestsOverLimit() {
+        RateLimiter limiter = new RateLimiter(3, 60_000);
+        
+        assertTrue(limiter.allowRequest(CLIENT));
+        assertTrue(limiter.allowRequest(CLIENT));
+        assertTrue(limiter.allowRequest(CLIENT));
+        assertFalse(limiter.allowRequest(CLIENT));
+    }
+    
+    @Test
+    void resetAfterWindowExpires() throws InterruptedException {
+        RateLimiter limiter = new RateLimiter(2, 100); // 100ms window
+        
+        assertTrue(limiter.allowRequest(CLIENT));
+        assertTrue(limiter.allowRequest(CLIENT));
+        assertFalse(limiter.allowRequest(CLIENT));
+        
+        Thread.sleep(110);
+        assertTrue(limiter.allowRequest(CLIENT));
+    }
+    
+    @Test
+    void isolatesLimitPerClient() {
+        RateLimiter limiter = new RateLimiter(2, 60_000);
+        
+        assertTrue(limiter.allowRequest("client1"));
+        assertTrue(limiter.allowRequest("client1"));
+        assertFalse(limiter.allowRequest("client1"));
+        
+        assertTrue(limiter.allowRequest("client2"));
+        assertTrue(limiter.allowRequest("client2"));
+        assertFalse(limiter.allowRequest("client2"));
+    }
+}
+
+````
+
+</details>
+
+</details>
+
+</TabItem>
+
+</Tabs>
+
+## claude-cli&#58;sonnet
+
+<Tabs>
+
+<TabItem value="baseline-no-ruleset" label="baseline (no ruleset) · 0.86">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests **No** ·
+correct Yes
+
+<details open>
+<summary><code>RateLimitedHandler.java</code> · 1 smell</summary>
+
+- `oversized-function` at line 40
+
+````java
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
+import com.sun.net.httpserver.HttpServer;
+
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * Wraps an HttpHandler with a per-client sliding-window rate limit.
+ */
+public final class RateLimitedHandler implements HttpHandler {
+
+    private final HttpHandler delegate;
+    private final int maxRequests;
+    private final long windowMillis;
+    private final ConcurrentHashMap<String, Deque<Long>> requestLog = new ConcurrentHashMap<>();
+    private final ScheduledExecutorService cleaner = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread t = new Thread(r, "rate-limit-cleanup");
+        t.setDaemon(true);
+        return t;
+    });
+
+    public RateLimitedHandler(HttpHandler delegate, int maxRequests, long windowMillis) {
+        this.delegate = delegate;
+        this.maxRequests = maxRequests;
+        this.windowMillis = windowMillis;
+        cleaner.scheduleAtFixedRate(this::purgeStaleEntries, windowMillis, windowMillis, TimeUnit.MILLISECONDS);
+    }
+
+    @Override
+    public void handle(HttpExchange exchange) throws IOException {
+        String clientId = clientIdFor(exchange);
+        long now = System.currentTimeMillis();
+        Deque<Long> timestamps = requestLog.computeIfAbsent(clientId, k -> new ArrayDeque<>());
+
+        boolean allowed;
+        long retryAfterMillis = 0;
+
+        synchronized (timestamps) {
+            evictOld(timestamps, now);
+            if (timestamps.size() < maxRequests) {
+                timestamps.addLast(now);
+                allowed = true;
+            } else {
+                allowed = false;
+                retryAfterMillis = windowMillis - (now - timestamps.peekFirst());
+            }
+        }
+
+        if (!allowed) {
+            rejectTooManyRequests(exchange, retryAfterMillis);
+            return;
+        }
+
+        delegate.handle(exchange);
+    }
+
+    private void evictOld(Deque<Long> timestamps, long now) {
+        while (!timestamps.isEmpty() && now - timestamps.peekFirst() >= windowMillis) {
+            timestamps.pollFirst();
+        }
+    }
+
+    private void purgeStaleEntries() {
+        long now = System.currentTimeMillis();
+        for (Iterator<Map.Entry<String, Deque<Long>>> it = requestLog.entrySet().iterator(); it.hasNext(); ) {
+            Map.Entry<String, Deque<Long>> entry = it.next();
+            Deque<Long> timestamps = entry.getValue();
+            synchronized (timestamps) {
+                evictOld(timestamps, now);
+                if (timestamps.isEmpty()) {
+                    it.remove();
+                }
+            }
+        }
+    }
+
+    private String clientIdFor(HttpExchange exchange) {
+        InetSocketAddress remote = exchange.getRemoteAddress();
+        return remote.getAddress() != null ? remote.getAddress().getHostAddress() : remote.toString();
+    }
+
+    private void rejectTooManyRequests(HttpExchange exchange, long retryAfterMillis) throws IOException {
+        long retryAfterSeconds = Math.max(1, retryAfterMillis / 1000);
+        exchange.getResponseHeaders().add("Retry-After", String.valueOf(retryAfterSeconds));
+        byte[] body = "429 Too Many Requests".getBytes();
+        exchange.sendResponseHeaders(429, body.length);
+        try (OutputStream os = exchange.getResponseBody()) {
+            os.write(body);
+        }
+    }
+
+    public void shutdown() {
+        cleaner.shutdown();
+    }
+
+    // Example wiring
+    public static void main(String[] args) throws IOException {
+        HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0);
+
+        HttpHandler helloHandler = exchange -> {
+            byte[] body = "Hello".getBytes();
+            exchange.sendResponseHeaders(200, body.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(body);
+            }
+        };
+
+        server.createContext("/hello", new RateLimitedHandler(helloHandler, 5, 60_000));
+        server.start();
+    }
+}
+
+````
+
+</details>
+
+*No tests shipped.*
+
+</TabItem>
+
+<TabItem value="uncle-bob-junior" label="uncle-bob-junior · 0.98">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests Yes ·
+correct Yes
+
+<details open>
+<summary><code>RateLimitConfig.java</code></summary>
+
+
+````java
+// RateLimitConfig.java
+package com.example.ratelimit;
+
+import java.time.Duration;
+
+public record RateLimitConfig(int maxRequests, Duration window) {
+
+    public RateLimitConfig {
+        if (maxRequests <= 0) {
+            throw new IllegalArgumentException("maxRequests must be positive");
+        }
+        if (window.isZero() || window.isNegative()) {
+            throw new IllegalArgumentException("window must be positive");
+        }
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>RateLimitedServerExample.java</code></summary>
+
+
+````java
+// RateLimitedServerExample.java
+package com.example.ratelimit;
+
+import com.sun.net.httpserver.HttpServer;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.time.Clock;
+import java.time.Duration;
+
+public final class RateLimitedServerExample {
+
+    private static final int PORT = 8080;
+    private static final int MAX_REQUESTS_PER_WINDOW = 5;
+    private static final Duration WINDOW = Duration.ofMinutes(1);
+
+    public static void main(String[] args) throws IOException {
+        RateLimitConfig config = new RateLimitConfig(MAX_REQUESTS_PER_WINDOW, WINDOW);
+        RateLimiter rateLimiter = new SlidingWindowRateLimiter(config);
+
+        HttpServer server = HttpServer.create(new InetSocketAddress(PORT), 0);
+        server.createContext("/", new RateLimitingHandler(
+                exchange -> exchange.sendResponseHeaders(200, -1),
+                rateLimiter,
+                Clock.systemUTC(),
+                WINDOW));
+        server.start();
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>RateLimiter.java</code></summary>
+
+
+````java
+// RateLimiter.java
+package com.example.ratelimit;
+
+import java.time.Instant;
+
+/**
+ * Decides whether a client may proceed with a request right now.
+ * Implementations must be safe for concurrent use by multiple client IDs.
+ */
+public interface RateLimiter {
+
+    /**
+     * @param clientId identifier of the caller (e.g. IP address)
+     * @param now      current instant, supplied by the caller for testability
+     * @return true if the request is allowed and has been recorded, false if it must be rejected
+     */
+    boolean tryAcquire(String clientId, Instant now);
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>RateLimitingHandler.java</code> · 1 smell</summary>
+
+- `too-many-parameters` at line 21
+
+````java
+// RateLimitingHandler.java
+package com.example.ratelimit;
+
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
+
+import java.io.IOException;
+import java.time.Clock;
+import java.time.Duration;
+
+public final class RateLimitingHandler implements HttpHandler {
+
+    private static final int HTTP_TOO_MANY_REQUESTS = 429;
+    private static final String RETRY_AFTER_HEADER = "Retry-After";
+
+    private final HttpHandler delegate;
+    private final RateLimiter rateLimiter;
+    private final Clock clock;
+    private final long retryAfterSeconds;
+
+    public RateLimitingHandler(HttpHandler delegate, RateLimiter rateLimiter, Clock clock, Duration window) {
+        this.delegate = delegate;
+        this.rateLimiter = rateLimiter;
+        this.clock = clock;
+        this.retryAfterSeconds = window.toSeconds();
+    }
+
+    @Override
+    public void handle(HttpExchange exchange) throws IOException {
+        String clientId = clientIdFrom(exchange);
+        if (!rateLimiter.tryAcquire(clientId, clock.instant())) {
+            rejectWithTooManyRequests(exchange);
+            return;
+        }
+        delegate.handle(exchange);
+    }
+
+    private String clientIdFrom(HttpExchange exchange) {
+        return exchange.getRemoteAddress().getAddress().getHostAddress();
+    }
+
+    private void rejectWithTooManyRequests(HttpExchange exchange) throws IOException {
+        exchange.getResponseHeaders().set(RETRY_AFTER_HEADER, String.valueOf(retryAfterSeconds));
+        exchange.sendResponseHeaders(HTTP_TOO_MANY_REQUESTS, -1);
+        exchange.close();
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>SlidingWindowRateLimiter.java</code></summary>
+
+
+````java
+// SlidingWindowRateLimiter.java
+package com.example.ratelimit;
+
+import java.time.Instant;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+public final class SlidingWindowRateLimiter implements RateLimiter {
+
+    private final RateLimitConfig config;
+    private final Map<String, Deque<Instant>> requestTimestampsByClient = new ConcurrentHashMap<>();
+
+    public SlidingWindowRateLimiter(RateLimitConfig config) {
+        this.config = config;
+    }
+
+    @Override
+    public boolean tryAcquire(String clientId, Instant now) {
+        Deque<Instant> timestamps = requestTimestampsByClient.computeIfAbsent(clientId, id -> new ArrayDeque<>());
+        synchronized (timestamps) {
+            evictExpired(timestamps, now);
+            if (timestamps.size() >= config.maxRequests()) {
+                return false;
+            }
+            timestamps.addLast(now);
+            return true;
+        }
+    }
+
+    private void evictExpired(Deque<Instant> timestamps, Instant now) {
+        Instant windowStart = now.minus(config.window());
+        while (!timestamps.isEmpty() && timestamps.peekFirst().isBefore(windowStart)) {
+            timestamps.pollFirst();
+        }
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary>Shipped tests (2 files)</summary>
+
+<details>
+<summary><code>RateLimitingHandlerTest.java</code></summary>
+
+
+````java
+// RateLimitingHandlerTest.java
+package com.example.ratelimit;
+
+import com.sun.net.httpserver.Headers;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
+import org.junit.jupiter.api.Test;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.*;
+
+class RateLimitingHandlerTest {
+
+    private static final Clock FIXED_CLOCK = Clock.fixed(Instant.parse("2026-08-28T10:00:00Z"), ZoneOffset.UTC);
+    private static final Duration WINDOW = Duration.ofMinutes(1);
+    private static final String CLIENT_IP = "127.0.0.1";
+
+    @Test
+    void forwardsRequestWhenUnderLimit() throws IOException {
+        HttpExchange exchange = exchangeFrom(CLIENT_IP);
+        HttpHandler delegate = mock(HttpHandler.class);
+        RateLimiter rateLimiter = mock(RateLimiter.class);
+        when(rateLimiter.tryAcquire(eq(CLIENT_IP), any())).thenReturn(true);
+
+        new RateLimitingHandler(delegate, rateLimiter, FIXED_CLOCK, WINDOW).handle(exchange);
+
+        verify(delegate).handle(exchange);
+        verify(exchange, never()).sendResponseHeaders(eq(429), anyLong());
+    }
+
+    @Test
+    void rejectsRequestWhenOverLimit() throws IOException {
+        HttpExchange exchange = exchangeFrom(CLIENT_IP);
+        HttpHandler delegate = mock(HttpHandler.class);
+        RateLimiter rateLimiter = mock(RateLimiter.class);
+        when(rateLimiter.tryAcquire(eq(CLIENT_IP), any())).thenReturn(false);
+
+        new RateLimitingHandler(delegate, rateLimiter, FIXED_CLOCK, WINDOW).handle(exchange);
+
+        verify(delegate, never()).handle(any());
+        verify(exchange).sendResponseHeaders(429, -1);
+    }
+
+    private HttpExchange exchangeFrom(String clientIp) {
+        HttpExchange exchange = mock(HttpExchange.class);
+        when(exchange.getRemoteAddress()).thenReturn(new InetSocketAddress(clientIp, 1234));
+        when(exchange.getResponseHeaders()).thenReturn(new Headers());
+        return exchange;
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>SlidingWindowRateLimiterTest.java</code></summary>
+
+
+````java
+// SlidingWindowRateLimiterTest.java
+package com.example.ratelimit;
+
+import org.junit.jupiter.api.Test;
+
+import java.time.Duration;
+import java.time.Instant;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class SlidingWindowRateLimiterTest {
+
+    private static final RateLimitConfig CONFIG = new RateLimitConfig(3, Duration.ofMinutes(1));
+    private final SlidingWindowRateLimiter rateLimiter = new SlidingWindowRateLimiter(CONFIG);
+    private final Instant start = Instant.parse("2026-08-28T10:00:00Z");
+
+    @Test
+    void allowsRequestsUpToLimit() {
+        assertTrue(rateLimiter.tryAcquire("client-1", start));
+        assertTrue(rateLimiter.tryAcquire("client-1", start.plusSeconds(1)));
+        assertTrue(rateLimiter.tryAcquire("client-1", start.plusSeconds(2)));
+    }
+
+    @Test
+    void deniesRequestBeyondLimitWithinWindow() {
+        rateLimiter.tryAcquire("client-1", start);
+        rateLimiter.tryAcquire("client-1", start.plusSeconds(1));
+        rateLimiter.tryAcquire("client-1", start.plusSeconds(2));
+
+        assertFalse(rateLimiter.tryAcquire("client-1", start.plusSeconds(3)));
+    }
+
+    @Test
+    void allowsRequestAgainAfterWindowElapses() {
+        rateLimiter.tryAcquire("client-1", start);
+        rateLimiter.tryAcquire("client-1", start.plusSeconds(1));
+        rateLimiter.tryAcquire("client-1", start.plusSeconds(2));
+
+        assertTrue(rateLimiter.tryAcquire("client-1", start.plus(Duration.ofMinutes(1)).plusSeconds(1)));
+    }
+
+    @Test
+    void tracksClientsIndependently() {
+        rateLimiter.tryAcquire("client-1", start);
+        rateLimiter.tryAcquire("client-1", start.plusSeconds(1));
+        rateLimiter.tryAcquire("client-1", start.plusSeconds(2));
+
+        assertTrue(rateLimiter.tryAcquire("client-2", start.plusSeconds(2)));
+    }
+}
+
+````
+
+</details>
+
+</details>
+
+</TabItem>
+
+</Tabs>

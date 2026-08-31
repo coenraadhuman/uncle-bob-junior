@@ -1,0 +1,550 @@
+---
+title: email
+sidebar_position: 2
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+> Write a Java method that validates email addresses.
+
+## claude-cli&#58;fable
+
+<Tabs>
+
+<TabItem value="baseline-no-ruleset" label="baseline (no ruleset) · 0.88">
+
+Gates: valid code Yes ·
+habit-hooks Pass ·
+ships tests **No** ·
+correct Yes
+
+<details open>
+<summary><code>EmailValidator.java</code></summary>
+
+
+````java
+import java.util.regex.Pattern;
+
+public final class EmailValidator {
+
+    private EmailValidator() {
+    }
+
+    // Practical pattern: dot-atom local part, domain labels separated by dots,
+    // TLD of at least two letters. Intentionally stricter than full RFC 5322.
+    private static final Pattern EMAIL_PATTERN = Pattern.compile(
+            "^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*"
+            + "@"
+            + "(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)+"
+            + "[A-Za-z]{2,63}$");
+
+    private static final int MAX_EMAIL_LENGTH = 254; // RFC 5321 practical limit
+    private static final int MAX_LOCAL_PART_LENGTH = 64;
+
+    /**
+     * Validates an email address for use in forms and data intake.
+     *
+     * @param email the address to validate, may be null
+     * @return true if the address is structurally valid
+     */
+    public static boolean isValidEmail(String email) {
+        if (email == null) {
+            return false;
+        }
+
+        String trimmed = email.trim();
+        if (trimmed.isEmpty() || trimmed.length() > MAX_EMAIL_LENGTH) {
+            return false;
+        }
+
+        int atIndex = trimmed.indexOf('@');
+        if (atIndex <= 0 || atIndex > MAX_LOCAL_PART_LENGTH) {
+            return false;
+        }
+
+        return EMAIL_PATTERN.matcher(trimmed).matches();
+    }
+}
+
+````
+
+</details>
+
+*No tests shipped.*
+
+</TabItem>
+
+<TabItem value="uncle-bob-junior" label="uncle-bob-junior · 1.00">
+
+Gates: valid code Yes ·
+habit-hooks Pass ·
+ships tests Yes ·
+correct Yes
+
+<details open>
+<summary><code>EmailValidator.java</code></summary>
+
+
+````java
+import java.util.regex.Pattern;
+
+/**
+ * Validates email addresses for use at input boundaries (e.g. sign-up forms).
+ *
+ * Accepts the practical subset of RFC 5321/5322: an ASCII local part, an "@",
+ * and a dotted domain with at least two labels. Deliberately rejects
+ * quoted local parts, IP-literal domains, and internationalised addresses.
+ */
+public final class EmailValidator {
+
+    private static final int MAX_EMAIL_LENGTH = 254;
+    private static final int MAX_LOCAL_PART_LENGTH = 64;
+    private static final int MAX_DOMAIN_LABEL_LENGTH = 63;
+    private static final int MINIMUM_DOMAIN_LABELS = 2;
+
+    private static final Pattern LOCAL_PART_PATTERN =
+            Pattern.compile("^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(\\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*$");
+    private static final Pattern DOMAIN_LABEL_PATTERN =
+            Pattern.compile("^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?$");
+
+    private EmailValidator() {
+    }
+
+    public static boolean isValidEmail(String email) {
+        if (email == null || email.length() > MAX_EMAIL_LENGTH) {
+            return false;
+        }
+        int atIndex = email.lastIndexOf('@');
+        if (atIndex < 1 || atIndex == email.length() - 1) {
+            return false;
+        }
+        String localPart = email.substring(0, atIndex);
+        String domain = email.substring(atIndex + 1);
+        return isValidLocalPart(localPart) && isValidDomain(domain);
+    }
+
+    private static boolean isValidLocalPart(String localPart) {
+        if (localPart.length() > MAX_LOCAL_PART_LENGTH) {
+            return false;
+        }
+        return LOCAL_PART_PATTERN.matcher(localPart).matches();
+    }
+
+    private static boolean isValidDomain(String domain) {
+        // -1 keeps a trailing dot as an empty label so "user@example." fails
+        String[] labels = domain.split("\\.", -1);
+        if (labels.length < MINIMUM_DOMAIN_LABELS) {
+            return false;
+        }
+        for (String label : labels) {
+            if (!isValidDomainLabel(label)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean isValidDomainLabel(String label) {
+        if (label.isEmpty() || label.length() > MAX_DOMAIN_LABEL_LENGTH) {
+            return false;
+        }
+        return DOMAIN_LABEL_PATTERN.matcher(label).matches();
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary>Shipped tests (1 file)</summary>
+
+<details>
+<summary><code>EmailValidatorTest.java</code></summary>
+
+
+````java
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class EmailValidatorTest {
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "participant_001@example.com",
+            "first.last@example.co.uk",
+            "user+tag@example.org",
+            "o'connor@example.ie",
+            "a@b.co"
+    })
+    void acceptsWellFormedAddresses(String email) {
+        assertTrue(EmailValidator.isValidEmail(email));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "",
+            "plainaddress",
+            "@example.com",
+            "user@",
+            "user@localhost",
+            "user@example.",
+            "user@.example.com",
+            ".user@example.com",
+            "user.@example.com",
+            "us..er@example.com",
+            "user@exa mple.com",
+            "user@-example.com",
+            "user@example-.com",
+            "us er@example.com",
+            "üser@example.com"
+    })
+    void rejectsMalformedAddresses(String email) {
+        assertFalse(EmailValidator.isValidEmail(email));
+    }
+
+    @Test
+    void rejectsNull() {
+        assertFalse(EmailValidator.isValidEmail(null));
+    }
+
+    @Test
+    void acceptsLocalPartAtLengthLimit() {
+        String localPart = "a".repeat(64);
+        assertTrue(EmailValidator.isValidEmail(localPart + "@example.com"));
+    }
+
+    @Test
+    void rejectsLocalPartOverLengthLimit() {
+        String localPart = "a".repeat(65);
+        assertFalse(EmailValidator.isValidEmail(localPart + "@example.com"));
+    }
+
+    @Test
+    void rejectsEmailOverTotalLengthLimit() {
+        String longDomain = ("a".repeat(63) + ".").repeat(4) + "com";
+        assertFalse(EmailValidator.isValidEmail("user@" + longDomain));
+    }
+
+    @Test
+    void rejectsDomainLabelOverLengthLimit() {
+        String longLabel = "a".repeat(64);
+        assertFalse(EmailValidator.isValidEmail("user@" + longLabel + ".com"));
+    }
+}
+
+````
+
+</details>
+
+</details>
+
+</TabItem>
+
+</Tabs>
+
+## claude-cli&#58;haiku
+
+<Tabs>
+
+<TabItem value="baseline-no-ruleset" label="baseline (no ruleset) · 0.88">
+
+Gates: valid code Yes ·
+habit-hooks Pass ·
+ships tests **No** ·
+correct Yes
+
+<details open>
+<summary><code>EmailValidator.java</code></summary>
+
+
+````java
+public class EmailValidator {
+    
+    /**
+     * Validates an email address using a regex pattern.
+     * Handles most common email formats while avoiding overly complex RFC 5322 compliance.
+     */
+    public static boolean isValidEmail(String email) {
+        if (email == null || email.isBlank()) {
+            return false;
+        }
+        
+        String pattern = "^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$";
+        return email.matches(pattern);
+    }
+    
+    /**
+     * More permissive validation allowing additional special characters.
+     */
+    public static boolean isValidEmailLenient(String email) {
+        if (email == null || email.isBlank()) {
+            return false;
+        }
+        
+        String pattern = "^[A-Za-z0-9+_'.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$";
+        return email.matches(pattern);
+    }
+}
+
+````
+
+</details>
+
+*No tests shipped.*
+
+</TabItem>
+
+<TabItem value="uncle-bob-junior" label="uncle-bob-junior · 1.00">
+
+Gates: valid code Yes ·
+habit-hooks Pass ·
+ships tests Yes ·
+correct Yes
+
+<details open>
+<summary><code>EmailValidator.java</code></summary>
+
+
+````java
+public class EmailValidator {
+    private static final String EMAIL_PATTERN = 
+        "^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$";
+    
+    public static boolean isValidEmail(String email) {
+        if (email == null || email.isBlank()) {
+            return false;
+        }
+        return email.matches(EMAIL_PATTERN);
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>RobustEmailValidator.java</code></summary>
+
+
+````java
+import org.apache.commons.validator.routines.EmailValidator;
+
+public class RobustEmailValidator {
+    private static final EmailValidator validator = EmailValidator.getInstance();
+    
+    public static boolean isValidEmail(String email) {
+        return email != null && validator.isValid(email);
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary>Shipped tests (1 file)</summary>
+
+<details>
+<summary><code>EmailValidatorTest.java</code></summary>
+
+
+````java
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
+
+class EmailValidatorTest {
+    
+    @Test
+    void acceptsValidEmails() {
+        assertTrue(EmailValidator.isValidEmail("user@example.com"));
+        assertTrue(EmailValidator.isValidEmail("john.doe@company.co.uk"));
+        assertTrue(EmailValidator.isValidEmail("info+tag@sub.domain.org"));
+    }
+    
+    @Test
+    void rejectsNullAndEmpty() {
+        assertFalse(EmailValidator.isValidEmail(null));
+        assertFalse(EmailValidator.isValidEmail(""));
+        assertFalse(EmailValidator.isValidEmail("  "));
+    }
+    
+    @Test
+    void rejectsInvalidFormats() {
+        assertFalse(EmailValidator.isValidEmail("plainaddress"));
+        assertFalse(EmailValidator.isValidEmail("@example.com"));
+        assertFalse(EmailValidator.isValidEmail("user@"));
+        assertFalse(EmailValidator.isValidEmail("user..name@example.com"));
+        assertFalse(EmailValidator.isValidEmail("user@example"));
+        assertFalse(EmailValidator.isValidEmail("user name@example.com"));
+    }
+}
+
+````
+
+</details>
+
+</details>
+
+</TabItem>
+
+</Tabs>
+
+## claude-cli&#58;sonnet
+
+<Tabs>
+
+<TabItem value="baseline-no-ruleset" label="baseline (no ruleset) · 0.88">
+
+Gates: valid code Yes ·
+habit-hooks Pass ·
+ships tests **No** ·
+correct Yes
+
+<details open>
+<summary><code>EmailValidator.java</code></summary>
+
+
+````java
+import java.util.regex.Pattern;
+
+public final class EmailValidator {
+
+    // Practical pattern: local-part@domain, domain has at least one dot,
+    // and a TLD of at least two letters. Not full RFC 5322, but covers
+    // the vast majority of real-world addresses without pathological
+    // backtracking.
+    private static final Pattern EMAIL_PATTERN = Pattern.compile(
+        "^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$"
+    );
+
+    private static final int MAX_LENGTH = 254; // RFC 5321 limit
+
+    private EmailValidator() {
+    }
+
+    public static boolean isValid(String email) {
+        if (email == null || email.isBlank() || email.length() > MAX_LENGTH) {
+            return false;
+        }
+        return EMAIL_PATTERN.matcher(email).matches();
+    }
+}
+
+````
+
+</details>
+
+*No tests shipped.*
+
+</TabItem>
+
+<TabItem value="uncle-bob-junior" label="uncle-bob-junior · 1.00">
+
+Gates: valid code Yes ·
+habit-hooks Pass ·
+ships tests Yes ·
+correct Yes
+
+<details open>
+<summary><code>EmailValidator.java</code></summary>
+
+
+````java
+import java.util.regex.Pattern;
+
+public final class EmailValidator {
+
+    private static final int MAX_EMAIL_LENGTH = 254;
+    private static final Pattern EMAIL_PATTERN =
+        Pattern.compile("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$");
+
+    private EmailValidator() {
+    }
+
+    public static boolean isValid(String email) {
+        if (email == null || email.isBlank()) {
+            return false;
+        }
+        if (email.length() > MAX_EMAIL_LENGTH) {
+            return false;
+        }
+        return EMAIL_PATTERN.matcher(email).matches();
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary>Shipped tests (1 file)</summary>
+
+<details>
+<summary><code>EmailValidatorTest.java</code></summary>
+
+
+````java
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class EmailValidatorTest {
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "user@example.com",
+        "first.last@sub.example.co.uk",
+        "user+tag@example.org",
+        "user_name-123@example-domain.com"
+    })
+    void acceptsValidEmails(String email) {
+        assertTrue(EmailValidator.isValid(email));
+    }
+
+    @Test
+    void rejectsNull() {
+        assertFalse(EmailValidator.isValid(null));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "",
+        "   ",
+        "no-at-sign.example.com",
+        "user@",
+        "@example.com",
+        "user@example",
+        "user@.com",
+        "user name@example.com"
+    })
+    void rejectsInvalidEmails(String email) {
+        assertFalse(EmailValidator.isValid(email));
+    }
+
+    @Test
+    void rejectsEmailLongerThanMaxLength() {
+        String longLocalPart = "a".repeat(250);
+        String tooLongEmail = longLocalPart + "@example.com";
+
+        assertFalse(EmailValidator.isValid(tooLongEmail));
+    }
+}
+
+````
+
+</details>
+
+</details>
+
+</TabItem>
+
+</Tabs>

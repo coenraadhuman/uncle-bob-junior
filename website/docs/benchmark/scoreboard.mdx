@@ -1,6 +1,6 @@
 ---
 title: Benchmark Scoreboard
-sidebar_position: 1
+sidebar_position: 2
 ---
 
 Run `eval-dwH-2026-08-31T11:59:48`: the same tasks and models, once bare (baseline) and once
@@ -23,26 +23,25 @@ xychart-beta
 
 | Task | Arm | Score | Valid code | Habit-hooks | Ships tests | Correct | Oversized function | Too many parameters | High complexity | Oversized file | Unused variable | Unused import |
 |---|---|---:|:---:|:---:|:---:|:---:|---:|---:|---:|---:|---:|---:|
-| [booking](booking) | claude-cli:haiku · baseline (no ruleset) | 0.77 | Yes | **Fail** | **No** | Yes | 5 | 2 | 0 | 1 | 0 | 0 |
-| [booking](booking) | claude-cli:haiku · uncle-bob-junior | 0.91 | Yes | **Fail** | Yes | Yes | 1 | 6 | 0 | 0 | 1 | 0 |
-| [config](config) | claude-cli:haiku · baseline (no ruleset) | 0.81 | Yes | **Fail** | **No** | Yes | 1 | 1 | 2 | 0 | 0 | 0 |
-| [config](config) | claude-cli:haiku · uncle-bob-junior | 0.97 | Yes | **Fail** | Yes | Yes | 1 | 1 | 0 | 0 | 0 | 0 |
-| [csv](csv) | claude-cli:haiku · baseline (no ruleset) | 0.83 | Yes | **Fail** | **No** | Yes | 1 | 0 | 1 | 0 | 0 | 1 |
-| [csv](csv) | claude-cli:haiku · uncle-bob-junior | 0.98 | Yes | **Fail** | Yes | Yes | 1 | 0 | 0 | 0 | 0 | 0 |
-| [email](email) | claude-cli:haiku · baseline (no ruleset) | 0.88 | Yes | Pass | **No** | Yes | 0 | 0 | 0 | 0 | 0 | 0 |
-| [email](email) | claude-cli:haiku · uncle-bob-junior | 1.00 | Yes | Pass | Yes | Yes | 0 | 0 | 0 | 0 | 0 | 0 |
-| [expense](expense) | claude-cli:haiku · baseline (no ruleset) | 0.88 | Yes | Pass | **No** | Yes | 0 | 0 | 0 | 0 | 0 | 0 |
-| [expense](expense) | claude-cli:haiku · uncle-bob-junior | 0.88 | Yes | Pass | **No** | Yes | 0 | 0 | 0 | 0 | 0 | 0 |
-| [logscan](logscan) | claude-cli:haiku · baseline (no ruleset) | 0.86 | Yes | **Fail** | **No** | Yes | 0 | 0 | 1 | 0 | 0 | 0 |
-| [logscan](logscan) | claude-cli:haiku · uncle-bob-junior | 0.98 | Yes | **Fail** | Yes | Yes | 0 | 0 | 0 | 1 | 0 | 0 |
-| [order](order) | claude-cli:haiku · baseline (no ruleset) | 0.84 | Yes | **Fail** | **No** | Yes | 1 | 0 | 1 | 0 | 0 | 0 |
-| [order](order) | claude-cli:haiku · uncle-bob-junior | 0.98 | Yes | **Fail** | Yes | Yes | 0 | 1 | 0 | 0 | 0 | 0 |
-| [ratelimit](ratelimit) | claude-cli:haiku · baseline (no ruleset) | 0.84 | Yes | **Fail** | **No** | Yes | 0 | 0 | 0 | 0 | 0 | 2 |
-| [ratelimit](ratelimit) | claude-cli:haiku · uncle-bob-junior | 1.00 | Yes | Pass | Yes | Yes | 0 | 0 | 0 | 0 | 0 | 0 |
-| [retry](retry) | claude-cli:haiku · baseline (no ruleset) | 0.86 | Yes | **Fail** | **No** | Yes | 0 | 0 | 0 | 0 | 0 | 1 |
-| [retry](retry) | claude-cli:haiku · uncle-bob-junior | 1.00 | Yes | Pass | Yes | Yes | 0 | 0 | 0 | 0 | 0 | 0 |
-| [statement](statement) | claude-cli:haiku · baseline (no ruleset) | 0.69 | Yes | **Fail** | **No** | **No** | 2 | 1 | 1 | 0 | 0 | 0 |
-| [statement](statement) | claude-cli:haiku · uncle-bob-junior | 0.97 | Yes | **Fail** | Yes | Yes | 1 | 1 | 0 | 0 | 0 | 0 |
+| [booking](tasks/booking) | claude-cli&#58;haiku · baseline (no ruleset) | 0.77 | Yes | **Fail** | **No** | Yes | 5 | 2 | 0 | 1 | 0 | 0 |
+| [booking](tasks/booking) | claude-cli&#58;haiku · uncle-bob-junior | 0.91 | Yes | **Fail** | Yes | Yes | 1 | 6 | 0 | 0 | 1 | 0 |
+| [config](tasks/config) | claude-cli&#58;haiku · baseline (no ruleset) | 0.81 | Yes | **Fail** | **No** | Yes | 1 | 1 | 2 | 0 | 0 | 0 |
+| [config](tasks/config) | claude-cli&#58;haiku · uncle-bob-junior | 0.97 | Yes | **Fail** | Yes | Yes | 1 | 1 | 0 | 0 | 0 | 0 |
+| [csv](tasks/csv) | claude-cli&#58;haiku · baseline (no ruleset) | 0.83 | Yes | **Fail** | **No** | Yes | 1 | 0 | 1 | 0 | 0 | 1 |
+| [csv](tasks/csv) | claude-cli&#58;haiku · uncle-bob-junior | 0.98 | Yes | **Fail** | Yes | Yes | 1 | 0 | 0 | 0 | 0 | 0 |
+| [email](tasks/email) | claude-cli&#58;haiku · baseline (no ruleset) | 0.88 | Yes | Pass | **No** | Yes | 0 | 0 | 0 | 0 | 0 | 0 |
+| [email](tasks/email) | claude-cli&#58;haiku · uncle-bob-junior | 1.00 | Yes | Pass | Yes | Yes | 0 | 0 | 0 | 0 | 0 | 0 |
+| [expense](tasks/expense) | claude-cli&#58;haiku · baseline (no ruleset) | 0.88 | Yes | Pass | **No** | Yes | 0 | 0 | 0 | 0 | 0 | 0 |
+| [expense](tasks/expense) | claude-cli&#58;haiku · uncle-bob-junior | 0.88 | Yes | Pass | **No** | Yes | 0 | 0 | 0 | 0 | 0 | 0 |
+| [logscan](tasks/logscan) | claude-cli&#58;haiku · baseline (no ruleset) | 0.86 | Yes | **Fail** | **No** | Yes | 0 | 0 | 1 | 0 | 0 | 0 |
+| [logscan](tasks/logscan) | claude-cli&#58;haiku · uncle-bob-junior | 0.98 | Yes | **Fail** | Yes | Yes | 0 | 0 | 0 | 1 | 0 | 0 |
+| [order](tasks/order) | claude-cli&#58;haiku · baseline (no ruleset) | 0.84 | Yes | **Fail** | **No** | Yes | 1 | 0 | 1 | 0 | 0 | 0 |
+| [order](tasks/order) | claude-cli&#58;haiku · uncle-bob-junior | 0.98 | Yes | **Fail** | Yes | Yes | 0 | 1 | 0 | 0 | 0 | 0 |
+| [ratelimit](tasks/ratelimit) | claude-cli&#58;haiku · baseline (no ruleset) | 0.84 | Yes | **Fail** | **No** | Yes | 0 | 0 | 0 | 0 | 0 | 2 |
+| [ratelimit](tasks/ratelimit) | claude-cli&#58;haiku · uncle-bob-junior | 1.00 | Yes | Pass | Yes | Yes | 0 | 0 | 0 | 0 | 0 | 0 |
+| [retry](tasks/retry) | claude-cli&#58;haiku · baseline (no ruleset) | 0.86 | Yes | **Fail** | **No** | Yes | 0 | 0 | 0 | 0 | 0 | 1 |
+| [retry](tasks/retry) | claude-cli&#58;haiku · uncle-bob-junior | 1.00 | Yes | Pass | Yes | Yes | 0 | 0 | 0 | 0 | 0 | 0 |
+| [statement](tasks/statement) | claude-cli&#58;haiku · baseline (no ruleset) | 0.69 | Yes | **Fail** | **No** | **No** | 2 | 1 | 1 | 0 | 0 | 0 |
+| [statement](tasks/statement) | claude-cli&#58;haiku · uncle-bob-junior | 0.97 | Yes | **Fail** | Yes | Yes | 1 | 1 | 0 | 0 | 0 | 0 |
 
-Older full runs live under [past runs](history); partial runs under
-[subset runs](subset).
+The generated code per task lives under [Tasks](tasks). Older full runs live under [past runs](history); partial runs under [subset runs](subset).

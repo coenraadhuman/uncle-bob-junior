@@ -1,0 +1,606 @@
+---
+title: retry
+sidebar_position: 5
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+> Write a reusable retry helper in Java&#58; it runs an operation, retries it up to a maximum number of attempts when it throws an exception, and waits a fixed delay between attempts.
+
+## claude-cli&#58;haiku
+
+<Tabs>
+
+<TabItem value="baseline-no-ruleset" label="baseline (no ruleset) · 0.88">
+
+Gates: valid code Yes ·
+habit-hooks Pass ·
+ships tests **No** ·
+correct Yes
+
+<details open>
+<summary><code>RetryHelper.java</code></summary>
+
+
+````java
+public class RetryHelper {
+    public static <T> T execute(Retryable<T> operation, int maxAttempts, long delayMs) 
+            throws Exception {
+        Exception lastException = null;
+        
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                return operation.execute();
+            } catch (Exception e) {
+                lastException = e;
+                if (attempt < maxAttempts) {
+                    Thread.sleep(delayMs);
+                }
+            }
+        }
+        
+        throw lastException;
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>Retryable.java</code></summary>
+
+
+````java
+@FunctionalInterface
+public interface Retryable<T> {
+    T execute() throws Exception;
+}
+
+````
+
+</details>
+
+*No tests shipped.*
+
+</TabItem>
+
+<TabItem value="uncle-bob-junior" label="uncle-bob-junior · 1.00">
+
+Gates: valid code Yes ·
+habit-hooks Pass ·
+ships tests Yes ·
+correct Yes
+
+<details open>
+<summary><code>RetryHelper.java</code></summary>
+
+
+````java
+public class RetryHelper {
+    private final int maxAttempts;
+    private final long delayMillis;
+    
+    public RetryHelper(int maxAttempts, long delayMillis) {
+        if (maxAttempts < 1) {
+            throw new IllegalArgumentException("maxAttempts must be at least 1");
+        }
+        this.maxAttempts = maxAttempts;
+        this.delayMillis = delayMillis;
+    }
+    
+    public <T> T execute(Operation<T> operation) throws Exception {
+        Exception lastException = null;
+        
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                return operation.call();
+            } catch (Exception e) {
+                lastException = e;
+                if (attempt < maxAttempts) {
+                    Thread.sleep(delayMillis);
+                }
+            }
+        }
+        
+        throw lastException;
+    }
+    
+    @FunctionalInterface
+    public interface Operation<T> {
+        T call() throws Exception;
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary>Shipped tests (1 file)</summary>
+
+<details>
+<summary><code>RetryHelperTest.java</code></summary>
+
+
+````java
+import static org.junit.jupiter.api.Assertions.*;
+
+import java.io.IOException;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import org.junit.jupiter.api.Test;
+
+class RetryHelperTest {
+    
+    @Test
+    void successOnFirstAttempt() throws Exception {
+        RetryHelper retryHelper = new RetryHelper(3, 10);
+        
+        String result = retryHelper.execute(() -> "success");
+        
+        assertEquals("success", result);
+    }
+    
+    @Test
+    void successAfterRetries() throws Exception {
+        AtomicInteger attempts = new AtomicInteger(0);
+        RetryHelper retryHelper = new RetryHelper(3, 10);
+        
+        String result = retryHelper.execute(() -> {
+            attempts.incrementAndGet();
+            if (attempts.get() < 3) {
+                throw new IOException("failed");
+            }
+            return "success";
+        });
+        
+        assertEquals("success", result);
+        assertEquals(3, attempts.get());
+    }
+    
+    @Test
+    void failsAfterMaxAttempts() throws Exception {
+        RetryHelper retryHelper = new RetryHelper(2, 10);
+        IOException originalException = new IOException("failed");
+        
+        IOException thrown = assertThrows(IOException.class, () -> {
+            retryHelper.execute(() -> {
+                throw originalException;
+            });
+        });
+        
+        assertEquals(originalException, thrown);
+    }
+    
+    @Test
+    void waitsBeforeRetry() throws Exception {
+        RetryHelper retryHelper = new RetryHelper(2, 50);
+        long startTime = System.currentTimeMillis();
+        
+        assertThrows(Exception.class, () -> {
+            retryHelper.execute(() -> {
+                throw new Exception("failed");
+            });
+        });
+        
+        long elapsed = System.currentTimeMillis() - startTime;
+        assertTrue(elapsed >= 50, "Should have waited at least 50ms");
+    }
+    
+    @Test
+    void validatesMaxAttemptsOnConstruction() {
+        assertThrows(IllegalArgumentException.class, () -> {
+            new RetryHelper(0, 10);
+        });
+    }
+}
+
+````
+
+</details>
+
+</details>
+
+</TabItem>
+
+</Tabs>
+
+## claude-cli&#58;sonnet
+
+<Tabs>
+
+<TabItem value="baseline-no-ruleset" label="baseline (no ruleset) · 0.84">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests **No** ·
+correct Yes
+
+<details open>
+<summary><code>RetryHelper.java</code> · 2 smells</summary>
+
+- `oversized-function` at line 9
+- `high-complexity` at line 9
+
+````java
+import java.time.Duration;
+import java.util.concurrent.Callable;
+
+public final class RetryHelper {
+
+    private RetryHelper() {
+    }
+
+    public static <T> T retry(Callable<T> operation, int maxAttempts, Duration delay) {
+        if (maxAttempts < 1) {
+            throw new IllegalArgumentException("maxAttempts must be at least 1");
+        }
+        if (delay.isNegative()) {
+            throw new IllegalArgumentException("delay must not be negative");
+        }
+
+        Exception lastException = null;
+
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                return operation.call();
+            } catch (Exception e) {
+                lastException = e;
+
+                boolean isLastAttempt = attempt == maxAttempts;
+                if (isLastAttempt) {
+                    break;
+                }
+
+                try {
+                    Thread.sleep(delay.toMillis());
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new RetryExhaustedException(
+                            "Retry interrupted while waiting between attempts", interrupted);
+                }
+            }
+        }
+
+        throw new RetryExhaustedException(
+                "Operation failed after " + maxAttempts + " attempt(s)", lastException);
+    }
+
+    public static final class RetryExhaustedException extends RuntimeException {
+        public RetryExhaustedException(String message, Throwable cause) {
+            super(message, cause);
+        }
+    }
+}
+
+````
+
+</details>
+
+*No tests shipped.*
+
+</TabItem>
+
+<TabItem value="uncle-bob-junior" label="uncle-bob-junior · 1.00">
+
+Gates: valid code Yes ·
+habit-hooks Pass ·
+ships tests Yes ·
+correct Yes
+
+<details open>
+<summary><code>RetryExhaustedException.java</code></summary>
+
+
+````java
+package com.example.retry;
+
+/** Thrown when an operation still fails after all retry attempts. */
+public final class RetryExhaustedException extends RuntimeException {
+
+    public RetryExhaustedException(int attempts, Throwable lastFailure) {
+        super("Operation failed after " + attempts + " attempts", lastFailure);
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>RetryInterruptedException.java</code></summary>
+
+
+````java
+package com.example.retry;
+
+/** Thrown when the wait between retry attempts is interrupted. */
+public final class RetryInterruptedException extends RuntimeException {
+
+    public RetryInterruptedException(InterruptedException cause) {
+        super("Retry wait was interrupted", cause);
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>RetryPolicy.java</code></summary>
+
+
+````java
+package com.example.retry;
+
+import java.time.Duration;
+import java.util.Objects;
+
+/**
+ * Fixed number of attempts, each separated by a fixed delay.
+ *
+ * @param maxAttempts total number of attempts, including the first (must be >= 1)
+ * @param delay       wait time between attempts (must not be negative)
+ */
+public record RetryPolicy(int maxAttempts, Duration delay) {
+
+    public RetryPolicy {
+        if (maxAttempts < 1) {
+            throw new IllegalArgumentException("maxAttempts must be at least 1");
+        }
+        Objects.requireNonNull(delay, "delay");
+        if (delay.isNegative()) {
+            throw new IllegalArgumentException("delay must not be negative");
+        }
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>Retryer.java</code></summary>
+
+
+````java
+package com.example.retry;
+
+import java.time.Duration;
+import java.util.Objects;
+import java.util.concurrent.Callable;
+
+/**
+ * Runs an operation, retrying on any {@link Exception} up to a fixed number
+ * of attempts, waiting a fixed delay between attempts.
+ */
+public final class Retryer {
+
+    private final Sleeper sleeper;
+
+    public Retryer() {
+        this(delay -> Thread.sleep(delay.toMillis()));
+    }
+
+    public Retryer(Sleeper sleeper) {
+        this.sleeper = Objects.requireNonNull(sleeper, "sleeper");
+    }
+
+    /**
+     * @throws RetryExhaustedException if every attempt fails
+     * @throws RetryInterruptedException if the wait between attempts is interrupted
+     */
+    public <T> T execute(Callable<T> operation, RetryPolicy policy) {
+        Objects.requireNonNull(operation, "operation");
+        Objects.requireNonNull(policy, "policy");
+
+        Exception lastFailure = null;
+        for (int attempt = 1; attempt <= policy.maxAttempts(); attempt++) {
+            if (attempt > 1) {
+                waitBeforeRetry(policy.delay());
+            }
+            try {
+                return operation.call();
+            } catch (Exception failure) {
+                lastFailure = failure;
+            }
+        }
+        throw new RetryExhaustedException(policy.maxAttempts(), lastFailure);
+    }
+
+    private void waitBeforeRetry(Duration delay) {
+        try {
+            sleeper.sleep(delay);
+        } catch (InterruptedException interruption) {
+            Thread.currentThread().interrupt();
+            throw new RetryInterruptedException(interruption);
+        }
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>Sleeper.java</code></summary>
+
+
+````java
+package com.example.retry;
+
+import java.time.Duration;
+
+/** Seam around the blocking wait so tests can avoid real time delays. */
+@FunctionalInterface
+public interface Sleeper {
+
+    void sleep(Duration delay) throws InterruptedException;
+}
+
+````
+
+</details>
+
+<details>
+<summary>Shipped tests (1 file)</summary>
+
+<details>
+<summary><code>RetryerTest.java</code></summary>
+
+
+````java
+package com.example.retry;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.atomic.AtomicInteger;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+
+class RetryerTest {
+
+    private static final RetryPolicy THREE_ATTEMPTS_NO_WAIT =
+            new RetryPolicy(3, Duration.ZERO);
+
+    private final RecordingSleeper sleeper = new RecordingSleeper();
+    private final Retryer retryer = new Retryer(sleeper);
+
+    @AfterEach
+    void clearInterruptFlag() {
+        Thread.interrupted();
+    }
+
+    @Test
+    void succeedsOnFirstAttempt_doesNotRetry() {
+        CountingOperation operation = new CountingOperation(0);
+
+        String result = retryer.execute(operation, THREE_ATTEMPTS_NO_WAIT);
+
+        assertEquals("ok", result);
+        assertEquals(1, operation.attemptCount());
+        assertEquals(0, sleeper.calls().size());
+    }
+
+    @Test
+    void succeedsAfterTransientFailures_retriesThenReturns() {
+        CountingOperation operation = new CountingOperation(2);
+
+        String result = retryer.execute(operation, THREE_ATTEMPTS_NO_WAIT);
+
+        assertEquals("ok", result);
+        assertEquals(3, operation.attemptCount());
+    }
+
+    @Test
+    void exhaustsRetries_throwsRetryExhaustedExceptionWithLastFailure() {
+        CountingOperation operation = new CountingOperation(Integer.MAX_VALUE);
+
+        RetryExhaustedException thrown = assertThrows(RetryExhaustedException.class,
+                () -> retryer.execute(operation, THREE_ATTEMPTS_NO_WAIT));
+
+        assertEquals(3, operation.attemptCount());
+        assertTrue(thrown.getCause() instanceof IllegalStateException);
+    }
+
+    @Test
+    void waitsBetweenAttemptsButNotAfterTheLastOne() {
+        CountingOperation operation = new CountingOperation(Integer.MAX_VALUE);
+
+        assertThrows(RetryExhaustedException.class,
+                () -> retryer.execute(operation, THREE_ATTEMPTS_NO_WAIT));
+
+        assertEquals(2, sleeper.calls().size());
+    }
+
+    @Test
+    void interruptedDuringWait_wrapsAndRestoresInterruptFlag() {
+        RecordingSleeper alwaysInterrupts = new RecordingSleeper(true);
+        Retryer interruptibleRetryer = new Retryer(alwaysInterrupts);
+        CountingOperation operation = new CountingOperation(Integer.MAX_VALUE);
+
+        assertThrows(RetryInterruptedException.class,
+                () -> interruptibleRetryer.execute(operation, THREE_ATTEMPTS_NO_WAIT));
+
+        assertTrue(Thread.currentThread().isInterrupted());
+    }
+
+    @Test
+    void policyRejectsNonPositiveMaxAttempts() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new RetryPolicy(0, Duration.ZERO));
+    }
+
+    @Test
+    void policyRejectsNegativeDelay() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new RetryPolicy(1, Duration.ofSeconds(-1)));
+    }
+
+    /** Fails a fixed number of times, then always succeeds. */
+    private static final class CountingOperation implements Callable<String> {
+        private final int failuresBeforeSuccess;
+        private final AtomicInteger attempts = new AtomicInteger();
+
+        CountingOperation(int failuresBeforeSuccess) {
+            this.failuresBeforeSuccess = failuresBeforeSuccess;
+        }
+
+        @Override
+        public String call() {
+            int attempt = attempts.incrementAndGet();
+            if (attempt <= failuresBeforeSuccess) {
+                throw new IllegalStateException("boom on attempt " + attempt);
+            }
+            return "ok";
+        }
+
+        int attemptCount() {
+            return attempts.get();
+        }
+    }
+
+    /** Records each requested delay instead of actually waiting. */
+    private static final class RecordingSleeper implements Sleeper {
+        private final List<Duration> calls = new ArrayList<>();
+        private final boolean interruptOnSleep;
+
+        RecordingSleeper() {
+            this(false);
+        }
+
+        RecordingSleeper(boolean interruptOnSleep) {
+            this.interruptOnSleep = interruptOnSleep;
+        }
+
+        @Override
+        public void sleep(Duration delay) throws InterruptedException {
+            calls.add(delay);
+            if (interruptOnSleep) {
+                throw new InterruptedException("simulated interruption");
+            }
+        }
+
+        List<Duration> calls() {
+            return calls;
+        }
+    }
+}
+
+````
+
+</details>
+
+</details>
+
+</TabItem>
+
+</Tabs>

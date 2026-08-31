@@ -1,0 +1,614 @@
+---
+title: csv
+sidebar_position: 1
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+> Write a Java program that reads sales.csv and prints the sum of the 'amount' column.
+
+## claude-cli&#58;fable
+
+<Tabs>
+
+<TabItem value="baseline-no-ruleset" label="baseline (no ruleset) · 0.84">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests **No** ·
+correct Yes
+
+<details open>
+<summary><code>SalesSum.java</code> · 2 smells</summary>
+
+- `oversized-function` at line 9
+- `high-complexity` at line 9
+
+````java
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+public class SalesSum {
+
+    public static void main(String[] args) {
+        Path file = Path.of(args.length > 0 ? args[0] : "sales.csv");
+
+        try (BufferedReader reader = Files.newBufferedReader(file)) {
+            String headerLine = reader.readLine();
+            if (headerLine == null) {
+                System.err.println("Error: " + file + " is empty.");
+                System.exit(1);
+            }
+
+            int amountIndex = findAmountColumn(headerLine.split(",", -1));
+            if (amountIndex < 0) {
+                System.err.println("Error: no 'amount' column found in header: " + headerLine);
+                System.exit(1);
+            }
+
+            BigDecimal sum = BigDecimal.ZERO;
+            String line;
+            int lineNumber = 1;
+
+            while ((line = reader.readLine()) != null) {
+                lineNumber++;
+                if (line.isBlank()) {
+                    continue;
+                }
+                String[] fields = line.split(",", -1);
+                if (fields.length <= amountIndex || fields[amountIndex].isBlank()) {
+                    System.err.println("Warning: skipping line " + lineNumber + " (missing amount): " + line);
+                    continue;
+                }
+                try {
+                    sum = sum.add(new BigDecimal(fields[amountIndex].trim()));
+                } catch (NumberFormatException e) {
+                    System.err.println("Warning: skipping line " + lineNumber + " (invalid amount): " + line);
+                }
+            }
+
+            System.out.println("Total amount: " + sum.toPlainString());
+        } catch (IOException e) {
+            System.err.println("Error reading " + file + ": " + e.getMessage());
+            System.exit(1);
+        }
+    }
+
+    private static int findAmountColumn(String[] headers) {
+        for (int i = 0; i < headers.length; i++) {
+            if (headers[i].trim().equalsIgnoreCase("amount")) {
+                return i;
+            }
+        }
+        return -1;
+    }
+}
+
+````
+
+</details>
+
+*No tests shipped.*
+
+</TabItem>
+
+<TabItem value="uncle-bob-junior" label="uncle-bob-junior · 1.00">
+
+Gates: valid code Yes ·
+habit-hooks Pass ·
+ships tests Yes ·
+correct Yes
+
+<details open>
+<summary><code>SalesTotal.java</code></summary>
+
+
+````java
+import java.io.IOException;
+import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+
+public class SalesTotal {
+
+    private static final Path SALES_FILE = Path.of("sales.csv");
+    private static final String COLUMN_SEPARATOR = ",";
+    private static final String AMOUNT_COLUMN = "amount";
+
+    public static void main(String[] args) throws IOException {
+        List<String> lines = Files.readAllLines(SALES_FILE);
+        System.out.println(sumAmountColumn(lines));
+    }
+
+    static BigDecimal sumAmountColumn(List<String> lines) {
+        if (lines.isEmpty()) {
+            throw new IllegalArgumentException("CSV is empty: a header row is required");
+        }
+        int amountIndex = amountColumnIndex(lines.get(0));
+        BigDecimal total = BigDecimal.ZERO;
+        for (String row : lines.subList(1, lines.size())) {
+            if (row.isBlank()) {
+                continue;
+            }
+            total = total.add(amountIn(row, amountIndex));
+        }
+        return total;
+    }
+
+    private static int amountColumnIndex(String headerRow) {
+        String[] headers = headerRow.split(COLUMN_SEPARATOR, -1);
+        for (int i = 0; i < headers.length; i++) {
+            if (headers[i].trim().equalsIgnoreCase(AMOUNT_COLUMN)) {
+                return i;
+            }
+        }
+        throw new IllegalArgumentException(
+                "No '" + AMOUNT_COLUMN + "' column in header: " + headerRow);
+    }
+
+    private static BigDecimal amountIn(String row, int amountIndex) {
+        String[] cells = row.split(COLUMN_SEPARATOR, -1);
+        if (amountIndex >= cells.length) {
+            throw new IllegalArgumentException("Row is missing the amount cell: " + row);
+        }
+        return new BigDecimal(cells[amountIndex].trim());
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary>Shipped tests (1 file)</summary>
+
+<details>
+<summary><code>SalesTotalTest.java</code></summary>
+
+
+````java
+import org.junit.jupiter.api.Test;
+
+import java.math.BigDecimal;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
+class SalesTotalTest {
+
+    @Test
+    void sumsAmountColumnWherever_itAppears() {
+        List<String> lines = List.of(
+                "id,amount,region",
+                "participant_001,10.50,NL",
+                "participant_002,4.25,NL");
+        assertEquals(new BigDecimal("14.75"), SalesTotal.sumAmountColumn(lines));
+    }
+
+    @Test
+    void headerMatchIsCaseInsensitive() {
+        List<String> lines = List.of("Amount", "1.00", "2.00");
+        assertEquals(new BigDecimal("3.00"), SalesTotal.sumAmountColumn(lines));
+    }
+
+    @Test
+    void headerOnlyFileSumsToZero() {
+        assertEquals(BigDecimal.ZERO, SalesTotal.sumAmountColumn(List.of("amount")));
+    }
+
+    @Test
+    void blankLinesAreSkipped() {
+        List<String> lines = List.of("amount", "5.00", "", "7.00");
+        assertEquals(new BigDecimal("12.00"), SalesTotal.sumAmountColumn(lines));
+    }
+
+    @Test
+    void emptyFileIsRejected() {
+        assertThrows(IllegalArgumentException.class,
+                () -> SalesTotal.sumAmountColumn(List.of()));
+    }
+
+    @Test
+    void missingAmountHeaderIsRejected() {
+        assertThrows(IllegalArgumentException.class,
+                () -> SalesTotal.sumAmountColumn(List.of("id,price", "1,2.00")));
+    }
+
+    @Test
+    void rowMissingTheAmountCellIsRejected() {
+        assertThrows(IllegalArgumentException.class,
+                () -> SalesTotal.sumAmountColumn(List.of("id,amount", "participant_001")));
+    }
+
+    @Test
+    void nonNumericAmountIsRejected() {
+        assertThrows(NumberFormatException.class,
+                () -> SalesTotal.sumAmountColumn(List.of("amount", "not-a-number")));
+    }
+}
+
+````
+
+</details>
+
+</details>
+
+</TabItem>
+
+</Tabs>
+
+## claude-cli&#58;haiku
+
+<Tabs>
+
+<TabItem value="baseline-no-ruleset" label="baseline (no ruleset) · 0.86">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests **No** ·
+correct Yes
+
+<details open>
+<summary><code>SalesSummarizer.java</code> · 1 smell</summary>
+
+- `oversized-function` at line 6
+
+````java
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.io.IOException;
+
+public class SalesSummarizer {
+    public static void main(String[] args) {
+        String filePath = "sales.csv";
+        double sum = 0.0;
+        
+        try (BufferedReader reader = new BufferedReader(new FileReader(filePath))) {
+            String line;
+            int amountColumnIndex = -1;
+            
+            // Read header line to find amount column
+            if ((line = reader.readLine()) != null) {
+                String[] headers = line.split(",");
+                for (int i = 0; i < headers.length; i++) {
+                    if (headers[i].trim().equalsIgnoreCase("amount")) {
+                        amountColumnIndex = i;
+                        break;
+                    }
+                }
+            }
+            
+            if (amountColumnIndex == -1) {
+                System.out.println("Error: 'amount' column not found");
+                return;
+            }
+            
+            // Read data lines and sum the amount column
+            while ((line = reader.readLine()) != null) {
+                String[] values = line.split(",");
+                if (values.length > amountColumnIndex) {
+                    try {
+                        sum += Double.parseDouble(values[amountColumnIndex].trim());
+                    } catch (NumberFormatException e) {
+                        System.out.println("Warning: Could not parse value: " + values[amountColumnIndex]);
+                    }
+                }
+            }
+            
+            System.out.println("Sum of amount column: " + sum);
+            
+        } catch (IOException e) {
+            System.err.println("Error reading file: " + e.getMessage());
+        }
+    }
+}
+
+````
+
+</details>
+
+*No tests shipped.*
+
+</TabItem>
+
+<TabItem value="uncle-bob-junior" label="uncle-bob-junior · 0.86">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests **No** ·
+correct Yes
+
+<details open>
+<summary><code>SalesSum.java</code> · 1 smell</summary>
+
+- `oversized-function` at line 6
+
+````java
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.io.IOException;
+
+public class SalesSum {
+    public static void main(String[] args) {
+        String filePath = "sales.csv";
+        double totalAmount = 0.0;
+        int amountColumnIndex = -1;
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(filePath))) {
+            String line;
+            boolean isHeader = true;
+
+            while ((line = reader.readLine()) != null) {
+                String[] values = line.split(",");
+
+                // Find the 'amount' column index from header
+                if (isHeader) {
+                    for (int i = 0; i < values.length; i++) {
+                        if (values[i].trim().equalsIgnoreCase("amount")) {
+                            amountColumnIndex = i;
+                            break;
+                        }
+                    }
+                    if (amountColumnIndex == -1) {
+                        System.err.println("Error: 'amount' column not found");
+                        return;
+                    }
+                    isHeader = false;
+                    continue;
+                }
+
+                // Parse and sum the amount column
+                try {
+                    double amount = Double.parseDouble(values[amountColumnIndex].trim());
+                    totalAmount += amount;
+                } catch (NumberFormatException e) {
+                    System.err.println("Warning: Invalid number skipped: " + values[amountColumnIndex]);
+                }
+            }
+
+            System.out.println("Total Amount: " + totalAmount);
+        } catch (IOException e) {
+            System.err.println("Error reading file: " + e.getMessage());
+        }
+    }
+}
+
+````
+
+</details>
+
+*No tests shipped.*
+
+</TabItem>
+
+</Tabs>
+
+## claude-cli&#58;sonnet
+
+<Tabs>
+
+<TabItem value="baseline-no-ruleset" label="baseline (no ruleset) · 0.86">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests **No** ·
+correct Yes
+
+<details open>
+<summary><code>SalesSum.java</code> · 1 smell</summary>
+
+- `oversized-function` at line 9
+
+````java
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.io.IOException;
+import java.util.Arrays;
+import java.util.List;
+
+public class SalesSum {
+
+    public static void main(String[] args) {
+        String path = args.length > 0 ? args[0] : "sales.csv";
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(path))) {
+            String headerLine = reader.readLine();
+            if (headerLine == null) {
+                System.out.println("File is empty.");
+                return;
+            }
+
+            List<String> headers = Arrays.asList(headerLine.split(","));
+            int amountIndex = headers.indexOf("amount");
+            if (amountIndex == -1) {
+                System.out.println("No 'amount' column found in header.");
+                return;
+            }
+
+            double sum = 0.0;
+            String line;
+            int lineNumber = 1;
+
+            while ((line = reader.readLine()) != null) {
+                lineNumber++;
+                if (line.isBlank()) {
+                    continue;
+                }
+
+                String[] fields = line.split(",");
+                if (amountIndex >= fields.length) {
+                    System.out.println("Skipping malformed line " + lineNumber + ": " + line);
+                    continue;
+                }
+
+                try {
+                    sum += Double.parseDouble(fields[amountIndex].trim());
+                } catch (NumberFormatException e) {
+                    System.out.println("Skipping non-numeric amount on line " + lineNumber + ": " + fields[amountIndex]);
+                }
+            }
+
+            System.out.printf("Sum of 'amount': %.2f%n", sum);
+
+        } catch (IOException e) {
+            System.err.println("Error reading file '" + path + "': " + e.getMessage());
+        }
+    }
+}
+
+````
+
+</details>
+
+*No tests shipped.*
+
+</TabItem>
+
+<TabItem value="uncle-bob-junior" label="uncle-bob-junior · 1.00">
+
+Gates: valid code Yes ·
+habit-hooks Pass ·
+ships tests Yes ·
+correct Yes
+
+<details open>
+<summary><code>SalesTotal.java</code></summary>
+
+
+````java
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+
+public final class SalesTotal {
+
+    private static final String SALES_CSV_PATH = "sales.csv";
+    private static final String COLUMN_DELIMITER = ",";
+    private static final String AMOUNT_COLUMN_NAME = "amount";
+
+    public static void main(String[] args) throws IOException {
+        List<String> lines = Files.readAllLines(Path.of(SALES_CSV_PATH));
+        System.out.println(sumAmountColumn(lines));
+    }
+
+    static double sumAmountColumn(List<String> lines) {
+        if (lines.isEmpty()) {
+            return 0.0;
+        }
+        int amountColumnIndex = findAmountColumnIndex(lines.get(0));
+        double total = 0.0;
+        for (String line : lines.subList(1, lines.size())) {
+            if (line.isBlank()) {
+                continue;
+            }
+            total += parseAmount(line, amountColumnIndex);
+        }
+        return total;
+    }
+
+    private static int findAmountColumnIndex(String headerLine) {
+        String[] headers = headerLine.split(COLUMN_DELIMITER);
+        for (int i = 0; i < headers.length; i++) {
+            if (headers[i].trim().equalsIgnoreCase(AMOUNT_COLUMN_NAME)) {
+                return i;
+            }
+        }
+        throw new IllegalArgumentException("CSV is missing an '" + AMOUNT_COLUMN_NAME + "' column");
+    }
+
+    private static double parseAmount(String line, int amountColumnIndex) {
+        String[] fields = line.split(COLUMN_DELIMITER);
+        return Double.parseDouble(fields[amountColumnIndex].trim());
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary>Shipped tests (1 file)</summary>
+
+<details>
+<summary><code>SalesTotalTest.java</code></summary>
+
+
+````java
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
+class SalesTotalTest {
+
+    @Test
+    void sumsAmountsAcrossRows() {
+        List<String> lines = List.of(
+                "id,amount,note",
+                "1,10.50,a",
+                "2,5.25,b"
+        );
+
+        assertEquals(15.75, SalesTotal.sumAmountColumn(lines), 0.0001);
+    }
+
+    @Test
+    void findsAmountColumnRegardlessOfPosition() {
+        List<String> lines = List.of(
+                "amount,id",
+                "3.00,1"
+        );
+
+        assertEquals(3.00, SalesTotal.sumAmountColumn(lines), 0.0001);
+    }
+
+    @Test
+    void returnsZeroForHeaderOnlyFile() {
+        List<String> lines = List.of("id,amount");
+
+        assertEquals(0.0, SalesTotal.sumAmountColumn(lines), 0.0001);
+    }
+
+    @Test
+    void returnsZeroForEmptyFile() {
+        assertEquals(0.0, SalesTotal.sumAmountColumn(List.of()), 0.0001);
+    }
+
+    @Test
+    void skipsBlankLines() {
+        List<String> lines = List.of(
+                "id,amount",
+                "1,2.00",
+                "",
+                "2,3.00"
+        );
+
+        assertEquals(5.00, SalesTotal.sumAmountColumn(lines), 0.0001);
+    }
+
+    @Test
+    void throwsWhenAmountColumnMissing() {
+        List<String> lines = List.of("id,note", "1,a");
+
+        assertThrows(IllegalArgumentException.class, () -> SalesTotal.sumAmountColumn(lines));
+    }
+}
+
+````
+
+</details>
+
+</details>
+
+</TabItem>
+
+</Tabs>

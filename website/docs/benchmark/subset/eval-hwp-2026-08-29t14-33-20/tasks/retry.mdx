@@ -1,0 +1,278 @@
+---
+title: retry
+sidebar_position: 7
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+> Write a reusable retry helper in Java&#58; it runs an operation, retries it up to a maximum number of attempts when it throws an exception, and waits a fixed delay between attempts.
+
+## claude-cli&#58;haiku
+
+<Tabs>
+
+<TabItem value="baseline-no-ruleset" label="baseline (no ruleset) · 0.88">
+
+Gates: valid code Yes ·
+habit-hooks Pass ·
+ships tests **No** ·
+correct Yes
+
+<details open>
+<summary><code>RetryExample.java</code></summary>
+
+
+````java
+public class RetryExample {
+    public static void main(String[] args) throws Exception {
+        RetryHelper retrier = new RetryHelper(3, 1000); // 3 attempts, 1 second delay
+        
+        // Operation with return value
+        String data = retrier.execute(() -> fetchFromAPI());
+        System.out.println("Result: " + data);
+        
+        // Operation without return value
+        retrier.execute(() -> writeToDatabase());
+        System.out.println("Success!");
+    }
+    
+    static String fetchFromAPI() throws Exception {
+        if (Math.random() < 0.7) {
+            throw new RuntimeException("API temporarily unavailable");
+        }
+        return "Data";
+    }
+    
+    static void writeToDatabase() throws Exception {
+        if (Math.random() < 0.6) {
+            throw new Exception("Database connection failed");
+        }
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>RetryHelper.java</code></summary>
+
+
+````java
+public class RetryHelper {
+    private final int maxAttempts;
+    private final long delayMs;
+    
+    public RetryHelper(int maxAttempts, long delayMs) {
+        if (maxAttempts < 1) {
+            throw new IllegalArgumentException("maxAttempts must be at least 1");
+        }
+        if (delayMs < 0) {
+            throw new IllegalArgumentException("delayMs cannot be negative");
+        }
+        this.maxAttempts = maxAttempts;
+        this.delayMs = delayMs;
+    }
+    
+    public <T> T execute(Callable<T> operation) throws Exception {
+        Exception lastException = null;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                return operation.call();
+            } catch (Exception e) {
+                lastException = e;
+                if (attempt < maxAttempts) {
+                    Thread.sleep(delayMs);
+                }
+            }
+        }
+        throw lastException;
+    }
+    
+    public void execute(RunnableWithException operation) throws Exception {
+        Exception lastException = null;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                operation.run();
+                return;
+            } catch (Exception e) {
+                lastException = e;
+                if (attempt < maxAttempts) {
+                    Thread.sleep(delayMs);
+                }
+            }
+        }
+        throw lastException;
+    }
+    
+    @FunctionalInterface
+    public interface RunnableWithException {
+        void run() throws Exception;
+    }
+}
+
+````
+
+</details>
+
+*No tests shipped.*
+
+</TabItem>
+
+<TabItem value="uncle-bob-junior" label="uncle-bob-junior · 1.00">
+
+Gates: valid code Yes ·
+habit-hooks Pass ·
+ships tests Yes ·
+correct Yes
+
+<details open>
+<summary><code>RetryHelper.java</code></summary>
+
+
+````java
+import java.util.concurrent.Callable;
+
+public class RetryHelper {
+    private static final int DEFAULT_MAX_ATTEMPTS = 3;
+    private static final long DEFAULT_DELAY_MILLIS = 100;
+    private static final int MIN_ATTEMPTS = 1;
+    
+    public static <T> T executeWithRetry(Callable<T> operation) throws Exception {
+        return executeWithRetry(operation, DEFAULT_MAX_ATTEMPTS, DEFAULT_DELAY_MILLIS);
+    }
+    
+    public static <T> T executeWithRetry(Callable<T> operation, int maxAttempts, long delayMillis)
+            throws Exception {
+        validateAttempts(maxAttempts);
+        
+        Exception lastException = null;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                return operation.call();
+            } catch (Exception e) {
+                lastException = e;
+                if (attempt < maxAttempts) {
+                    sleep(delayMillis);
+                }
+            }
+        }
+        
+        throw lastException;
+    }
+    
+    private static void validateAttempts(int maxAttempts) {
+        if (maxAttempts < MIN_ATTEMPTS) {
+            throw new IllegalArgumentException("maxAttempts must be at least " + MIN_ATTEMPTS);
+        }
+    }
+    
+    private static void sleep(long delayMillis) {
+        try {
+            Thread.sleep(delayMillis);
+        } catch (InterruptedException e) {
+            // Restore interrupt status for outer handlers
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Retry sleep was interrupted", e);
+        }
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary>Shipped tests (1 file)</summary>
+
+<details>
+<summary><code>RetryHelperTest.java</code></summary>
+
+
+````java
+import org.junit.jupiter.api.Test;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+public class RetryHelperTest {
+    
+    @Test
+    public void succeedsOnFirstAttempt() throws Exception {
+        AtomicInteger callCount = new AtomicInteger(0);
+        
+        String result = RetryHelper.executeWithRetry(
+            () -> {
+                callCount.incrementAndGet();
+                return "success";
+            }
+        );
+        
+        assertEquals("success", result);
+        assertEquals(1, callCount.get());
+    }
+    
+    @Test
+    public void retriesAndSucceedsOnThirdAttempt() throws Exception {
+        AtomicInteger callCount = new AtomicInteger(0);
+        
+        Integer result = RetryHelper.executeWithRetry(
+            () -> {
+                callCount.incrementAndGet();
+                if (callCount.get() < 3) {
+                    throw new RuntimeException("not yet");
+                }
+                return 42;
+            },
+            3,
+            10
+        );
+        
+        assertEquals(42, result);
+        assertEquals(3, callCount.get());
+    }
+    
+    @Test
+    public void throwsExceptionAfterMaxAttemptsExceeded() {
+        assertThrows(RuntimeException.class, () -> {
+            RetryHelper.executeWithRetry(
+                () -> { throw new RuntimeException("permanent failure"); },
+                2,
+                10
+            );
+        });
+    }
+    
+    @Test
+    public void validatesMaxAttemptsGreaterThanZero() {
+        assertThrows(IllegalArgumentException.class, () -> {
+            RetryHelper.executeWithRetry(() -> "ok", 0, 100);
+        });
+    }
+    
+    @Test
+    public void usesDefaultParametersWhenNotSpecified() throws Exception {
+        AtomicInteger callCount = new AtomicInteger(0);
+        
+        String result = RetryHelper.executeWithRetry(
+            () -> {
+                callCount.incrementAndGet();
+                return "done";
+            }
+        );
+        
+        assertEquals("done", result);
+        assertEquals(1, callCount.get());
+    }
+}
+
+````
+
+</details>
+
+</details>
+
+</TabItem>
+
+</Tabs>

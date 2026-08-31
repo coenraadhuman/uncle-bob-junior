@@ -1,6 +1,6 @@
 {
   "name": "uncle-bob-junior",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Clean-code mode. Enforces code that is easy to read, simple to understand, and safe to change: one job per function, intent-revealing names, flat flow, tests.",
   "author": {
     "name": "Coenraad Human",

@@ -1,0 +1,314 @@
+---
+title: ratelimit
+sidebar_position: 6
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+> Add rate limiting to a Java HTTP handler so each client can't make more than a few requests per minute.
+
+## claude-cli&#58;haiku
+
+<Tabs>
+
+<TabItem value="baseline-no-ruleset" label="baseline (no ruleset) · 0.84">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests **No** ·
+correct Yes
+
+<details open>
+<summary><code>RateLimitedHttpHandler-2.java</code> · 1 smell</summary>
+
+- `oversized-function` at line 35
+
+````java
+import java.util.concurrent.ConcurrentHashMap;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
+
+public class RateLimitedHttpHandler implements HttpHandler {
+    private static final int MAX_REQUESTS = 10;
+    private static final long WINDOW_MS = 60_000; // 1 minute
+    private final ConcurrentHashMap<String, ClientLimiter> limiters = new ConcurrentHashMap<>();
+
+    @Override
+    public void handle(HttpExchange exchange) throws java.io.IOException {
+        String clientIp = exchange.getRemoteAddress().getAddress().getHostAddress();
+        ClientLimiter limiter = limiters.computeIfAbsent(clientIp, k -> new ClientLimiter());
+
+        if (limiter.tryConsume()) {
+            handleRequest(exchange);
+        } else {
+            exchange.getResponseHeaders().set("Retry-After", "60");
+            exchange.sendResponseHeaders(429, -1);
+        }
+    }
+
+    private void handleRequest(HttpExchange exchange) throws java.io.IOException {
+        String response = "OK";
+        exchange.sendResponseHeaders(200, response.length());
+        exchange.getResponseBody().write(response.getBytes());
+        exchange.close();
+    }
+
+    private static class ClientLimiter {
+        private final long[] timestamps = new long[MAX_REQUESTS];
+        private int index = 0;
+        private boolean filled = false;
+
+        synchronized boolean tryConsume() {
+            long now = System.currentTimeMillis();
+            if (!filled && index < MAX_REQUESTS) {
+                timestamps[index++] = now;
+                if (index == MAX_REQUESTS) filled = true;
+                return true;
+            }
+            if (now - timestamps[index] > WINDOW_MS) {
+                timestamps[index] = now;
+                index = (index + 1) % MAX_REQUESTS;
+                return true;
+            }
+            return false;
+        }
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>RateLimitedHttpHandler.java</code> · 1 smell</summary>
+
+- `unused-import` at line 1
+
+````java
+import io.github.bucket4j.*;
+import java.util.concurrent.ConcurrentHashMap;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
+
+public class RateLimitedHttpHandler implements HttpHandler {
+    private final ConcurrentHashMap<String, Bucket> buckets = new ConcurrentHashMap<>();
+    private final Bandwidth limit = Bandwidth.simple(10, java.time.Duration.ofMinutes(1));
+
+    @Override
+    public void handle(HttpExchange exchange) throws java.io.IOException {
+        String clientIp = exchange.getRemoteAddress().getAddress().getHostAddress();
+        Bucket bucket = buckets.computeIfAbsent(clientIp, k -> Bucket4j.builder()
+                .addSimpleState("requests", limit)
+                .build());
+
+        if (bucket.tryConsume(1)) {
+            handleRequest(exchange);
+        } else {
+            exchange.getResponseHeaders().set("Retry-After", "60");
+            exchange.sendResponseHeaders(429, -1);
+        }
+    }
+
+    private void handleRequest(HttpExchange exchange) throws java.io.IOException {
+        String response = "OK";
+        exchange.sendResponseHeaders(200, response.length());
+        exchange.getResponseBody().write(response.getBytes());
+        exchange.close();
+    }
+}
+
+````
+
+</details>
+
+*No tests shipped.*
+
+</TabItem>
+
+<TabItem value="uncle-bob-junior" label="uncle-bob-junior · 0.97">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests Yes ·
+correct Yes
+
+<details open>
+<summary><code>RateLimiter.java</code></summary>
+
+
+````java
+import java.util.*;
+import java.util.concurrent.*;
+
+public class RateLimiter {
+    private static final int MAX_REQUESTS = 5;
+    private static final long WINDOW_MILLIS = 60_000;
+    
+    private final Map<String, Deque<Long>> clientRequests = new ConcurrentHashMap<>();
+    
+    public boolean allowRequest(String clientId) {
+        long now = System.currentTimeMillis();
+        Deque<Long> timestamps = clientRequests.computeIfAbsent(clientId, k -> new ConcurrentLinkedDeque<>());
+        
+        while (!timestamps.isEmpty() && timestamps.peekFirst() < now - WINDOW_MILLIS) {
+            timestamps.removeFirst();
+        }
+        
+        if (timestamps.size() < MAX_REQUESTS) {
+            timestamps.addLast(now);
+            return true;
+        }
+        
+        return false;
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>RateLimitingFilter.java</code> · 2 smells</summary>
+
+- `unused-import` at line 1
+- `unused-import` at line 2
+
+````java
+import jakarta.servlet.*;
+import jakarta.servlet.http.*;
+import java.io.IOException;
+
+public class RateLimitingFilter implements Filter {
+    private final RateLimiter limiter = new RateLimiter();
+    
+    @Override
+    public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
+            throws IOException, ServletException {
+        HttpServletRequest httpRequest = (HttpServletRequest) request;
+        HttpServletResponse httpResponse = (HttpServletResponse) response;
+        
+        String clientId = getClientId(httpRequest);
+        
+        if (!limiter.allowRequest(clientId)) {
+            httpResponse.sendError(429, "Too Many Requests");
+            return;
+        }
+        
+        chain.doFilter(request, response);
+    }
+    
+    private String getClientId(HttpServletRequest request) {
+        String forwarded = request.getHeader("X-Forwarded-For");
+        return (forwarded != null && !forwarded.isEmpty()) ? forwarded : request.getRemoteAddr();
+    }
+    
+    @Override
+    public void init(FilterConfig config) {}
+    
+    @Override
+    public void destroy() {}
+}
+
+````
+
+</details>
+
+<details>
+<summary>Shipped tests (1 file)</summary>
+
+<details>
+<summary><code>RateLimiterTest.java</code></summary>
+
+
+````java
+import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import java.util.*;
+import java.util.concurrent.*;
+
+class RateLimiterTest {
+    private RateLimiter limiter;
+    
+    @BeforeEach
+    void setUp() {
+        limiter = new RateLimiter();
+    }
+    
+    @Test
+    void allowsRequestsWithinLimit() {
+        for (int i = 0; i < 5; i++) {
+            assertTrue(limiter.allowRequest("client1"));
+        }
+    }
+    
+    @Test
+    void rejectsRequestsExceedingLimit() {
+        for (int i = 0; i < 5; i++) {
+            limiter.allowRequest("client1");
+        }
+        
+        assertFalse(limiter.allowRequest("client1"));
+    }
+    
+    @Test
+    void tracksDifferentClientsIndependently() {
+        for (int i = 0; i < 5; i++) {
+            assertTrue(limiter.allowRequest("client1"));
+            assertTrue(limiter.allowRequest("client2"));
+        }
+        
+        assertFalse(limiter.allowRequest("client1"));
+        assertFalse(limiter.allowRequest("client2"));
+    }
+    
+    @Test
+    void handlesConcurrentRequests() throws InterruptedException {
+        List<Boolean> results = Collections.synchronizedList(new ArrayList<>());
+        
+        Runnable fillLimit = () -> {
+            for (int i = 0; i < 3; i++) {
+                results.add(limiter.allowRequest("client1"));
+            }
+        };
+        
+        Thread t1 = new Thread(fillLimit);
+        Thread t2 = new Thread(fillLimit);
+        t1.start();
+        t2.start();
+        t1.join();
+        t2.join();
+        
+        long allowed = results.stream().filter(b -> b).count();
+        assertEquals(5, allowed);
+    }
+    
+    @Test
+    void returnsOldRequestsToPool() throws InterruptedException {
+        limiter.allowRequest("client1");
+        limiter.allowRequest("client1");
+        
+        Thread.sleep(10);
+        
+        limiter.allowRequest("client1");
+        limiter.allowRequest("client1");
+        limiter.allowRequest("client1");
+        
+        assertFalse(limiter.allowRequest("client1"));
+        
+        Thread.sleep(60_010);
+        
+        assertTrue(limiter.allowRequest("client1"));
+    }
+}
+
+````
+
+</details>
+
+</details>
+
+</TabItem>
+
+</Tabs>

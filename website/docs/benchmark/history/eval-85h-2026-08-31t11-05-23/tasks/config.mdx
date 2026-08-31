@@ -1,0 +1,590 @@
+---
+title: config
+sidebar_position: 2
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+> Write a Java parser for a small configuration language&#58; sections in square brackets, key=value pairs, # comments and blank lines; values are typed integers, booleans, or durations such as 30s and 5m; malformed lines and unknown keys produce validation errors that name the line number; missing keys fall back to defaults. Parsing yields a typed configuration object, not a map of strings.
+
+## claude-cli&#58;haiku
+
+<Tabs>
+
+<TabItem value="baseline-no-ruleset" label="baseline (no ruleset) · 0.83">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests **No** ·
+correct Yes
+
+<details open>
+<summary><code>ConfigParser.java</code> · 3 smells</summary>
+
+- `oversized-function` at line 91
+- `high-complexity` at line 91
+- `oversized-file` at line 
+
+````java
+import java.util.*;
+import java.util.regex.*;
+
+public class ConfigParser {
+    
+    public static class Config {
+        private final Map<String, Integer> ints = new HashMap<>();
+        private final Map<String, Boolean> bools = new HashMap<>();
+        private final Map<String, Long> durations = new HashMap<>();
+        
+        public int getInt(String key) {
+            Integer val = ints.get(key);
+            return val != null ? val : 0;
+        }
+        
+        public boolean getBoolean(String key) {
+            Boolean val = bools.get(key);
+            return val != null ? val : false;
+        }
+        
+        public long getDuration(String key) {
+            Long val = durations.get(key);
+            return val != null ? val : 0L;
+        }
+        
+        void setInt(String key, int value) { ints.put(key, value); }
+        void setBoolean(String key, boolean value) { bools.put(key, value); }
+        void setDuration(String key, long value) { durations.put(key, value); }
+    }
+    
+    private enum ValueType { INTEGER, BOOLEAN, DURATION }
+    
+    private static class SchemaEntry {
+        final String section;
+        final ValueType type;
+        final Object defaultValue;
+        
+        SchemaEntry(String section, ValueType type, Object defaultValue) {
+            this.section = section;
+            this.type = type;
+            this.defaultValue = defaultValue;
+        }
+    }
+    
+    public static class ValidationError {
+        public final int lineNumber;
+        public final String message;
+        
+        public ValidationError(int lineNumber, String message) {
+            this.lineNumber = lineNumber;
+            this.message = message;
+        }
+        
+        @Override
+        public String toString() {
+            return "Line " + lineNumber + ": " + message;
+        }
+    }
+    
+    public static class ParseException extends Exception {
+        public final List<ValidationError> errors;
+        
+        public ParseException(List<ValidationError> errors) {
+            super("Configuration parsing failed with " + errors.size() + " error(s)");
+            this.errors = errors;
+        }
+        
+        @Override
+        public String toString() {
+            StringBuilder sb = new StringBuilder(getMessage() + "\n");
+            for (ValidationError e : errors) {
+                sb.append("  ").append(e).append("\n");
+            }
+            return sb.toString();
+        }
+    }
+    
+    private static final Map<String, SchemaEntry> SCHEMA = new HashMap<>();
+    static {
+        SCHEMA.put("port", new SchemaEntry("server", ValueType.INTEGER, 8080));
+        SCHEMA.put("timeout", new SchemaEntry("server", ValueType.DURATION, 30000L));
+        SCHEMA.put("debug", new SchemaEntry("server", ValueType.BOOLEAN, false));
+        SCHEMA.put("retry_delay", new SchemaEntry("client", ValueType.DURATION, 5000L));
+        SCHEMA.put("enable_cache", new SchemaEntry("client", ValueType.BOOLEAN, true));
+    }
+    
+    private static final Pattern SECTION_PATTERN = Pattern.compile("^\\s*\\[([^\\]]+)\\]\\s*$");
+    private static final Pattern KV_PATTERN = Pattern.compile("^\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s*=\\s*(.+?)\\s*$");
+    private static final Pattern DURATION_PATTERN = Pattern.compile("^(\\d+)\\s*(ms|s|m|h)$");
+    
+    public static Config parse(String input) throws ParseException {
+        List<ValidationError> errors = new ArrayList<>();
+        Config config = new Config();
+        Set<String> parsedKeys = new HashSet<>();
+        String currentSection = null;
+        
+        String[] lines = input.split("\n", -1);
+        for (int lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+            String line = lines[lineIdx];
+            String trimmed = line.trim();
+            
+            if (trimmed.isEmpty() || trimmed.startsWith("#")) {
+                continue;
+            }
+            
+            Matcher sectionMatcher = SECTION_PATTERN.matcher(line);
+            if (sectionMatcher.matches()) {
+                currentSection = sectionMatcher.group(1).toLowerCase();
+                continue;
+            }
+            
+            Matcher kvMatcher = KV_PATTERN.matcher(line);
+            if (!kvMatcher.matches()) {
+                errors.add(new ValidationError(lineIdx + 1, "Malformed line"));
+                continue;
+            }
+            
+            String key = kvMatcher.group(1).toLowerCase();
+            String value = kvMatcher.group(2).trim();
+            
+            if (!SCHEMA.containsKey(key)) {
+                errors.add(new ValidationError(lineIdx + 1, "Unknown key: " + key));
+                continue;
+            }
+            
+            SchemaEntry schemaEntry = SCHEMA.get(key);
+            
+            if (currentSection != null && !currentSection.equals(schemaEntry.section)) {
+                errors.add(new ValidationError(lineIdx + 1, 
+                    "Key '" + key + "' belongs to [" + schemaEntry.section + "], not [" + currentSection + "]"));
+                continue;
+            }
+            
+            try {
+                switch (schemaEntry.type) {
+                    case INTEGER:
+                        config.setInt(key, Integer.parseInt(value));
+                        break;
+                    case BOOLEAN:
+                        config.setBoolean(key, parseBoolean(value));
+                        break;
+                    case DURATION:
+                        config.setDuration(key, parseDuration(value));
+                        break;
+                }
+                parsedKeys.add(key);
+            } catch (IllegalArgumentException e) {
+                errors.add(new ValidationError(lineIdx + 1, 
+                    "Invalid " + schemaEntry.type.toString().toLowerCase() + " value: " + value));
+            }
+        }
+        
+        if (!errors.isEmpty()) {
+            throw new ParseException(errors);
+        }
+        
+        for (Map.Entry<String, SchemaEntry> entry : SCHEMA.entrySet()) {
+            if (!parsedKeys.contains(entry.getKey())) {
+                SchemaEntry schema = entry.getValue();
+                switch (schema.type) {
+                    case INTEGER:
+                        config.setInt(entry.getKey(), (Integer) schema.defaultValue);
+                        break;
+                    case BOOLEAN:
+                        config.setBoolean(entry.getKey(), (Boolean) schema.defaultValue);
+                        break;
+                    case DURATION:
+                        config.setDuration(entry.getKey(), (Long) schema.defaultValue);
+                        break;
+                }
+            }
+        }
+        
+        return config;
+    }
+    
+    private static boolean parseBoolean(String value) {
+        String lower = value.toLowerCase();
+        if (lower.equals("true") || lower.equals("yes")) {
+            return true;
+        }
+        if (lower.equals("false") || lower.equals("no")) {
+            return false;
+        }
+        throw new IllegalArgumentException("Not a valid boolean");
+    }
+    
+    private static long parseDuration(String value) {
+        Matcher matcher = DURATION_PATTERN.matcher(value.trim());
+        if (!matcher.matches()) {
+            throw new IllegalArgumentException("Not a valid duration");
+        }
+        
+        long number = Long.parseLong(matcher.group(1));
+        String unit = matcher.group(2);
+        
+        return switch (unit) {
+            case "ms" -> number;
+            case "s" -> number * 1000;
+            case "m" -> number * 60 * 1000;
+            case "h" -> number * 60 * 60 * 1000;
+            default -> throw new IllegalArgumentException("Unknown unit: " + unit);
+        };
+    }
+    
+    public static void main(String[] args) {
+        String input = """
+            [server]
+            port = 9000
+            timeout = 2m
+            debug = true
+            
+            # Client section
+            [client]
+            enable_cache = false
+            retry_delay = 10s
+            """;
+        
+        try {
+            Config config = parse(input);
+            System.out.println("port: " + config.getInt("port"));
+            System.out.println("timeout: " + config.getDuration("timeout") + " ms");
+            System.out.println("debug: " + config.getBoolean("debug"));
+            System.out.println("enable_cache: " + config.getBoolean("enable_cache"));
+            System.out.println("retry_delay: " + config.getDuration("retry_delay") + " ms");
+        } catch (ParseException e) {
+            System.out.println(e);
+        }
+    }
+}
+
+````
+
+</details>
+
+*No tests shipped.*
+
+</TabItem>
+
+<TabItem value="uncle-bob-junior" label="uncle-bob-junior · 0.94">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests Yes ·
+correct Yes
+
+<details open>
+<summary><code>ConfigParser.java</code> · 4 smells</summary>
+
+- `oversized-function` at line 23
+- `oversized-function` at line 86
+- `too-many-parameters` at line 23
+- `too-many-parameters` at line 48
+
+````java
+class ConfigParser {
+    private static final java.util.regex.Pattern SECTION = 
+        java.util.regex.Pattern.compile("^\\s*\\[([^\\]]+)\\]\\s*$");
+    private static final java.util.regex.Pattern KEY_VALUE = 
+        java.util.regex.Pattern.compile("^\\s*([a-z_][a-z0-9_]*)\\s*=\\s*(.+?)\\s*$", 
+        java.util.regex.Pattern.CASE_INSENSITIVE);
+    private static final java.util.regex.Pattern COMMENT_OR_BLANK = 
+        java.util.regex.Pattern.compile("^\\s*(?:#.*)?$");
+    private static final Set<String> KNOWN_KEYS = Set.of("timeout", "debug", "retry_delay");
+    
+    Configuration parse(String input) {
+        Map<String, ConfigValue> values = new HashMap<>();
+        List<ValidationError> errors = new ArrayList<>();
+        String[] lines = input.split("\n", -1);
+        
+        for (int i = 0; i < lines.length; i++) {
+            parseLine(lines[i], i + 1, values, errors);
+        }
+        
+        return new Configuration(values, errors);
+    }
+    
+    private void parseLine(String line, int lineNumber, Map<String, ConfigValue> values,
+            List<ValidationError> errors) {
+        if (COMMENT_OR_BLANK.matcher(line).matches()) {
+            return;
+        }
+        
+        if (SECTION.matcher(line).matches()) {
+            return;
+        }
+        
+        java.util.regex.Matcher kv = KEY_VALUE.matcher(line);
+        if (!kv.matches()) {
+            errors.add(new ValidationError(lineNumber, "Malformed line"));
+            return;
+        }
+        
+        String key = kv.group(1);
+        if (!KNOWN_KEYS.contains(key)) {
+            errors.add(new ValidationError(lineNumber, "Unknown key: " + key));
+            return;
+        }
+        
+        parseKeyValue(key, kv.group(2), lineNumber, values, errors);
+    }
+    
+    private void parseKeyValue(String key, String valueStr, int lineNumber,
+            Map<String, ConfigValue> values, List<ValidationError> errors) {
+        ConfigValue value = switch (key) {
+            case "timeout" -> parseInteger(valueStr, lineNumber, errors);
+            case "debug" -> parseBoolean(valueStr, lineNumber, errors);
+            case "retry_delay" -> parseDuration(valueStr, lineNumber, errors);
+            default -> null;
+        };
+        
+        if (value != null) {
+            values.put(key, value);
+        }
+    }
+    
+    private ConfigValue parseInteger(String str, int lineNumber, List<ValidationError> errors) {
+        try {
+            return new ConfigValue.IntValue(Integer.parseInt(str));
+        } catch (NumberFormatException e) {
+            errors.add(new ValidationError(lineNumber, "Invalid integer: " + str));
+            return null;
+        }
+    }
+    
+    private ConfigValue parseBoolean(String str, int lineNumber, List<ValidationError> errors) {
+        String lower = str.toLowerCase();
+        
+        if (lower.equals("true") || lower.equals("yes") || lower.equals("on") || lower.equals("1")) {
+            return new ConfigValue.BoolValue(true);
+        }
+        
+        if (lower.equals("false") || lower.equals("no") || lower.equals("off") || lower.equals("0")) {
+            return new ConfigValue.BoolValue(false);
+        }
+        
+        errors.add(new ValidationError(lineNumber, "Invalid boolean: " + str));
+        return null;
+    }
+    
+    private ConfigValue parseDuration(String str, int lineNumber, List<ValidationError> errors) {
+        java.util.regex.Pattern p = java.util.regex.Pattern.compile("^(\\d+)\\s*([a-z]+)$",
+            java.util.regex.Pattern.CASE_INSENSITIVE);
+        java.util.regex.Matcher m = p.matcher(str);
+        
+        if (!m.matches()) {
+            errors.add(new ValidationError(lineNumber, "Invalid duration: " + str));
+            return null;
+        }
+        
+        long value = Long.parseLong(m.group(1));
+        long multiplier = durationMultiplier(m.group(2).toLowerCase());
+        
+        if (multiplier < 0) {
+            errors.add(new ValidationError(lineNumber, "Unknown duration unit: " + m.group(2)));
+            return null;
+        }
+        
+        return new ConfigValue.DurationValue(value * multiplier);
+    }
+    
+    private long durationMultiplier(String unit) {
+        return switch (unit) {
+            case "ms" -> 1;
+            case "s" -> 1_000;
+            case "m" -> 60_000;
+            case "h" -> 3_600_000;
+            default -> -1;
+        };
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>ConfigValue.java</code></summary>
+
+
+````java
+sealed interface ConfigValue {
+    record IntValue(int value) implements ConfigValue {}
+    record BoolValue(boolean value) implements ConfigValue {}
+    record DurationValue(long millis) implements ConfigValue {}
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>Configuration.java</code></summary>
+
+
+````java
+public class Configuration {
+    private static final int DEFAULT_TIMEOUT = 30;
+    private static final boolean DEFAULT_DEBUG = false;
+    private static final long DEFAULT_RETRY_DELAY_MS = 5000;
+    
+    private final int timeout;
+    private final boolean debug;
+    private final long retryDelayMs;
+    private final List<ValidationError> errors;
+    
+    Configuration(Map<String, ConfigValue> values, List<ValidationError> errors) {
+        this.timeout = extractInt(values, "timeout", DEFAULT_TIMEOUT);
+        this.debug = extractBool(values, "debug", DEFAULT_DEBUG);
+        this.retryDelayMs = extractDuration(values, "retry_delay", DEFAULT_RETRY_DELAY_MS);
+        this.errors = errors;
+    }
+    
+    private static int extractInt(Map<String, ConfigValue> values, String key, int defaultValue) {
+        return values.get(key) instanceof ConfigValue.IntValue iv ? iv.value() : defaultValue;
+    }
+    
+    private static boolean extractBool(Map<String, ConfigValue> values, String key, boolean defaultValue) {
+        return values.get(key) instanceof ConfigValue.BoolValue bv ? bv.value() : defaultValue;
+    }
+    
+    private static long extractDuration(Map<String, ConfigValue> values, String key, long defaultValue) {
+        return values.get(key) instanceof ConfigValue.DurationValue dv ? dv.millis() : defaultValue;
+    }
+    
+    public int getTimeout() { return timeout; }
+    public boolean isDebug() { return debug; }
+    public long getRetryDelayMs() { return retryDelayMs; }
+    public List<ValidationError> getErrors() { return errors; }
+    public boolean hasErrors() { return !errors.isEmpty(); }
+    
+    public static Configuration parse(String input) {
+        return new ConfigParser().parse(input);
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>ValidationError.java</code></summary>
+
+
+````java
+record ValidationError(int lineNumber, String message) {}
+
+````
+
+</details>
+
+<details>
+<summary>Shipped tests (1 file)</summary>
+
+<details>
+<summary><code>ConfigurationTest.java</code></summary>
+
+
+````java
+class ConfigurationTest {
+    @Test void parsesValidConfiguration() {
+        String input = "timeout=60\ndebug=true\nretry_delay=5s";
+        Configuration config = Configuration.parse(input);
+        assertEquals(60, config.getTimeout());
+        assertEquals(true, config.isDebug());
+        assertEquals(5000, config.getRetryDelayMs());
+        assertEquals(0, config.getErrors().size());
+    }
+    
+    @Test void usesDefaults() {
+        Configuration config = Configuration.parse("");
+        assertEquals(30, config.getTimeout());
+        assertEquals(false, config.isDebug());
+        assertEquals(5000, config.getRetryDelayMs());
+    }
+    
+    @Test void skipsCommentsAndBlankLines() {
+        String input = "# comment\ntimeout=60\n\n# another\n";
+        Configuration config = Configuration.parse(input);
+        assertEquals(60, config.getTimeout());
+        assertEquals(0, config.getErrors().size());
+    }
+    
+    @Test void reportsMalformedLineWithNumber() {
+        String input = "timeout 60";
+        Configuration config = Configuration.parse(input);
+        assertEquals(1, config.getErrors().size());
+        assertEquals(1, config.getErrors().get(0).lineNumber());
+        assertEquals("Malformed line", config.getErrors().get(0).message());
+    }
+    
+    @Test void reportsUnknownKeyWithNumber() {
+        String input = "timeout=60\nunknown_key=value";
+        Configuration config = Configuration.parse(input);
+        assertEquals(1, config.getErrors().size());
+        assertEquals(2, config.getErrors().get(0).lineNumber());
+        assertEquals("Unknown key: unknown_key", config.getErrors().get(0).message());
+    }
+    
+    @Test void reportsInvalidInteger() {
+        String input = "timeout=abc";
+        Configuration config = Configuration.parse(input);
+        assertEquals(1, config.getErrors().size());
+        assertEquals("Invalid integer: abc", config.getErrors().get(0).message());
+    }
+    
+    @Test void reportsInvalidBoolean() {
+        String input = "debug=maybe";
+        Configuration config = Configuration.parse(input);
+        assertEquals(1, config.getErrors().size());
+        assertEquals("Invalid boolean: maybe", config.getErrors().get(0).message());
+    }
+    
+    @Test void parsesDurationWithVariousUnits() {
+        assertEquals(30_000, Configuration.parse("retry_delay=30s").getRetryDelayMs());
+        assertEquals(2_000, Configuration.parse("retry_delay=2s").getRetryDelayMs());
+        assertEquals(120_000, Configuration.parse("retry_delay=2m").getRetryDelayMs());
+        assertEquals(500, Configuration.parse("retry_delay=500ms").getRetryDelayMs());
+        assertEquals(3_600_000, Configuration.parse("retry_delay=1h").getRetryDelayMs());
+    }
+    
+    @Test void reportsInvalidDurationUnit() {
+        String input = "retry_delay=10x";
+        Configuration config = Configuration.parse(input);
+        assertEquals(1, config.getErrors().size());
+        assertEquals("Unknown duration unit: x", config.getErrors().get(0).message());
+    }
+    
+    @Test void ignoresSections() {
+        String input = "[section1]\ntimeout=60\n[section2]\ndebug=true";
+        Configuration config = Configuration.parse(input);
+        assertEquals(60, config.getTimeout());
+        assertEquals(true, config.isDebug());
+        assertEquals(0, config.getErrors().size());
+    }
+    
+    @Test void handlesWhitespace() {
+        String input = "  timeout  =  42  \n  debug = true  ";
+        Configuration config = Configuration.parse(input);
+        assertEquals(42, config.getTimeout());
+        assertEquals(true, config.isDebug());
+    }
+    
+    @Test void acceptsBooleanVariants() {
+        assertEquals(true, Configuration.parse("debug=yes").isDebug());
+        assertEquals(true, Configuration.parse("debug=on").isDebug());
+        assertEquals(true, Configuration.parse("debug=1").isDebug());
+        assertEquals(false, Configuration.parse("debug=no").isDebug());
+        assertEquals(false, Configuration.parse("debug=off").isDebug());
+    }
+}
+
+````
+
+</details>
+
+</details>
+
+</TabItem>
+
+</Tabs>

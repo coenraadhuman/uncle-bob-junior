@@ -11,7 +11,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { buildSite, newestRunId, checklistItems, mdxEscape, hitSmells, isFullRun, readmeSection } = require('../benchmarks/build-site.js');
+const { buildSite, newestRunId, mdxEscape, hitSmells, isFullRun, readmeSection } = require('../benchmarks/build-site.js');
 const { taskPrompts } = require('../benchmarks/reprocess-results.js');
 
 const CANONICAL_TASKS = Object.keys(taskPrompts());
@@ -91,9 +91,9 @@ test('the newest FULL run is featured; older full runs land in history, partial 
     build();
     const scoreboard = fs.readFileSync(path.join(siteDocsDir, 'benchmark', 'scoreboard.mdx'), 'utf8');
     assert.ok(scoreboard.includes('eval-NEW'), 'newest full run is featured even when a subset run is newer');
-    assert.ok(fs.existsSync(path.join(siteDocsDir, 'benchmark', 'history', 'eval-old-2026-08-28t09-00-00.mdx')), 'older full run in history');
-    assert.ok(fs.existsSync(path.join(siteDocsDir, 'benchmark', 'subset', 'eval-part-2026-08-31t09-00-00.mdx')), 'partial run in subset');
-    assert.ok(!fs.existsSync(path.join(siteDocsDir, 'benchmark', 'history', 'eval-new-2026-08-30t09-00-00.mdx')), 'featured run not duplicated in history');
+    assert.ok(fs.existsSync(path.join(siteDocsDir, 'benchmark', 'history', 'eval-old-2026-08-28t09-00-00', 'scoreboard.mdx')), 'older full run in history');
+    assert.ok(fs.existsSync(path.join(siteDocsDir, 'benchmark', 'subset', 'eval-part-2026-08-31t09-00-00', 'scoreboard.mdx')), 'partial run in subset');
+    assert.ok(!fs.existsSync(path.join(siteDocsDir, 'benchmark', 'history', 'eval-new-2026-08-30t09-00-00')), 'featured run not duplicated in history');
     for (const section of ['history', 'subset']) {
       assert.ok(fs.existsSync(path.join(siteDocsDir, 'benchmark', section, '_category_.json')), `${section} category present`);
     }
@@ -106,7 +106,7 @@ test('without any full run the newest run is featured as fallback', () => {
     build();
     const scoreboard = fs.readFileSync(path.join(siteDocsDir, 'benchmark', 'scoreboard.mdx'), 'utf8');
     assert.ok(scoreboard.includes('eval-PART'));
-    assert.ok(fs.existsSync(path.join(siteDocsDir, 'benchmark', 'order.mdx')), 'task pages emitted for the featured run');
+    assert.ok(fs.existsSync(path.join(siteDocsDir, 'benchmark', 'tasks', 'order.mdx')), 'task pages emitted for the featured run');
   });
 });
 
@@ -114,7 +114,7 @@ test('task page shows escaped code, prompt, findings, and shipped tests', () => 
   inTempDirs(({ resultsDir, siteDocsDir, build }) => {
     writeFixtureRun(resultsDir, 'eval-part-2026-08-29t09-00-00', runData('eval-PART', ['order']));
     build();
-    const page = fs.readFileSync(path.join(siteDocsDir, 'benchmark', 'order.mdx'), 'utf8');
+    const page = fs.readFileSync(path.join(siteDocsDir, 'benchmark', 'tasks', 'order.mdx'), 'utf8');
     assert.ok(page.includes("import Tabs from '@theme/Tabs'"), 'uses the Docusaurus Tabs component');
     assert.ok(page.includes('label="baseline (no ruleset) · 0.80"') && page.includes('label="uncle-bob-junior · 1.00"'));
     assert.ok(page.includes('````java\npublic class OrderProcessor { List<Item> items; }\n````'), 'code verbatim in four-backtick fences');
@@ -124,15 +124,22 @@ test('task page shows escaped code, prompt, findings, and shipped tests', () => 
   });
 });
 
-test('history pages carry chart and table without task links', () => {
+test('history runs mirror the featured layout: datetime category, scoreboard, and task pages', () => {
   inTempDirs(({ resultsDir, siteDocsDir, build }) => {
     writeFixtureRun(resultsDir, 'eval-old-2026-08-28t09-00-00', runData('eval-OLD', CANONICAL_TASKS));
     writeFixtureRun(resultsDir, 'eval-new-2026-08-30t09-00-00', runData('eval-NEW', CANONICAL_TASKS));
     build();
-    const page = fs.readFileSync(path.join(siteDocsDir, 'benchmark', 'history', 'eval-old-2026-08-28t09-00-00.mdx'), 'utf8');
-    assert.ok(page.includes('xychart-beta'), 'mermaid chart present');
-    assert.ok(page.includes('| Oversized function |'), 'hit smells as columns');
-    assert.ok(!page.includes('](order)'), 'no task links: past runs have no task pages');
+    const runDir = path.join(siteDocsDir, 'benchmark', 'history', 'eval-old-2026-08-28t09-00-00');
+    const category = JSON.parse(fs.readFileSync(path.join(runDir, '_category_.json'), 'utf8'));
+    assert.equal(category.label, '2026-08-28 09:00', 'run categories are labelled by date and time');
+    assert.equal(category.position, 1, 'newest non-featured run comes first');
+    const scoreboard = fs.readFileSync(path.join(runDir, 'scoreboard.mdx'), 'utf8');
+    assert.ok(scoreboard.includes('xychart-beta'), 'mermaid chart present');
+    assert.ok(scoreboard.includes('| Oversized function |'), 'hit smells as columns');
+    assert.ok(scoreboard.includes(`](tasks/${CANONICAL_TASKS[0]})`), 'scoreboard links into the run\'s own Tasks section');
+    const taskPage = fs.readFileSync(path.join(runDir, 'tasks', `${CANONICAL_TASKS[0]}.mdx`), 'utf8');
+    assert.ok(taskPage.includes('public class OrderProcessor { List<Item> items; }'), 'stored sources render on the run\'s task pages');
+    assert.ok(taskPage.includes('`oversized-function` at line 5'), 'findings annotated');
   });
 });
 
@@ -159,25 +166,61 @@ test('a rebuild wipes pages from earlier runs but keeps hand-written docs', () =
     fs.writeFileSync(path.join(siteDocsDir, 'notes.md'), 'hand-written');
     writeFixtureRun(resultsDir, 'eval-a-2026-08-28t09-00-00', runData('eval-A', ['order']));
     build();
-    assert.ok(fs.existsSync(path.join(siteDocsDir, 'benchmark', 'order.mdx')));
+    assert.ok(fs.existsSync(path.join(siteDocsDir, 'benchmark', 'tasks', 'order.mdx')));
     writeFixtureRun(resultsDir, 'eval-b-2026-08-30t09-00-00', runData('eval-B', ['email']));
     build();
-    assert.ok(fs.existsSync(path.join(siteDocsDir, 'benchmark', 'email.mdx')), 'new featured task page written');
-    assert.ok(!fs.existsSync(path.join(siteDocsDir, 'benchmark', 'order.mdx')), 'stale task page removed');
+    assert.ok(fs.existsSync(path.join(siteDocsDir, 'benchmark', 'tasks', 'email.mdx')), 'new featured task page written');
+    assert.ok(!fs.existsSync(path.join(siteDocsDir, 'benchmark', 'tasks', 'order.mdx')), 'stale task page removed');
     assert.equal(fs.readFileSync(path.join(siteDocsDir, 'notes.md'), 'utf8'), 'hand-written');
   });
 });
 
-test('landing page carries the checklist and links every section', () => {
+test('the homepage is a standalone React page and stale generated landings are removed', () => {
+  const homepage = fs.readFileSync(path.join(__dirname, '..', 'website', 'src', 'pages', 'index.js'), 'utf8');
+  for (const link of ['/ruleset/skill', '/plugin', '/benchmark']) {
+    assert.ok(homepage.includes(`'${link}'`) || homepage.includes(`"${link}"`), `homepage links ${link}`);
+  }
+  assert.ok(homepage.includes('mascot-bot.svg'), 'homepage shows the mascot');
+  assert.ok(fs.existsSync(path.join(__dirname, '..', 'website', 'static', 'img', 'mascot-bot.svg')), 'mascot asset exists');
+  inTempDirs(({ resultsDir, siteDocsDir, build }) => {
+    fs.writeFileSync(path.join(siteDocsDir, 'index.mdx'), 'stale generated landing');
+    writeFixtureRun(resultsDir, 'eval-a-2026-08-28t09-00-00', runData('eval-A', ['order']));
+    build();
+    assert.ok(!fs.existsSync(path.join(siteDocsDir, 'index.mdx')), 'a leftover generated landing would collide with the React homepage route');
+  });
+});
+
+test('the benchmark intro opens the section with a trend line per model and section buttons', () => {
+  inTempDirs(({ resultsDir, siteDocsDir, build }) => {
+    writeFixtureRun(resultsDir, 'eval-old-2026-08-28t09-00-00', runData('eval-OLD', CANONICAL_TASKS));
+    writeFixtureRun(resultsDir, 'eval-new-2026-08-30t09-00-00', runData('eval-NEW', CANONICAL_TASKS));
+    build();
+    const intro = fs.readFileSync(path.join(siteDocsDir, 'benchmark', 'intro.mdx'), 'utf8');
+    assert.ok(intro.includes('slug: /benchmark'), 'the intro owns the section URL');
+    assert.ok(intro.includes('### claude-cli&#58;haiku'), 'one chart per model');
+    assert.ok(intro.includes('xychart-beta'), 'trend chart is a line graph');
+    assert.ok((intro.match(/^ {4}line \[/gm) || []).length === 2, 'two lines: baseline and ruleset');
+    assert.ok(intro.includes('"08-28 09:00", "08-30 09:00"'), 'x-axis runs oldest to newest');
+    for (const target of ['methodology', 'scoreboard', 'history', 'subset']) {
+      assert.ok(intro.includes(`href="${target}"`), `button to ${target}`);
+    }
+    const category = JSON.parse(fs.readFileSync(path.join(siteDocsDir, 'benchmark', '_category_.json'), 'utf8'));
+    assert.deepEqual(category.link, { type: 'doc', id: 'benchmark/intro' }, 'the category opens on the intro');
+  });
+});
+
+test('a methodology page precedes the scoreboard, embedded from the benchmarks README', () => {
   inTempDirs(({ resultsDir, siteDocsDir, build }) => {
     writeFixtureRun(resultsDir, 'eval-a-2026-08-28t09-00-00', runData('eval-A', ['order']));
     build();
-    const page = fs.readFileSync(path.join(siteDocsDir, 'index.mdx'), 'utf8');
-    assert.ok(page.includes('**One job each.**'));
-    assert.ok(page.includes('duty to search'), 'the search duty ships to the site');
-    for (const link of ['ruleset/skill', 'benchmark/scoreboard', 'benchmark/history', 'benchmark/subset', 'gameoflife']) {
-      assert.ok(page.includes(`](${link})`), `landing links ${link}`);
-    }
+    const page = fs.readFileSync(path.join(siteDocsDir, 'benchmark', 'methodology.md'), 'utf8');
+    assert.ok(page.includes('sidebar_position: 1'), 'methodology comes first in the benchmark section');
+    assert.ok(page.includes('habit-hooks'), 'explains the smell judge');
+    assert.ok(page.includes('deterministic judges'), 'the benchmarks README preamble is embedded');
+    assert.ok(page.includes('## Reading the results'), 'reading guidance embedded');
+    assert.ok(page.includes('github.com/coenraadhuman/uncle-bob-junior/blob/main/benchmarks/'), 'relative links point into benchmarks/ on the repo');
+    const scoreboard = fs.readFileSync(path.join(siteDocsDir, 'benchmark', 'scoreboard.mdx'), 'utf8');
+    assert.ok(scoreboard.includes('sidebar_position: 2'), 'scoreboard follows the methodology');
   });
 });
 
@@ -194,10 +237,6 @@ test('plugin, commands, and FAQ pages are embedded from the README with repo-saf
     assert.ok(commands.includes('**ultra**'), 'levels table embedded on the same page');
     const faq = fs.readFileSync(path.join(siteDocsDir, 'faq.md'), 'utf8');
     assert.ok(faq.includes('quick hack'), 'FAQ embedded');
-    const landing = fs.readFileSync(path.join(siteDocsDir, 'index.mdx'), 'utf8');
-    for (const link of ['plugin', 'commands', 'faq']) {
-      assert.ok(landing.includes(`](${link})`), `landing links ${link}`);
-    }
   });
 });
 
@@ -225,9 +264,8 @@ test('the ruleset section carries SKILL.md verbatim with site-linked references'
 test('helpers: full-run detection, newest run, checklist extraction, escaping, hit smells, example grouping', () => {
   assert.equal(isFullRun(runData('x', CANONICAL_TASKS), CANONICAL_TASKS), true);
   assert.equal(isFullRun(runData('x', CANONICAL_TASKS.slice(1)), CANONICAL_TASKS), false);
-  const items = checklistItems('---\nname: x\n---\n## The checklist\n\nintro\n1. **A.** uses `code`\n2. plain\n\n## Rules\n3. not me');
-  assert.deepEqual(items, ['**A.** uses `code`', 'plain']);
   assert.equal(mdxEscape('<a> & {expr}'), '&lt;a&gt; &amp; &#123;expr&#125;');
+  assert.equal(mdxEscape('claude-cli:haiku'), 'claude-cli&#58;haiku', 'colons escaped so remark-directive cannot eat :haiku');
   assert.deepEqual(hitSmells(runData('x', ['order']).rows), ['oversized-function']);
   inTempDirs(({ resultsDir }) => {
     writeFixtureRun(resultsDir, 'eval-a-2026-08-28t09-00-00', runData('eval-A', ['order']));

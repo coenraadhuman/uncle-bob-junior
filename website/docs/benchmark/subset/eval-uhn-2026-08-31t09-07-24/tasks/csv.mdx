@@ -1,0 +1,161 @@
+---
+title: csv
+sidebar_position: 3
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+> Write a Java program that reads sales.csv and prints the sum of the 'amount' column.
+
+## claude-cli&#58;haiku
+
+<Tabs>
+
+<TabItem value="baseline-no-ruleset" label="baseline (no ruleset) · 0.86">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests **No** ·
+correct Yes
+
+<details open>
+<summary><code>SalesSum.java</code> · 1 smell</summary>
+
+- `oversized-function` at line 6
+
+````java
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.io.IOException;
+
+public class SalesSum {
+    public static void main(String[] args) {
+        String filePath = "sales.csv";
+        double sum = 0;
+        int amountColumnIndex = -1;
+        
+        try (BufferedReader reader = new BufferedReader(new FileReader(filePath))) {
+            String line;
+            boolean isHeader = true;
+            
+            while ((line = reader.readLine()) != null) {
+                String[] parts = line.split(",");
+                
+                if (isHeader) {
+                    // Find the index of the 'amount' column
+                    for (int i = 0; i < parts.length; i++) {
+                        if (parts[i].trim().equalsIgnoreCase("amount")) {
+                            amountColumnIndex = i;
+                            break;
+                        }
+                    }
+                    isHeader = false;
+                } else {
+                    // Sum the amount values
+                    if (amountColumnIndex >= 0 && amountColumnIndex < parts.length) {
+                        try {
+                            double amount = Double.parseDouble(parts[amountColumnIndex].trim());
+                            sum += amount;
+                        } catch (NumberFormatException e) {
+                            System.err.println("Invalid number: " + parts[amountColumnIndex]);
+                        }
+                    }
+                }
+            }
+            
+            System.out.println("Sum of amount column: " + sum);
+            
+        } catch (IOException e) {
+            System.err.println("Error reading file: " + e.getMessage());
+        }
+    }
+}
+
+````
+
+</details>
+
+*No tests shipped.*
+
+</TabItem>
+
+<TabItem value="uncle-bob-junior" label="uncle-bob-junior · 0.86">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests **No** ·
+correct Yes
+
+<details open>
+<summary><code>SalesAnalyzer.java</code> · 1 smell</summary>
+
+- `oversized-function` at line 17
+
+````java
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.io.IOException;
+
+public class SalesAnalyzer {
+    private static final String CSV_FILE = "sales.csv";
+    
+    public static void main(String[] args) {
+        try {
+            double total = calculateTotalAmount();
+            System.out.println("Total amount: " + total);
+        } catch (IOException e) {
+            System.err.println("Error reading file: " + e.getMessage());
+        }
+    }
+    
+    private static double calculateTotalAmount() throws IOException {
+        double total = 0.0;
+        
+        try (BufferedReader reader = new BufferedReader(new FileReader(CSV_FILE))) {
+            String headerLine = reader.readLine();
+            if (headerLine == null) {
+                throw new IOException("CSV file is empty");
+            }
+            
+            int amountColumnIndex = findColumnIndex(headerLine, "amount");
+            if (amountColumnIndex == -1) {
+                throw new IOException("Column 'amount' not found in CSV");
+            }
+            
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String[] fields = line.split(",");
+                if (fields.length > amountColumnIndex) {
+                    try {
+                        total += Double.parseDouble(fields[amountColumnIndex].trim());
+                    } catch (NumberFormatException e) {
+                        System.err.println("Skipping invalid amount: " + fields[amountColumnIndex]);
+                    }
+                }
+            }
+        }
+        
+        return total;
+    }
+    
+    private static int findColumnIndex(String headerLine, String columnName) {
+        String[] headers = headerLine.split(",");
+        for (int i = 0; i < headers.length; i++) {
+            if (headers[i].trim().equalsIgnoreCase(columnName)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+}
+
+````
+
+</details>
+
+*No tests shipped.*
+
+</TabItem>
+
+</Tabs>

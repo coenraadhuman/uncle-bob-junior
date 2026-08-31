@@ -1,0 +1,540 @@
+---
+title: statement
+sidebar_position: 8
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+> Analyse a bank statement in Java&#58; each line of statement.txt reads 'date;description;amount;currency' (e.g. 2026-01-15;ALBERT HEIJN;-23.95;EUR). Convert USD and GBP amounts to EUR with fixed rates, categorise every transaction as salary, rent, groceries, or other from description keywords, total each category per month, flag transactions above 2000 EUR and repeated identical amounts on the same day as suspicious, and print a month-by-month report.
+
+## claude-cli&#58;haiku
+
+<Tabs>
+
+<TabItem value="baseline-no-ruleset" label="baseline (no ruleset) · 0.70">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests **No** ·
+correct **No**
+
+<details open>
+<summary><code>BankStatementAnalyzer.java</code> · 3 smells</summary>
+
+- `too-many-parameters` at line 17
+- `oversized-function` at line 31
+- `oversized-function` at line 90
+
+````java
+import java.io.*;
+import java.time.LocalDate;
+import java.time.YearMonth;
+import java.util.*;
+
+public class BankStatementAnalyzer {
+    private static final double USD_TO_EUR = 0.95;
+    private static final double GBP_TO_EUR = 1.17;
+    
+    static class Transaction {
+        LocalDate date;
+        String description;
+        double amountEur;
+        String category;
+        boolean isSuspicious;
+        
+        Transaction(LocalDate date, String description, double amountEur, String category) {
+            this.date = date;
+            this.description = description;
+            this.amountEur = amountEur;
+            this.category = category;
+        }
+    }
+    
+    public static void main(String[] args) {
+        List<Transaction> transactions = readStatements("statement.txt");
+        flagSuspiciousTransactions(transactions);
+        printMonthlyReport(transactions);
+    }
+    
+    private static List<Transaction> readStatements(String filename) {
+        List<Transaction> transactions = new ArrayList<>();
+        try (BufferedReader reader = new BufferedReader(new FileReader(filename))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String[] parts = line.split(";");
+                if (parts.length == 4) {
+                    LocalDate date = LocalDate.parse(parts[0].trim());
+                    String description = parts[1].trim();
+                    double amount = Double.parseDouble(parts[2].trim());
+                    String currency = parts[3].trim();
+                    
+                    double amountEur = convertToEur(amount, currency);
+                    String category = categorizeTransaction(description);
+                    transactions.add(new Transaction(date, description, amountEur, category));
+                }
+            }
+        } catch (IOException e) {
+            System.err.println("Error reading file: " + e.getMessage());
+        }
+        return transactions;
+    }
+    
+    private static double convertToEur(double amount, String currency) {
+        return switch (currency.toUpperCase()) {
+            case "USD" -> amount * USD_TO_EUR;
+            case "GBP" -> amount * GBP_TO_EUR;
+            default -> amount;
+        };
+    }
+    
+    private static String categorizeTransaction(String description) {
+        String desc = description.toLowerCase();
+        if (desc.matches(".*\\b(salary|wage|income)\\b.*")) return "salary";
+        if (desc.matches(".*\\b(rent|landlord)\\b.*")) return "rent";
+        if (desc.matches(".*\\b(albert heijn|supermarket|grocery|groceries)\\b.*")) return "groceries";
+        return "other";
+    }
+    
+    private static void flagSuspiciousTransactions(List<Transaction> transactions) {
+        for (Transaction t : transactions) {
+            if (Math.abs(t.amountEur) > 2000) {
+                t.isSuspicious = true;
+            }
+        }
+        
+        Map<LocalDate, Map<Double, Integer>> dateAmounts = new HashMap<>();
+        for (Transaction t : transactions) {
+            dateAmounts.computeIfAbsent(t.date, k -> new HashMap<>())
+                      .merge(t.amountEur, 1, Integer::sum);
+        }
+        
+        for (Transaction t : transactions) {
+            if (dateAmounts.get(t.date).getOrDefault(t.amountEur, 0) > 1) {
+                t.isSuspicious = true;
+            }
+        }
+    }
+    
+    private static void printMonthlyReport(List<Transaction> transactions) {
+        Map<YearMonth, Map<String, Double>> monthlyTotals = new TreeMap<>();
+        Map<YearMonth, List<Transaction>> monthlyTransactions = new TreeMap<>();
+        
+        for (Transaction t : transactions) {
+            YearMonth month = YearMonth.from(t.date);
+            monthlyTotals.computeIfAbsent(month, k -> new HashMap<>())
+                        .merge(t.category, t.amountEur, Double::sum);
+            monthlyTransactions.computeIfAbsent(month, k -> new ArrayList<>()).add(t);
+        }
+        
+        for (YearMonth month : monthlyTotals.keySet()) {
+            System.out.println("\n=== " + month + " ===");
+            
+            Map<String, Double> totals = monthlyTotals.get(month);
+            for (String category : Arrays.asList("salary", "rent", "groceries", "other")) {
+                double total = totals.getOrDefault(category, 0.0);
+                System.out.printf("%s: %.2f EUR%n", category, total);
+            }
+            
+            List<Transaction> suspicious = monthlyTransactions.get(month).stream()
+                                                              .filter(t -> t.isSuspicious)
+                                                              .toList();
+            if (!suspicious.isEmpty()) {
+                System.out.println("  Suspicious transactions:");
+                for (Transaction t : suspicious) {
+                    System.out.printf("    %s - %s - %.2f EUR%n", t.date, t.description, t.amountEur);
+                }
+            }
+        }
+    }
+}
+
+````
+
+</details>
+
+*No tests shipped.*
+
+</TabItem>
+
+<TabItem value="uncle-bob-junior" label="uncle-bob-junior · 0.98">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests Yes ·
+correct Yes
+
+<details open>
+<summary><code>BankStatementAnalyzer.java</code></summary>
+
+
+````java
+import java.io.*;
+import java.util.*;
+
+public class BankStatementAnalyzer {
+    public static void main(String[] args) throws IOException {
+        CurrencyConverter converter = new CurrencyConverter();
+        TransactionCategorizer categorizer = new TransactionCategorizer();
+        BankStatementParser parser = new BankStatementParser(converter, categorizer);
+
+        List<Transaction> transactions = parser.parse("statement.txt");
+        BankStatementReport report = new BankStatementReport(transactions);
+        report.print();
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>BankStatementParser.java</code></summary>
+
+
+````java
+import java.io.*;
+import java.time.*;
+import java.util.*;
+
+class BankStatementParser {
+    private static final double SUSPICIOUS_AMOUNT_THRESHOLD = 2000.0;
+    private final CurrencyConverter converter;
+    private final TransactionCategorizer categorizer;
+
+    BankStatementParser(CurrencyConverter converter, TransactionCategorizer categorizer) {
+        this.converter = converter;
+        this.categorizer = categorizer;
+    }
+
+    List<Transaction> parse(String filename) throws IOException {
+        List<RawTransaction> raw = readRaw(filename);
+        return enrich(raw);
+    }
+
+    private List<RawTransaction> readRaw(String filename) throws IOException {
+        List<RawTransaction> raw = new ArrayList<>();
+        try (BufferedReader reader = new BufferedReader(new FileReader(filename))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (!line.trim().isEmpty()) {
+                    raw.add(parseRaw(line));
+                }
+            }
+        }
+        return raw;
+    }
+
+    private RawTransaction parseRaw(String line) {
+        String[] parts = line.split(";");
+        LocalDate date = LocalDate.parse(parts[0]);
+        String description = parts[1];
+        double amount = Double.parseDouble(parts[2]);
+        String currency = parts[3];
+        double amountEur = converter.toEur(amount, currency);
+        return new RawTransaction(date, description, amountEur);
+    }
+
+    private List<Transaction> enrich(List<RawTransaction> raw) {
+        Map<LocalDate, Map<Double, Integer>> dayAmounts = new HashMap<>();
+        List<Transaction> transactions = new ArrayList<>();
+
+        for (RawTransaction r : raw) {
+            boolean isDuplicate = markAmountOnDay(r.date(), r.amountEur(), dayAmounts);
+            TransactionCategory category = categorizer.categorize(r.description());
+            boolean suspicious = r.amountEur() > SUSPICIOUS_AMOUNT_THRESHOLD || isDuplicate;
+
+            transactions.add(new Transaction(r.date(), r.description(), r.amountEur(),
+                                             category, suspicious));
+        }
+        return transactions;
+    }
+
+    private boolean markAmountOnDay(LocalDate date, double amount,
+                                    Map<LocalDate, Map<Double, Integer>> dayAmounts) {
+        Map<Double, Integer> amounts = dayAmounts.computeIfAbsent(date, k -> new HashMap<>());
+        int count = amounts.getOrDefault(amount, 0);
+        amounts.put(amount, count + 1);
+        return count > 0;
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>BankStatementReport.java</code></summary>
+
+
+````java
+import java.time.*;
+import java.util.*;
+import java.util.stream.*;
+
+class BankStatementReport {
+    private final List<Transaction> transactions;
+
+    BankStatementReport(List<Transaction> transactions) {
+        this.transactions = transactions;
+    }
+
+    void print() {
+        printMonthlyReport();
+        printSuspiciousTransactions();
+    }
+
+    private void printMonthlyReport() {
+        Map<YearMonth, Map<TransactionCategory, Double>> monthlyCategoryTotals =
+            calculateMonthlyCategoryTotals();
+
+        List<YearMonth> months = monthlyCategoryTotals.keySet().stream()
+            .sorted()
+            .toList();
+
+        for (YearMonth month : months) {
+            printMonth(month, monthlyCategoryTotals.get(month));
+        }
+    }
+
+    private Map<YearMonth, Map<TransactionCategory, Double>> calculateMonthlyCategoryTotals() {
+        return transactions.stream()
+            .collect(Collectors.groupingBy(
+                Transaction::month,
+                Collectors.groupingBy(
+                    Transaction::category,
+                    Collectors.summingDouble(Transaction::amountEur)
+                )
+            ));
+    }
+
+    private void printMonth(YearMonth month, Map<TransactionCategory, Double> totals) {
+        System.out.println("\n" + month);
+        System.out.println("--------");
+        for (TransactionCategory category : TransactionCategory.values()) {
+            double total = totals.getOrDefault(category, 0.0);
+            System.out.printf("%s: €%.2f%n", category, total);
+        }
+    }
+
+    private void printSuspiciousTransactions() {
+        List<Transaction> suspicious = transactions.stream()
+            .filter(Transaction::isSuspicious)
+            .sorted(Comparator.comparing(Transaction::date))
+            .toList();
+
+        if (!suspicious.isEmpty()) {
+            System.out.println("\n\nSuspicious Transactions");
+            System.out.println("======================");
+            for (Transaction t : suspicious) {
+                System.out.printf("%s | %s | €%.2f | %s%n",
+                    t.date(), t.description(), t.amountEur(), t.category());
+            }
+        }
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>CurrencyConverter.java</code></summary>
+
+
+````java
+class CurrencyConverter {
+    private static final double USD_TO_EUR = 0.92;
+    private static final double GBP_TO_EUR = 1.17;
+
+    double toEur(double amount, String currency) {
+        return switch (currency.toUpperCase()) {
+            case "EUR" -> amount;
+            case "USD" -> amount * USD_TO_EUR;
+            case "GBP" -> amount * GBP_TO_EUR;
+            default -> throw new IllegalArgumentException("Unknown currency: " + currency);
+        };
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>RawTransaction.java</code></summary>
+
+
+````java
+import java.time.*;
+
+record RawTransaction(LocalDate date, String description, double amountEur) {}
+
+````
+
+</details>
+
+<details>
+<summary><code>Transaction.java</code> · 1 smell</summary>
+
+- `too-many-parameters` at line 10
+
+````java
+import java.time.*;
+
+class Transaction {
+    private final LocalDate date;
+    private final String description;
+    private final double amountEur;
+    private final TransactionCategory category;
+    private final boolean suspicious;
+
+    Transaction(LocalDate date, String description, double amountEur,
+                TransactionCategory category, boolean suspicious) {
+        this.date = date;
+        this.description = description;
+        this.amountEur = amountEur;
+        this.category = category;
+        this.suspicious = suspicious;
+    }
+
+    LocalDate date() { return date; }
+    String description() { return description; }
+    double amountEur() { return amountEur; }
+    TransactionCategory category() { return category; }
+    boolean isSuspicious() { return suspicious; }
+    YearMonth month() { return YearMonth.from(date); }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>TransactionCategorizer.java</code></summary>
+
+
+````java
+import java.util.*;
+
+class TransactionCategorizer {
+    private static final String[] SALARY_KEYWORDS = {"SALARY", "WAGE", "PAYMENT"};
+    private static final String[] RENT_KEYWORDS = {"RENT", "APARTMENT", "LANDLORD"};
+    private static final String[] GROCERY_KEYWORDS = {"ALBERT HEIJN", "SUPERMARKET",
+                                                       "GROCERY", "FOOD", "MARKET"};
+
+    TransactionCategory categorize(String description) {
+        String upper = description.toUpperCase();
+
+        if (matchesAny(upper, SALARY_KEYWORDS)) return TransactionCategory.SALARY;
+        if (matchesAny(upper, RENT_KEYWORDS)) return TransactionCategory.RENT;
+        if (matchesAny(upper, GROCERY_KEYWORDS)) return TransactionCategory.GROCERIES;
+        return TransactionCategory.OTHER;
+    }
+
+    private boolean matchesAny(String text, String[] keywords) {
+        return Arrays.stream(keywords).anyMatch(text::contains);
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>TransactionCategory.java</code></summary>
+
+
+````java
+enum TransactionCategory {
+    SALARY, RENT, GROCERIES, OTHER
+}
+
+````
+
+</details>
+
+<details>
+<summary>Shipped tests (1 file)</summary>
+
+<details>
+<summary><code>BankStatementAnalyzerTest.java</code></summary>
+
+
+````java
+import java.io.*;
+import java.util.*;
+
+class BankStatementAnalyzerTest {
+    private final CurrencyConverter converter = new CurrencyConverter();
+    private final TransactionCategorizer categorizer = new TransactionCategorizer();
+
+    void testCurrencyConversion() {
+        assert converter.toEur(100, "EUR") == 100;
+        assert Math.abs(converter.toEur(100, "USD") - 92.0) < 0.01;
+        assert Math.abs(converter.toEur(100, "GBP") - 117.0) < 0.01;
+        System.out.println("✓ Currency conversion tests passed");
+    }
+
+    void testCategorization() {
+        assert categorizer.categorize("Monthly SALARY") == TransactionCategory.SALARY;
+        assert categorizer.categorize("RENT Payment") == TransactionCategory.RENT;
+        assert categorizer.categorize("ALBERT HEIJN") == TransactionCategory.GROCERIES;
+        assert categorizer.categorize("Random store") == TransactionCategory.OTHER;
+        System.out.println("✓ Categorization tests passed");
+    }
+
+    void testDuplicateDetection() throws IOException {
+        String testFile = "test_statement.txt";
+        createTestFile(testFile,
+            "2026-01-15;Store A;-50.00;EUR\n" +
+            "2026-01-15;Store B;-50.00;EUR\n" +
+            "2026-01-16;Store C;-50.00;EUR"
+        );
+
+        BankStatementParser parser = new BankStatementParser(converter, categorizer);
+        List<Transaction> transactions = parser.parse(testFile);
+
+        assert !transactions.get(0).isSuspicious();
+        assert transactions.get(1).isSuspicious();
+        assert !transactions.get(2).isSuspicious();
+
+        System.out.println("✓ Duplicate detection tests passed");
+    }
+
+    void testLargeAmountDetection() throws IOException {
+        String testFile = "test_large.txt";
+        createTestFile(testFile, "2026-01-15;Large Payment;-2500.00;EUR");
+
+        BankStatementParser parser = new BankStatementParser(converter, categorizer);
+        List<Transaction> transactions = parser.parse(testFile);
+
+        assert transactions.get(0).isSuspicious();
+        System.out.println("✓ Large amount detection tests passed");
+    }
+
+    private void createTestFile(String filename, String content) throws IOException {
+        try (FileWriter writer = new FileWriter(filename)) {
+            writer.write(content);
+        }
+    }
+
+    public static void main(String[] args) throws IOException {
+        BankStatementAnalyzerTest test = new BankStatementAnalyzerTest();
+        test.testCurrencyConversion();
+        test.testCategorization();
+        test.testDuplicateDetection();
+        test.testLargeAmountDetection();
+        System.out.println("\nAll tests passed ✓");
+    }
+}
+
+````
+
+</details>
+
+</details>
+
+</TabItem>
+
+</Tabs>

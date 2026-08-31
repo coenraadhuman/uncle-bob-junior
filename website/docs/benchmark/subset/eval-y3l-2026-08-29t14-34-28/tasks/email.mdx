@@ -1,0 +1,140 @@
+---
+title: email
+sidebar_position: 4
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+> Write a Java method that validates email addresses.
+
+## claude-cli&#58;haiku
+
+<Tabs>
+
+<TabItem value="baseline-no-ruleset" label="baseline (no ruleset) · 0.88">
+
+Gates: valid code Yes ·
+habit-hooks Pass ·
+ships tests **No** ·
+correct Yes
+
+<details open>
+<summary><code>EmailValidator.java</code></summary>
+
+
+````java
+import java.util.regex.Pattern;
+
+public class EmailValidator {
+    private static final Pattern EMAIL_PATTERN = Pattern.compile(
+        "^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$"
+    );
+    
+    public static boolean isValidEmail(String email) {
+        if (email == null || email.isBlank()) {
+            return false;
+        }
+        return EMAIL_PATTERN.matcher(email).matches();
+    }
+}
+
+````
+
+</details>
+
+*No tests shipped.*
+
+</TabItem>
+
+<TabItem value="uncle-bob-junior" label="uncle-bob-junior · 1.00">
+
+Gates: valid code Yes ·
+habit-hooks Pass ·
+ships tests Yes ·
+correct Yes
+
+<details open>
+<summary><code>EmailValidator.java</code></summary>
+
+
+````java
+import java.util.regex.Pattern;
+
+public class EmailValidator {
+    private static final Pattern EMAIL_PATTERN = Pattern.compile(
+        "^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$"
+    );
+
+    public static boolean isValid(String email) {
+        if (email == null || email.isBlank()) {
+            return false;
+        }
+        return EMAIL_PATTERN.matcher(email).matches();
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary>Shipped tests (1 file)</summary>
+
+<details>
+<summary><code>EmailValidatorTest.java</code></summary>
+
+
+````java
+import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
+
+class EmailValidatorTest {
+    @Test
+    void acceptsValidEmail() {
+        assertTrue(EmailValidator.isValid("user@example.com"));
+    }
+
+    @Test
+    void acceptsComplexLocalPart() {
+        assertTrue(EmailValidator.isValid("user.name+tag@example.co.uk"));
+    }
+
+    @Test
+    void rejectsEmailWithoutAtSign() {
+        assertFalse(EmailValidator.isValid("userexample.com"));
+    }
+
+    @Test
+    void rejectsIncompleteEmail() {
+        assertFalse(EmailValidator.isValid("user@"));
+        assertFalse(EmailValidator.isValid("@example.com"));
+    }
+
+    @Test
+    void rejectsNull() {
+        assertFalse(EmailValidator.isValid(null));
+    }
+
+    @Test
+    void rejectsBlank() {
+        assertFalse(EmailValidator.isValid(""));
+        assertFalse(EmailValidator.isValid("   "));
+    }
+
+    @Test
+    void rejectsInvalidFormat() {
+        assertFalse(EmailValidator.isValid("user @example.com"));
+        assertFalse(EmailValidator.isValid("user@example"));
+    }
+}
+
+````
+
+</details>
+
+</details>
+
+</TabItem>
+
+</Tabs>

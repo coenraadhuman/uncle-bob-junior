@@ -7,7 +7,7 @@
 node_modules/
 
 # Docusaurus build artifacts (website/ is the source; /docs is the committed output)
-website/.docusaurus/
+website/.docusaurus*/
 website/build/
 
 # promptfoo eval artifacts

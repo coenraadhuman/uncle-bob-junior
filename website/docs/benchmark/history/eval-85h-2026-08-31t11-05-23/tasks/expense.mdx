@@ -1,0 +1,803 @@
+---
+title: expense
+sidebar_position: 5
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+> Write a C# program that processes employee expense claims&#58; validate each claim (positive amount, known category, receipt attached for amounts over 25 euros), enforce per-category monthly caps (travel 500, meals 150, equipment 1000 euros), route claims above 200 euros to manager approval and above 1000 euros to finance approval, and produce a per-employee monthly reimbursement report.
+
+## claude-cli&#58;haiku
+
+<Tabs>
+
+<TabItem value="baseline-no-ruleset" label="baseline (no ruleset) · 0.64">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests **No** ·
+correct **No**
+
+<details open>
+<summary><code>ApprovalStatus.java</code></summary>
+
+
+````java
+enum ApprovalStatus {
+    APPROVED,
+    MANAGER_APPROVAL_NEEDED,
+    FINANCE_APPROVAL_NEEDED,
+    REJECTED
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>Category.java</code></summary>
+
+
+````java
+enum Category {
+    TRAVEL(500),
+    MEALS(150),
+    EQUIPMENT(1000);
+    
+    private final double monthlyCap;
+    
+    Category(double monthlyCap) {
+        this.monthlyCap = monthlyCap;
+    }
+    
+    public double getMonthlyCap() {
+        return monthlyCap;
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>Expense.java</code> · 1 smell</summary>
+
+- `too-many-parameters` at line 15
+
+````java
+import java.time.LocalDate;
+import java.time.YearMonth;
+
+class Expense {
+    private final String employeeId;
+    private final String employeeName;
+    private final double amount;
+    private final Category category;
+    private final LocalDate date;
+    private final boolean receiptAttached;
+    private final String description;
+    private ApprovalStatus status;
+    private String rejectionReason;
+    
+    public Expense(String employeeId, String employeeName, double amount, 
+                   Category category, LocalDate date, boolean receiptAttached,
+                   String description) {
+        this.employeeId = employeeId;
+        this.employeeName = employeeName;
+        this.amount = amount;
+        this.category = category;
+        this.date = date;
+        this.receiptAttached = receiptAttached;
+        this.description = description;
+        this.status = ApprovalStatus.APPROVED;
+    }
+    
+    public String getEmployeeId() { return employeeId; }
+    public String getEmployeeName() { return employeeName; }
+    public double getAmount() { return amount; }
+    public Category getCategory() { return category; }
+    public LocalDate getDate() { return date; }
+    public boolean isReceiptAttached() { return receiptAttached; }
+    public String getDescription() { return description; }
+    public ApprovalStatus getStatus() { return status; }
+    public String getRejectionReason() { return rejectionReason; }
+    
+    public void setStatus(ApprovalStatus status) { this.status = status; }
+    public void setRejectionReason(String reason) { this.rejectionReason = reason; }
+    
+    public YearMonth getYearMonth() {
+        return YearMonth.from(date);
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>ExpenseClaimSystem.java</code> · 1 smell</summary>
+
+- `oversized-function` at line 7
+
+````java
+import java.time.LocalDate;
+import java.time.YearMonth;
+import java.util.*;
+import java.util.stream.Collectors;
+
+public class ExpenseClaimSystem {
+    public static void main(String[] args) {
+        ExpenseProcessor processor = new ExpenseProcessor();
+        
+        processor.processExpense(new Expense("E001", "Alice Johnson", 45.50, 
+            Category.MEALS, LocalDate.of(2026, 8, 5), true, "Team lunch"));
+        
+        processor.processExpense(new Expense("E001", "Alice Johnson", 350.00, 
+            Category.TRAVEL, LocalDate.of(2026, 8, 10), true, "Flight to Berlin"));
+        
+        processor.processExpense(new Expense("E001", "Alice Johnson", 28.00, 
+            Category.MEALS, LocalDate.of(2026, 8, 12), false, "Coffee - no receipt"));
+        
+        processor.processExpense(new Expense("E002", "Bob Smith", 120.00, 
+            Category.MEALS, LocalDate.of(2026, 8, 8), true, "Client dinner"));
+        
+        processor.processExpense(new Expense("E002", "Bob Smith", 1200.00, 
+            Category.EQUIPMENT, LocalDate.of(2026, 8, 15), true, "Monitor + dock"));
+        
+        processor.processExpense(new Expense("E002", "Bob Smith", -50.00, 
+            Category.TRAVEL, LocalDate.of(2026, 8, 20), true, "Invalid amount"));
+        
+        processor.processExpense(new Expense("E001", "Alice Johnson", 150.00, 
+            Category.MEALS, LocalDate.of(2026, 8, 25), true, "Over cap test"));
+        
+        Map<String, List<Expense>> byEmployee = processor.getExpenses().stream()
+            .collect(Collectors.groupingBy(Expense::getEmployeeId));
+        
+        for (String empId : byEmployee.keySet()) {
+            List<Expense> empExpenses = byEmployee.get(empId);
+            String empName = empExpenses.get(0).getEmployeeName();
+            
+            Map<YearMonth, List<Expense>> byMonth = empExpenses.stream()
+                .collect(Collectors.groupingBy(Expense::getYearMonth));
+            
+            for (YearMonth month : new TreeSet<>(byMonth.keySet())) {
+                MonthlyReimbursementReport report = new MonthlyReimbursementReport(
+                    empId, empName, month, byMonth.get(month));
+                report.print();
+            }
+        }
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>ExpenseProcessor.java</code> · 1 smell</summary>
+
+- `oversized-function` at line 12
+
+````java
+import java.util.*;
+
+class ExpenseProcessor {
+    private final ExpenseValidator validator;
+    private final List<Expense> allExpenses;
+    
+    public ExpenseProcessor() {
+        this.validator = new ExpenseValidator();
+        this.allExpenses = new ArrayList<>();
+    }
+    
+    public void processExpense(Expense expense) {
+        if (!validator.validate(expense)) {
+            expense.setStatus(ApprovalStatus.REJECTED);
+            allExpenses.add(expense);
+            return;
+        }
+        
+        if (expense.getAmount() > 1000) {
+            expense.setStatus(ApprovalStatus.FINANCE_APPROVAL_NEEDED);
+        } else if (expense.getAmount() > 200) {
+            expense.setStatus(ApprovalStatus.MANAGER_APPROVAL_NEEDED);
+        }
+        
+        validator.recordExpense(expense);
+        allExpenses.add(expense);
+    }
+    
+    public List<Expense> getExpenses() {
+        return new ArrayList<>(allExpenses);
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>ExpenseValidator.java</code> · 1 smell</summary>
+
+- `oversized-function` at line 11
+
+````java
+import java.time.YearMonth;
+import java.util.*;
+
+class ExpenseValidator {
+    private final Map<String, Map<YearMonth, Map<Category, Double>>> categoryTotals;
+    
+    public ExpenseValidator() {
+        this.categoryTotals = new HashMap<>();
+    }
+    
+    public boolean validate(Expense expense) {
+        if (expense.getAmount() <= 0) {
+            expense.setRejectionReason("Amount must be positive");
+            return false;
+        }
+        
+        if (expense.getAmount() > 25 && !expense.isReceiptAttached()) {
+            expense.setRejectionReason("Receipt required for amounts over 25 EUR");
+            return false;
+        }
+        
+        double cap = expense.getCategory().getMonthlyCap();
+        double currentTotal = getCategoryTotal(expense.getEmployeeId(), 
+                                               expense.getYearMonth(), 
+                                               expense.getCategory());
+        
+        if (currentTotal + expense.getAmount() > cap) {
+            expense.setRejectionReason(
+                String.format("Monthly %s cap (%.2f EUR) exceeded", 
+                    expense.getCategory(), cap)
+            );
+            return false;
+        }
+        
+        return true;
+    }
+    
+    public void recordExpense(Expense expense) {
+        String empId = expense.getEmployeeId();
+        YearMonth month = expense.getYearMonth();
+        Category cat = expense.getCategory();
+        
+        categoryTotals
+            .computeIfAbsent(empId, k -> new HashMap<>())
+            .computeIfAbsent(month, k -> new HashMap<>())
+            .merge(cat, expense.getAmount(), Double::sum);
+    }
+    
+    private double getCategoryTotal(String employeeId, YearMonth month, Category category) {
+        return categoryTotals
+            .getOrDefault(employeeId, new HashMap<>())
+            .getOrDefault(month, new HashMap<>())
+            .getOrDefault(category, 0.0);
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>MonthlyReimbursementReport.java</code> · 3 smells</summary>
+
+- `too-many-parameters` at line 10
+- `oversized-function` at line 18
+- `high-complexity` at line 18
+
+````java
+import java.time.YearMonth;
+import java.util.*;
+
+class MonthlyReimbursementReport {
+    private final String employeeId;
+    private final String employeeName;
+    private final YearMonth month;
+    private final List<Expense> expenses;
+    
+    public MonthlyReimbursementReport(String employeeId, String employeeName, 
+                                     YearMonth month, List<Expense> expenses) {
+        this.employeeId = employeeId;
+        this.employeeName = employeeName;
+        this.month = month;
+        this.expenses = expenses;
+    }
+    
+    public void print() {
+        Map<Category, Double> categoryTotals = new HashMap<>();
+        double totalApproved = 0;
+        int approvedCount = 0;
+        int managerApprovalCount = 0;
+        int financeApprovalCount = 0;
+        int rejectedCount = 0;
+        
+        for (Expense exp : expenses) {
+            if (exp.getStatus() == ApprovalStatus.REJECTED) {
+                rejectedCount++;
+                continue;
+            }
+            
+            double amt = exp.getAmount();
+            categoryTotals.merge(exp.getCategory(), amt, Double::sum);
+            totalApproved += amt;
+            
+            if (exp.getStatus() == ApprovalStatus.APPROVED) {
+                approvedCount++;
+            } else if (exp.getStatus() == ApprovalStatus.MANAGER_APPROVAL_NEEDED) {
+                managerApprovalCount++;
+            } else if (exp.getStatus() == ApprovalStatus.FINANCE_APPROVAL_NEEDED) {
+                financeApprovalCount++;
+            }
+        }
+        
+        System.out.println("\n" + "=".repeat(90));
+        System.out.println("MONTHLY REIMBURSEMENT REPORT");
+        System.out.println("=".repeat(90));
+        System.out.printf("Employee: %s (%s) | Period: %s%n", employeeName, employeeId, month);
+        System.out.println("-".repeat(90));
+        
+        System.out.println("\nCategory Totals:");
+        System.out.printf("  %-12s %12s %12s %8s%n", "Category", "Amount", "Cap", "Status");
+        for (Category cat : Category.values()) {
+            double amount = categoryTotals.getOrDefault(cat, 0.0);
+            double cap = cat.getMonthlyCap();
+            String status = amount > cap ? "OVER" : "OK";
+            System.out.printf("  %-12s %12.2f %12.2f %8s%n", cat, amount, cap, status);
+        }
+        
+        System.out.println("-".repeat(90));
+        System.out.printf("Total Reimbursable: %.2f EUR%n", totalApproved);
+        System.out.println("-".repeat(90));
+        
+        System.out.println("\nExpense Details:");
+        System.out.printf("  %-12s %-12s %10s %-25s %-20s %s%n", 
+            "Date", "Category", "Amount", "Status", "Notes", "Description");
+        
+        for (Expense exp : expenses) {
+            String statusStr = exp.getStatus().toString().replace("_", " ");
+            String notes = exp.getRejectionReason() != null ? 
+                exp.getRejectionReason().substring(0, Math.min(20, exp.getRejectionReason().length())) : 
+                (exp.isReceiptAttached() ? "Receipt OK" : "");
+            
+            System.out.printf("  %-12s %-12s %10.2f %-25s %-20s %s%n",
+                exp.getDate(), exp.getCategory(), exp.getAmount(), statusStr, notes, exp.getDescription());
+        }
+        
+        System.out.println("-".repeat(90));
+        System.out.printf("Summary: %d approved | %d mgr approval | %d fin approval | %d rejected%n%n",
+            approvedCount, managerApprovalCount, financeApprovalCount, rejectedCount);
+    }
+}
+
+````
+
+</details>
+
+*No tests shipped.*
+
+</TabItem>
+
+<TabItem value="uncle-bob-junior" label="uncle-bob-junior · 0.84">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests Yes ·
+correct **No**
+
+<details open>
+<summary><code>ApprovalLevel.java</code></summary>
+
+
+````java
+public enum ApprovalLevel {
+    AUTOMATIC,
+    MANAGER_APPROVAL,
+    FINANCE_APPROVAL
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>ApprovalRouter.java</code></summary>
+
+
+````java
+public class ApprovalRouter {
+    private static final int FINANCE_THRESHOLD_EUROS = 1000;
+    private static final int MANAGER_THRESHOLD_EUROS = 200;
+    
+    public ApprovalLevel routeForApproval(ExpenseClaim claim) {
+        if (claim.amountEuros() > FINANCE_THRESHOLD_EUROS) {
+            return ApprovalLevel.FINANCE_APPROVAL;
+        }
+        if (claim.amountEuros() > MANAGER_THRESHOLD_EUROS) {
+            return ApprovalLevel.MANAGER_APPROVAL;
+        }
+        return ApprovalLevel.AUTOMATIC;
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>ClaimProcessor.java</code></summary>
+
+
+````java
+public class ClaimProcessor {
+    private final ClaimValidator validator;
+    private final ApprovalRouter router;
+    private final MonthlyBudgetTracker budgetTracker;
+    
+    public ClaimProcessor() {
+        this.validator = new ClaimValidator();
+        this.router = new ApprovalRouter();
+        this.budgetTracker = new MonthlyBudgetTracker();
+    }
+    
+    public ProcessedClaim processClaim(ExpenseClaim claim) {
+        ClaimValidation validation = validator.validate(claim);
+        
+        if (!validation.valid()) {
+            return new ProcessedClaim(claim, validation, ApprovalLevel.AUTOMATIC, false);
+        }
+        
+        boolean withinBudget = budgetTracker.canAddClaim(claim);
+        
+        if (withinBudget) {
+            budgetTracker.recordClaim(claim);
+        }
+        
+        ApprovalLevel approvalLevel = router.routeForApproval(claim);
+        
+        return new ProcessedClaim(claim, validation, approvalLevel, withinBudget);
+    }
+    
+    public MonthlyBudgetTracker getBudgetTracker() {
+        return budgetTracker;
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>ClaimValidation.java</code></summary>
+
+
+````java
+import java.util.*;
+
+public record ClaimValidation(boolean valid, List<String> errors) {}
+
+````
+
+</details>
+
+<details>
+<summary><code>ClaimValidator.java</code></summary>
+
+
+````java
+import java.util.*;
+
+public class ClaimValidator {
+    private static final int RECEIPT_THRESHOLD_EUROS = 25;
+    
+    public ClaimValidation validate(ExpenseClaim claim) {
+        List<String> errors = new ArrayList<>();
+        
+        if (claim.amountEuros() <= 0) {
+            errors.add("Amount must be positive");
+        }
+        
+        if (claim.amountEuros() > RECEIPT_THRESHOLD_EUROS && !claim.receiptAttached()) {
+            errors.add("Receipt required for claims over " + RECEIPT_THRESHOLD_EUROS + " euros");
+        }
+        
+        return errors.isEmpty() 
+            ? new ClaimValidation(true, List.of())
+            : new ClaimValidation(false, errors);
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>ExpenseCategory.java</code> · 1 smell</summary>
+
+- `unused-import` at line 1
+
+````java
+import java.util.stream.Collectors;
+
+public enum ExpenseCategory {
+    TRAVEL(500),
+    MEALS(150),
+    EQUIPMENT(1000);
+    
+    private final int monthlyCapEuros;
+    
+    ExpenseCategory(int monthlyCapEuros) {
+        this.monthlyCapEuros = monthlyCapEuros;
+    }
+    
+    public int monthlyCapEuros() {
+        return monthlyCapEuros;
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>ExpenseClaim.java</code></summary>
+
+
+````java
+import java.time.YearMonth;
+
+public record ExpenseClaim(
+    String employeeId,
+    String employeeName,
+    YearMonth month,
+    int amountEuros,
+    ExpenseCategory category,
+    boolean receiptAttached,
+    String description
+) {}
+
+````
+
+</details>
+
+<details>
+<summary><code>MonthlyBudgetTracker.java</code></summary>
+
+
+````java
+import java.time.YearMonth;
+import java.util.*;
+
+public class MonthlyBudgetTracker {
+    private final Map<String, Map<YearMonth, Map<ExpenseCategory, Integer>>> spending;
+    
+    public MonthlyBudgetTracker() {
+        this.spending = new HashMap<>();
+    }
+    
+    public boolean canAddClaim(ExpenseClaim claim) {
+        int current = currentSpending(claim.employeeId(), claim.month(), claim.category());
+        return current + claim.amountEuros() <= claim.category().monthlyCapEuros();
+    }
+    
+    public void recordClaim(ExpenseClaim claim) {
+        spending
+            .computeIfAbsent(claim.employeeId(), k -> new HashMap<>())
+            .computeIfAbsent(claim.month(), k -> new HashMap<>())
+            .merge(claim.category(), claim.amountEuros(), Integer::sum);
+    }
+    
+    private int currentSpending(String employeeId, YearMonth month, ExpenseCategory category) {
+        return spending
+            .getOrDefault(employeeId, new HashMap<>())
+            .getOrDefault(month, new HashMap<>())
+            .getOrDefault(category, 0);
+    }
+    
+    public Map<ExpenseCategory, Integer> getMonthlySpending(String employeeId, YearMonth month) {
+        return spending
+            .getOrDefault(employeeId, new HashMap<>())
+            .getOrDefault(month, new HashMap<>());
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>MonthlyReportGenerator.java</code> · 1 smell</summary>
+
+- `oversized-function` at line 5
+
+````java
+import java.time.YearMonth;
+import java.util.*;
+
+public class MonthlyReportGenerator {
+    public String generateEmployeeReport(String employeeId, YearMonth month, MonthlyBudgetTracker tracker) {
+        Map<ExpenseCategory, Integer> spending = tracker.getMonthlySpending(employeeId, month);
+        
+        StringBuilder report = new StringBuilder();
+        report.append("=== MONTHLY EXPENSE REPORT ===\n");
+        report.append("Employee: ").append(employeeId).append("\n");
+        report.append("Month: ").append(month).append("\n\n");
+        
+        int totalSpent = 0;
+        for (ExpenseCategory category : ExpenseCategory.values()) {
+            int amount = spending.getOrDefault(category, 0);
+            int cap = category.monthlyCapEuros();
+            int remaining = cap - amount;
+            totalSpent += amount;
+            
+            report.append(String.format("%-15s €%-6d / €%-6d (Remaining: €%d)\n", 
+                category + ":", amount, cap, remaining));
+        }
+        
+        report.append("\n");
+        int totalCap = Arrays.stream(ExpenseCategory.values())
+            .mapToInt(ExpenseCategory::monthlyCapEuros).sum();
+        report.append(String.format("TOTAL:          €%-6d / €%-6d\n", totalSpent, totalCap));
+        
+        return report.toString();
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>ProcessedClaim.java</code></summary>
+
+
+````java
+public record ProcessedClaim(
+    ExpenseClaim claim,
+    ClaimValidation validation,
+    ApprovalLevel approvalLevel,
+    boolean withinMonthlyBudget
+) {}
+
+````
+
+</details>
+
+<details>
+<summary>Shipped tests (1 file)</summary>
+
+<details>
+<summary><code>ExpenseClaimProcessorTest.java</code></summary>
+
+
+````java
+import java.time.YearMonth;
+
+public class ExpenseClaimProcessorTest {
+    private ClaimProcessor processor;
+    private MonthlyReportGenerator reportGenerator;
+    private YearMonth testMonth;
+    
+    public void setUp() {
+        processor = new ClaimProcessor();
+        reportGenerator = new MonthlyReportGenerator();
+        testMonth = YearMonth.of(2026, 8);
+    }
+    
+    public void testNegativeAmountRejected() {
+        setUp();
+        ExpenseClaim claim = new ExpenseClaim("EMP001", "John Doe", testMonth, -50, ExpenseCategory.TRAVEL, true, "Flight");
+        ProcessedClaim result = processor.processClaim(claim);
+        assert !result.validation().valid() : "Negative amount should be rejected";
+        assert result.validation().errors().stream().anyMatch(e -> e.contains("positive")) : "Should mention positive amount";
+    }
+    
+    public void testReceiptNotRequiredUnder25() {
+        setUp();
+        ExpenseClaim claim = new ExpenseClaim("EMP001", "John Doe", testMonth, 20, ExpenseCategory.MEALS, false, "Coffee");
+        ProcessedClaim result = processor.processClaim(claim);
+        assert result.validation().valid() : "Receipt not required under 25 euros";
+    }
+    
+    public void testReceiptRequiredOver25() {
+        setUp();
+        ExpenseClaim claim = new ExpenseClaim("EMP001", "John Doe", testMonth, 50, ExpenseCategory.MEALS, false, "Lunch");
+        ProcessedClaim result = processor.processClaim(claim);
+        assert !result.validation().valid() : "Receipt required over 25 euros";
+        assert result.validation().errors().stream().anyMatch(e -> e.contains("Receipt")) : "Should mention receipt requirement";
+    }
+    
+    public void testMealsBudgetCap() {
+        setUp();
+        processor.processClaim(new ExpenseClaim("EMP002", "Jane", testMonth, 100, ExpenseCategory.MEALS, true, "Lunch"));
+        ProcessedClaim result2 = processor.processClaim(new ExpenseClaim("EMP002", "Jane", testMonth, 60, ExpenseCategory.MEALS, true, "Dinner"));
+        assert !result2.withinMonthlyBudget() : "Should exceed meals cap of 150";
+    }
+    
+    public void testTravelBudgetCap() {
+        setUp();
+        processor.processClaim(new ExpenseClaim("EMP003", "Bob", testMonth, 400, ExpenseCategory.TRAVEL, true, "Flight"));
+        ProcessedClaim result2 = processor.processClaim(new ExpenseClaim("EMP003", "Bob", testMonth, 150, ExpenseCategory.TRAVEL, true, "Hotel"));
+        assert !result2.withinMonthlyBudget() : "Should exceed travel cap of 500";
+    }
+    
+    public void testEquipmentBudgetCap() {
+        setUp();
+        processor.processClaim(new ExpenseClaim("EMP004", "Alice", testMonth, 800, ExpenseCategory.EQUIPMENT, true, "Laptop"));
+        ProcessedClaim result2 = processor.processClaim(new ExpenseClaim("EMP004", "Alice", testMonth, 250, ExpenseCategory.EQUIPMENT, true, "Monitor"));
+        assert !result2.withinMonthlyBudget() : "Should exceed equipment cap of 1000";
+    }
+    
+    public void testAutomaticApprovalSmallClaim() {
+        setUp();
+        ProcessedClaim result = processor.processClaim(new ExpenseClaim("EMP001", "John", testMonth, 150, ExpenseCategory.MEALS, true, "Lunch"));
+        assert result.approvalLevel() == ApprovalLevel.AUTOMATIC : "Claims under 200 euros should be automatic";
+    }
+    
+    public void testManagerApprovalRange() {
+        setUp();
+        ProcessedClaim result = processor.processClaim(new ExpenseClaim("EMP001", "John", testMonth, 500, ExpenseCategory.TRAVEL, true, "Flight"));
+        assert result.approvalLevel() == ApprovalLevel.MANAGER_APPROVAL : "Claims 200-1000 euros need manager approval";
+    }
+    
+    public void testFinanceApprovalLarge() {
+        setUp();
+        ProcessedClaim result = processor.processClaim(new ExpenseClaim("EMP001", "John", testMonth, 1500, ExpenseCategory.EQUIPMENT, true, "Workstation"));
+        assert result.approvalLevel() == ApprovalLevel.FINANCE_APPROVAL : "Claims over 1000 euros need finance approval";
+    }
+    
+    public void testMonthlyReportGeneration() {
+        setUp();
+        processor.processClaim(new ExpenseClaim("EMP005", "Charlie", testMonth, 100, ExpenseCategory.MEALS, true, "Lunch"));
+        processor.processClaim(new ExpenseClaim("EMP005", "Charlie", testMonth, 300, ExpenseCategory.TRAVEL, true, "Flight"));
+        
+        String report = reportGenerator.generateEmployeeReport("EMP005", testMonth, processor.getBudgetTracker());
+        assert report.contains("EMP005") : "Report should contain employee ID";
+        assert report.contains(testMonth.toString()) : "Report should contain month";
+        assert report.contains("MEALS") : "Report should contain meals category";
+        assert report.contains("TRAVEL") : "Report should contain travel category";
+        assert report.contains("100") : "Report should show meals amount";
+        assert report.contains("300") : "Report should show travel amount";
+    }
+    
+    public static void main(String[] args) {
+        ExpenseClaimProcessorTest test = new ExpenseClaimProcessorTest();
+        
+        test.testNegativeAmountRejected();
+        test.testReceiptNotRequiredUnder25();
+        test.testReceiptRequiredOver25();
+        test.testMealsBudgetCap();
+        test.testTravelBudgetCap();
+        test.testEquipmentBudgetCap();
+        test.testAutomaticApprovalSmallClaim();
+        test.testManagerApprovalRange();
+        test.testFinanceApprovalLarge();
+        test.testMonthlyReportGeneration();
+        
+        System.out.println("✓ All tests passed");
+        
+        // Demo report
+        ClaimProcessor processor = new ClaimProcessor();
+        YearMonth month = YearMonth.of(2026, 8);
+        processor.processClaim(new ExpenseClaim("EMP099", "Sarah Wilson", month, 80, ExpenseCategory.MEALS, true, "Team lunch"));
+        processor.processClaim(new ExpenseClaim("EMP099", "Sarah Wilson", month, 450, ExpenseCategory.TRAVEL, true, "Conference flight"));
+        processor.processClaim(new ExpenseClaim("EMP099", "Sarah Wilson", month, 750, ExpenseCategory.EQUIPMENT, true, "Monitor setup"));
+        
+        MonthlyReportGenerator generator = new MonthlyReportGenerator();
+        System.out.println("\n" + generator.generateEmployeeReport("EMP099", month, processor.getBudgetTracker()));
+    }
+}
+
+````
+
+</details>
+
+</details>
+
+</TabItem>
+
+</Tabs>

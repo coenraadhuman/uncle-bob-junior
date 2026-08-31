@@ -1,0 +1,335 @@
+---
+title: order
+sidebar_position: 5
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+> Write Java code that processes an order&#58; validate the line items, compute the total with 21% VAT, apply a 10% discount when the pre-VAT total exceeds 100 euros, and produce a receipt string.
+
+## claude-cli&#58;haiku
+
+<Tabs>
+
+<TabItem value="baseline-no-ruleset" label="baseline (no ruleset) · 0.86">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests **No** ·
+correct Yes
+
+<details open>
+<summary><code>OrderProcessor.java</code> · 1 smell</summary>
+
+- `oversized-function` at line 32
+
+````java
+import java.util.*;
+import java.text.DecimalFormat;
+
+class OrderProcessor {
+    
+    static class LineItem {
+        String description;
+        int quantity;
+        double unitPrice;
+        
+        LineItem(String description, int quantity, double unitPrice) {
+            this.description = description;
+            this.quantity = quantity;
+            this.unitPrice = unitPrice;
+        }
+    }
+    
+    static void validateLineItems(List<LineItem> items) {
+        if (items == null || items.isEmpty()) {
+            throw new IllegalArgumentException("Order must contain at least one item");
+        }
+        for (LineItem item : items) {
+            if (item.quantity <= 0) {
+                throw new IllegalArgumentException("Quantity must be positive");
+            }
+            if (item.unitPrice < 0) {
+                throw new IllegalArgumentException("Price cannot be negative");
+            }
+        }
+    }
+    
+    static String processOrder(List<LineItem> items) {
+        validateLineItems(items);
+        
+        double preVatTotal = 0;
+        for (LineItem item : items) {
+            preVatTotal += item.quantity * item.unitPrice;
+        }
+        
+        double discount = preVatTotal > 100 ? preVatTotal * 0.10 : 0;
+        double postDiscountTotal = preVatTotal - discount;
+        double vat = postDiscountTotal * 0.21;
+        double finalTotal = postDiscountTotal + vat;
+        
+        DecimalFormat fmt = new DecimalFormat("0.00");
+        StringBuilder receipt = new StringBuilder();
+        
+        receipt.append("========== RECEIPT ==========\n");
+        for (LineItem item : items) {
+            double lineTotal = item.quantity * item.unitPrice;
+            receipt.append(String.format("%s (qty: %d @ €%s) = €%s\n",
+                item.description, item.quantity, fmt.format(item.unitPrice), fmt.format(lineTotal)));
+        }
+        receipt.append("-----------------------------\n");
+        receipt.append(String.format("Subtotal:        €%s\n", fmt.format(preVatTotal)));
+        if (discount > 0) {
+            receipt.append(String.format("Discount (10%%):  -€%s\n", fmt.format(discount)));
+        }
+        receipt.append(String.format("VAT (21%%):       €%s\n", fmt.format(vat)));
+        receipt.append("=============================\n");
+        receipt.append(String.format("TOTAL:           €%s\n", fmt.format(finalTotal)));
+        
+        return receipt.toString();
+    }
+    
+    public static void main(String[] args) {
+        List<LineItem> order = Arrays.asList(
+            new LineItem("Widget A", 3, 25.00),
+            new LineItem("Widget B", 2, 40.00),
+            new LineItem("Service", 1, 20.00)
+        );
+        
+        System.out.println(processOrder(order));
+    }
+}
+
+````
+
+</details>
+
+*No tests shipped.*
+
+</TabItem>
+
+<TabItem value="uncle-bob-junior" label="uncle-bob-junior · 0.98">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests Yes ·
+correct Yes
+
+<details open>
+<summary><code>LineItem.java</code></summary>
+
+
+````java
+import java.math.BigDecimal;
+import java.util.Objects;
+
+class LineItem {
+    private final String description;
+    private final int quantity;
+    private final BigDecimal unitPrice;
+
+    LineItem(String description, int quantity, BigDecimal unitPrice) {
+        this.description = Objects.requireNonNull(description);
+        if (quantity <= 0) {
+            throw new IllegalArgumentException("Quantity must be positive");
+        }
+        if (unitPrice.signum() < 0) {
+            throw new IllegalArgumentException("Unit price cannot be negative");
+        }
+        this.quantity = quantity;
+        this.unitPrice = unitPrice;
+    }
+
+    BigDecimal subtotal() {
+        return unitPrice.multiply(BigDecimal.valueOf(quantity));
+    }
+
+    String description() {
+        return description;
+    }
+
+    int quantity() {
+        return quantity;
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>Order.java</code> · 1 smell</summary>
+
+- `oversized-function` at line 46
+
+````java
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+
+class Order {
+    private static final BigDecimal VAT_RATE = BigDecimal.valueOf(0.21);
+    private static final BigDecimal DISCOUNT_RATE = BigDecimal.valueOf(0.10);
+    private static final BigDecimal DISCOUNT_THRESHOLD = BigDecimal.valueOf(100);
+
+    private final List<LineItem> items;
+    private final BigDecimal subtotal;
+    private final BigDecimal discountAmount;
+    private final BigDecimal discountedSubtotal;
+    private final BigDecimal vat;
+    private final BigDecimal total;
+
+    Order(List<LineItem> items) {
+        this.items = new ArrayList<>(Objects.requireNonNull(items));
+        if (items.isEmpty()) {
+            throw new IllegalArgumentException("Order must have at least one item");
+        }
+        this.subtotal = computeSubtotal();
+        this.discountAmount = computeDiscount();
+        this.discountedSubtotal = subtotal.subtract(discountAmount);
+        this.vat = discountedSubtotal.multiply(VAT_RATE).setScale(2, RoundingMode.HALF_UP);
+        this.total = discountedSubtotal.add(vat).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal computeSubtotal() {
+        BigDecimal sum = BigDecimal.ZERO;
+        for (LineItem item : items) {
+            sum = sum.add(item.subtotal());
+        }
+        return sum.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal computeDiscount() {
+        if (subtotal.compareTo(DISCOUNT_THRESHOLD) > 0) {
+            return subtotal.multiply(DISCOUNT_RATE).setScale(2, RoundingMode.HALF_UP);
+        }
+        return BigDecimal.ZERO;
+    }
+
+    String receipt() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("=== ORDER RECEIPT ===\n");
+        for (LineItem item : items) {
+            sb.append(String.format("%s x%d: €%.2f\n", 
+                item.description(), item.quantity(), item.subtotal()));
+        }
+        sb.append(String.format("\nSubtotal: €%.2f\n", subtotal));
+        if (discountAmount.signum() > 0) {
+            sb.append(String.format("Discount (10%%): -€%.2f\n", discountAmount));
+            sb.append(String.format("After Discount: €%.2f\n", discountedSubtotal));
+        }
+        sb.append(String.format("VAT (21%%): €%.2f\n", vat));
+        sb.append(String.format("Total: €%.2f\n", total));
+        return sb.toString();
+    }
+
+    BigDecimal getTotal() { return total; }
+    BigDecimal getSubtotal() { return subtotal; }
+    BigDecimal getDiscount() { return discountAmount; }
+    BigDecimal getVat() { return vat; }
+}
+
+````
+
+</details>
+
+<details>
+<summary>Shipped tests (1 file)</summary>
+
+<details>
+<summary><code>OrderProcessorTest.java</code></summary>
+
+
+````java
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
+
+class OrderProcessorTest {
+    void testNoDiscountBelowThreshold() {
+        List<LineItem> items = List.of(
+            new LineItem("Widget", 2, BigDecimal.valueOf(25.00)),
+            new LineItem("Gadget", 1, BigDecimal.valueOf(30.00))
+        );
+        Order order = new Order(items);
+        assert order.getSubtotal().equals(BigDecimal.valueOf(80.00));
+        assert order.getDiscount().equals(BigDecimal.ZERO);
+        assert order.getVat().equals(BigDecimal.valueOf(16.80));
+        assert order.getTotal().equals(BigDecimal.valueOf(96.80));
+    }
+
+    void testDiscountAppliedAboveThreshold() {
+        List<LineItem> items = List.of(
+            new LineItem("Premium Widget", 5, BigDecimal.valueOf(25.00))
+        );
+        Order order = new Order(items);
+        assert order.getSubtotal().equals(BigDecimal.valueOf(125.00));
+        assert order.getDiscount().equals(BigDecimal.valueOf(12.50));
+        assert order.getVat().equals(BigDecimal.valueOf(23.63));
+        assert order.getTotal().equals(BigDecimal.valueOf(136.13));
+    }
+
+    void testReceiptFormatting() {
+        List<LineItem> items = List.of(
+            new LineItem("Item A", 1, BigDecimal.valueOf(50.00))
+        );
+        Order order = new Order(items);
+        String receipt = order.receipt();
+        assert receipt.contains("Item A x1: €50.00");
+        assert receipt.contains("Subtotal: €50.00");
+        assert !receipt.contains("Discount");
+        assert receipt.contains("VAT (21%): €10.50");
+        assert receipt.contains("Total: €60.50");
+    }
+
+    void testValidationEmptyOrder() {
+        try {
+            new Order(new ArrayList<>());
+            assert false;
+        } catch (IllegalArgumentException e) {
+            assert e.getMessage().contains("at least one item");
+        }
+    }
+
+    void testValidationNegativeQuantity() {
+        try {
+            new LineItem("Item", 0, BigDecimal.TEN);
+            assert false;
+        } catch (IllegalArgumentException e) {
+            assert e.getMessage().contains("Quantity");
+        }
+    }
+
+    void testValidationNegativePrice() {
+        try {
+            new LineItem("Item", 1, BigDecimal.valueOf(-10));
+            assert false;
+        } catch (IllegalArgumentException e) {
+            assert e.getMessage().contains("price");
+        }
+    }
+
+    public static void main(String[] args) {
+        OrderProcessorTest test = new OrderProcessorTest();
+        test.testNoDiscountBelowThreshold();
+        test.testDiscountAppliedAboveThreshold();
+        test.testReceiptFormatting();
+        test.testValidationEmptyOrder();
+        test.testValidationNegativeQuantity();
+        test.testValidationNegativePrice();
+        System.out.println("All tests passed!");
+    }
+}
+
+````
+
+</details>
+
+</details>
+
+</TabItem>
+
+</Tabs>

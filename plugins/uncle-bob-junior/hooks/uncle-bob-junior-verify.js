@@ -21,6 +21,8 @@ const SCAN_TIMEOUT_MS = 30_000;
 // Stop-hook reasons re-enter the model's context; cap so a huge report can't flood it.
 const MAX_REASON_LENGTH = 4000;
 const VERIFYING_MODES = ['lite', 'full', 'ultra'];
+// The tool calls that mean a coding job took place this turn.
+const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 
 function stdinJson() {
   try {
@@ -30,10 +32,48 @@ function stdinJson() {
   }
 }
 
+// A real user prompt (not a tool result fed back) starts a new turn.
+function isUserPrompt(entry) {
+  if (entry.type !== 'user' || !entry.message) return false;
+  const content = entry.message.content;
+  if (typeof content === 'string') return true;
+  return Array.isArray(content) && content.every((block) => block.type !== 'tool_result');
+}
+
+// Whether the turn since the last user prompt used a file-editing tool.
+// Verification is pointless after a chat-only turn — and nagging about
+// pre-existing branch smells then would be noise. Unreadable or absent
+// transcripts count as edited: when we cannot tell, keep verifying.
+function turnEditedFiles(transcriptPath) {
+  let lines;
+  try {
+    lines = fs.readFileSync(transcriptPath, 'utf8').split('\n');
+  } catch (error) {
+    return true;
+  }
+  let edited = false;
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    let entry;
+    try {
+      entry = JSON.parse(line);
+    } catch (error) {
+      continue;
+    }
+    if (isUserPrompt(entry)) edited = false;
+    else if (Array.isArray(entry.message?.content)
+      && entry.message.content.some((block) => block.type === 'tool_use' && EDIT_TOOLS.has(block.name))) {
+      edited = true;
+    }
+  }
+  return edited;
+}
+
 function shouldSkip(input, cwd) {
   if (input.stop_hook_active) return true;
   if (!VERIFYING_MODES.includes(readMode() || '')) return true;
-  return !fs.existsSync(path.join(cwd, '.habit-hooks', 'config.toml'));
+  if (!fs.existsSync(path.join(cwd, '.habit-hooks', 'config.toml'))) return true;
+  return !turnEditedFiles(input.transcript_path);
 }
 
 // Exit 0 = clean, exit 1 = findings on stdout; anything else (no CLI, no git,

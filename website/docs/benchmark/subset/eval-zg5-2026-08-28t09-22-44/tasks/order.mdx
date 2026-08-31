@@ -1,0 +1,1057 @@
+---
+title: order
+sidebar_position: 3
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+> Write Java code that processes an order&#58; validate the line items, compute the total with 21% VAT, apply a 10% discount when the pre-VAT total exceeds 100 euros, and produce a receipt string.
+
+## claude-cli&#58;haiku
+
+<Tabs>
+
+<TabItem value="baseline-no-ruleset" label="baseline (no ruleset) · 0.86">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests **No** ·
+correct Yes
+
+<details open>
+<summary><code>LineItem.java</code></summary>
+
+
+````java
+public class LineItem {
+    private String description;
+    private int quantity;
+    private double price;
+    
+    public LineItem(String description, int quantity, double price) {
+        this.description = description;
+        this.quantity = quantity;
+        this.price = price;
+    }
+    
+    public String getDescription() { return description; }
+    public int getQuantity() { return quantity; }
+    public double getPrice() { return price; }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>Order.java</code> · 1 smell</summary>
+
+- `oversized-function` at line 47
+
+````java
+import java.util.ArrayList;
+import java.util.List;
+
+public class Order {
+    private List<LineItem> lineItems;
+    private static final double VAT_RATE = 0.21;
+    private static final double DISCOUNT_RATE = 0.10;
+    private static final double DISCOUNT_THRESHOLD = 100.0;
+    
+    public Order(List<LineItem> lineItems) {
+        this.lineItems = validateLineItems(lineItems);
+    }
+    
+    private List<LineItem> validateLineItems(List<LineItem> items) {
+        if (items == null || items.isEmpty()) {
+            throw new IllegalArgumentException("Line items cannot be null or empty");
+        }
+        for (LineItem item : items) {
+            if (item.getQuantity() <= 0) {
+                throw new IllegalArgumentException("Quantity must be positive: " + item.getDescription());
+            }
+            if (item.getPrice() < 0) {
+                throw new IllegalArgumentException("Price cannot be negative: " + item.getDescription());
+            }
+        }
+        return items;
+    }
+    
+    public double getPreVatTotal() {
+        return lineItems.stream()
+            .mapToDouble(item -> item.getQuantity() * item.getPrice())
+            .sum();
+    }
+    
+    public double getDiscount() {
+        return getPreVatTotal() > DISCOUNT_THRESHOLD ? getPreVatTotal() * DISCOUNT_RATE : 0.0;
+    }
+    
+    public double getVat() {
+        return (getPreVatTotal() - getDiscount()) * VAT_RATE;
+    }
+    
+    public double getTotal() {
+        return getPreVatTotal() - getDiscount() + getVat();
+    }
+    
+    public String getReceipt() {
+        StringBuilder receipt = new StringBuilder();
+        receipt.append("=== ORDER RECEIPT ===\n");
+        receipt.append(String.format("%-30s %8s %12s\n", "Description", "Qty", "Price"));
+        receipt.append("-".repeat(52)).append("\n");
+        
+        for (LineItem item : lineItems) {
+            double lineTotal = item.getQuantity() * item.getPrice();
+            receipt.append(String.format("%-30s %8d €%11.2f\n", 
+                item.getDescription(), item.getQuantity(), lineTotal));
+        }
+        
+        receipt.append("-".repeat(52)).append("\n");
+        receipt.append(String.format("Pre-VAT Total:        %31.2f EUR\n", getPreVatTotal()));
+        
+        double discount = getDiscount();
+        if (discount > 0) {
+            receipt.append(String.format("Discount (10%%):      -%30.2f EUR\n", discount));
+        }
+        
+        receipt.append(String.format("VAT (21%%):            %31.2f EUR\n", getVat()));
+        receipt.append("=".repeat(52)).append("\n");
+        receipt.append(String.format("TOTAL:                %31.2f EUR\n", getTotal()));
+        
+        return receipt.toString();
+    }
+    
+    public static void main(String[] args) {
+        List<LineItem> items = new ArrayList<>();
+        items.add(new LineItem("Widget A", 5, 15.00));
+        items.add(new LineItem("Widget B", 3, 20.00));
+        items.add(new LineItem("Service Fee", 1, 25.50));
+        
+        Order order = new Order(items);
+        System.out.println(order.getReceipt());
+        System.out.println("Pre-VAT: " + order.getPreVatTotal());
+        System.out.println("Discount: " + order.getDiscount());
+        System.out.println("Final Total: " + order.getTotal());
+    }
+}
+
+````
+
+</details>
+
+*No tests shipped.*
+
+</TabItem>
+
+<TabItem value="uncle-bob-junior" label="uncle-bob-junior · 0.97">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests Yes ·
+correct Yes
+
+<details open>
+<summary><code>LineItem.java</code></summary>
+
+
+````java
+import java.math.BigDecimal;
+import java.util.Objects;
+
+public class LineItem {
+    private final String description;
+    private final int quantity;
+    private final BigDecimal unitPrice;
+    
+    public LineItem(String description, int quantity, BigDecimal unitPrice) {
+        this.description = Objects.requireNonNull(description, "Description cannot be null");
+        this.quantity = validateQuantity(quantity);
+        this.unitPrice = validateUnitPrice(unitPrice);
+    }
+    
+    private int validateQuantity(int quantity) {
+        if (quantity <= 0) {
+            throw new IllegalArgumentException("Quantity must be positive");
+        }
+        return quantity;
+    }
+    
+    private BigDecimal validateUnitPrice(BigDecimal unitPrice) {
+        Objects.requireNonNull(unitPrice, "Unit price cannot be null");
+        if (unitPrice.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("Unit price must be positive");
+        }
+        return unitPrice;
+    }
+    
+    public BigDecimal lineTotal() {
+        return unitPrice.multiply(new BigDecimal(quantity));
+    }
+    
+    public String getDescription() {
+        return description;
+    }
+    
+    public int getQuantity() {
+        return quantity;
+    }
+    
+    public BigDecimal getUnitPrice() {
+        return unitPrice;
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>Order.java</code></summary>
+
+
+````java
+import java.util.List;
+import java.util.Objects;
+
+public class Order {
+    private final List<LineItem> items;
+    
+    public Order(List<LineItem> items) {
+        this.items = Objects.requireNonNull(items, "Items cannot be null");
+        if (items.isEmpty()) {
+            throw new IllegalArgumentException("Order must contain at least one item");
+        }
+    }
+    
+    public List<LineItem> getItems() {
+        return items;
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>OrderProcessor.java</code></summary>
+
+
+````java
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+
+public class OrderProcessor {
+    private static final BigDecimal VAT_RATE = new BigDecimal("0.21");
+    private static final BigDecimal DISCOUNT_RATE = new BigDecimal("0.10");
+    private static final BigDecimal DISCOUNT_THRESHOLD = new BigDecimal("100");
+    private static final int SCALE = 2;
+    
+    public OrderReceipt process(Order order) {
+        BigDecimal subtotal = calculateSubtotal(order);
+        BigDecimal discount = calculateDiscount(subtotal);
+        BigDecimal discountedAmount = subtotal.subtract(discount);
+        BigDecimal vatAmount = calculateVat(discountedAmount);
+        BigDecimal total = discountedAmount.add(vatAmount);
+        
+        return new OrderReceipt(order.getItems(), subtotal, discount, vatAmount, total);
+    }
+    
+    private BigDecimal calculateSubtotal(Order order) {
+        return order.getItems().stream()
+            .map(LineItem::lineTotal)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+    
+    private BigDecimal calculateDiscount(BigDecimal subtotal) {
+        if (subtotal.compareTo(DISCOUNT_THRESHOLD) > 0) {
+            return subtotal.multiply(DISCOUNT_RATE)
+                .setScale(SCALE, RoundingMode.HALF_UP);
+        }
+        return BigDecimal.ZERO;
+    }
+    
+    private BigDecimal calculateVat(BigDecimal amount) {
+        return amount.multiply(VAT_RATE)
+            .setScale(SCALE, RoundingMode.HALF_UP);
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>OrderReceipt.java</code> · 2 smells</summary>
+
+- `too-many-parameters` at line 11
+- `oversized-function` at line 37
+
+````java
+import java.math.BigDecimal;
+import java.util.List;
+
+public class OrderReceipt {
+    private final List<LineItem> items;
+    private final BigDecimal subtotal;
+    private final BigDecimal discount;
+    private final BigDecimal vatAmount;
+    private final BigDecimal total;
+    
+    public OrderReceipt(List<LineItem> items, BigDecimal subtotal, BigDecimal discount, 
+                       BigDecimal vatAmount, BigDecimal total) {
+        this.items = items;
+        this.subtotal = subtotal;
+        this.discount = discount;
+        this.vatAmount = vatAmount;
+        this.total = total;
+    }
+    
+    public BigDecimal getSubtotal() {
+        return subtotal;
+    }
+    
+    public BigDecimal getDiscount() {
+        return discount;
+    }
+    
+    public BigDecimal getVatAmount() {
+        return vatAmount;
+    }
+    
+    public BigDecimal getTotal() {
+        return total;
+    }
+    
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("=== ORDER RECEIPT ===\n");
+        
+        for (LineItem item : items) {
+            sb.append(String.format("%s (qty: %d x €%.2f) = €%.2f\n",
+                item.getDescription(),
+                item.getQuantity(),
+                item.getUnitPrice(),
+                item.lineTotal()));
+        }
+        
+        sb.append("\n");
+        sb.append(String.format("Subtotal:        €%.2f\n", subtotal));
+        
+        if (discount.compareTo(BigDecimal.ZERO) > 0) {
+            sb.append(String.format("Discount (10%%):  -€%.2f\n", discount));
+        }
+        
+        sb.append(String.format("VAT (21%%):       €%.2f\n", vatAmount));
+        sb.append(String.format("TOTAL:           €%.2f\n", total));
+        
+        return sb.toString();
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary>Shipped tests (1 file)</summary>
+
+<details>
+<summary><code>OrderProcessorTest.java</code></summary>
+
+
+````java
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
+import java.math.BigDecimal;
+import java.util.Arrays;
+import java.util.List;
+
+public class OrderProcessorTest {
+    
+    @Test
+    public void lineItemValidatesPositiveQuantity() {
+        assertThrows(IllegalArgumentException.class, () ->
+            new LineItem("Widget", 0, new BigDecimal("10.00"))
+        );
+    }
+    
+    @Test
+    public void lineItemValidatesPositivePrice() {
+        assertThrows(IllegalArgumentException.class, () ->
+            new LineItem("Widget", 1, new BigDecimal("0.00"))
+        );
+    }
+    
+    @Test
+    public void lineItemCalculatesTotal() {
+        LineItem item = new LineItem("Widget", 3, new BigDecimal("10.00"));
+        assertEquals(new BigDecimal("30.00"), item.lineTotal());
+    }
+    
+    @Test
+    public void orderRequiresAtLeastOneItem() {
+        assertThrows(IllegalArgumentException.class, () ->
+            new Order(Arrays.asList())
+        );
+    }
+    
+    @Test
+    public void processOrderWithNoDiscount() {
+        List<LineItem> items = Arrays.asList(
+            new LineItem("Widget", 5, new BigDecimal("10.00")),
+            new LineItem("Gadget", 2, new BigDecimal("15.00"))
+        );
+        Order order = new Order(items);
+        OrderReceipt receipt = new OrderProcessor().process(order);
+        
+        assertEquals(new BigDecimal("80.00"), receipt.getSubtotal());
+        assertEquals(BigDecimal.ZERO, receipt.getDiscount());
+        assertEquals(new BigDecimal("16.80"), receipt.getVatAmount());
+        assertEquals(new BigDecimal("96.80"), receipt.getTotal());
+    }
+    
+    @Test
+    public void processOrderWithDiscount() {
+        List<LineItem> items = Arrays.asList(
+            new LineItem("Widget", 10, new BigDecimal("10.00")),
+            new LineItem("Gadget", 5, new BigDecimal("5.00"))
+        );
+        Order order = new Order(items);
+        OrderReceipt receipt = new OrderProcessor().process(order);
+        
+        assertEquals(new BigDecimal("125.00"), receipt.getSubtotal());
+        assertEquals(new BigDecimal("12.50"), receipt.getDiscount());
+        assertEquals(new BigDecimal("23.63"), receipt.getVatAmount());
+        assertEquals(new BigDecimal("136.13"), receipt.getTotal());
+    }
+    
+    @Test
+    public void processOrderAtDiscountThreshold() {
+        List<LineItem> items = Arrays.asList(
+            new LineItem("Widget", 10, new BigDecimal("10.00"))
+        );
+        Order order = new Order(items);
+        OrderReceipt receipt = new OrderProcessor().process(order);
+        
+        assertEquals(new BigDecimal("100.00"), receipt.getSubtotal());
+        assertEquals(BigDecimal.ZERO, receipt.getDiscount());
+        assertEquals(new BigDecimal("21.00"), receipt.getVatAmount());
+        assertEquals(new BigDecimal("121.00"), receipt.getTotal());
+    }
+    
+    @Test
+    public void processOrderJustAboveThreshold() {
+        List<LineItem> items = Arrays.asList(
+            new LineItem("Widget", 101, new BigDecimal("1.00"))
+        );
+        Order order = new Order(items);
+        OrderReceipt receipt = new OrderProcessor().process(order);
+        
+        assertEquals(new BigDecimal("101.00"), receipt.getSubtotal());
+        assertEquals(new BigDecimal("10.10"), receipt.getDiscount());
+        assertEquals(new BigDecimal("19.09"), receipt.getVatAmount());
+        assertEquals(new BigDecimal("109.99"), receipt.getTotal());
+    }
+    
+    @Test
+    public void receiptStringFormattingWithDiscount() {
+        List<LineItem> items = Arrays.asList(
+            new LineItem("Widget", 6, new BigDecimal("20.00"))
+        );
+        Order order = new Order(items);
+        String receiptString = new OrderProcessor().process(order).toString();
+        
+        assertTrue(receiptString.contains("Widget"));
+        assertTrue(receiptString.contains("120.00"));
+        assertTrue(receiptString.contains("Discount"));
+    }
+    
+    @Test
+    public void receiptStringFormattingWithoutDiscount() {
+        List<LineItem> items = Arrays.asList(
+            new LineItem("Widget", 2, new BigDecimal("50.00"))
+        );
+        Order order = new Order(items);
+        String receiptString = new OrderProcessor().process(order).toString();
+        
+        assertTrue(receiptString.contains("100.00"));
+        assertFalse(receiptString.contains("Discount"));
+    }
+}
+
+````
+
+</details>
+
+</details>
+
+</TabItem>
+
+</Tabs>
+
+## claude-cli&#58;sonnet
+
+<Tabs>
+
+<TabItem value="baseline-no-ruleset" label="baseline (no ruleset) · 0.86">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests **No** ·
+correct Yes
+
+<details open>
+<summary><code>OrderProcessor.java</code> · 1 smell</summary>
+
+- `oversized-function` at line 63
+
+````java
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.List;
+import java.util.Objects;
+
+public final class OrderProcessor {
+
+    private static final BigDecimal VAT_RATE = new BigDecimal("0.21");
+    private static final BigDecimal DISCOUNT_RATE = new BigDecimal("0.10");
+    private static final BigDecimal DISCOUNT_THRESHOLD = new BigDecimal("100.00");
+
+    public record LineItem(String description, int quantity, BigDecimal unitPrice) {
+
+        public LineItem {
+            Objects.requireNonNull(description, "description must not be null");
+            if (description.isBlank()) {
+                throw new IllegalArgumentException("description must not be blank");
+            }
+            if (quantity <= 0) {
+                throw new IllegalArgumentException("quantity must be positive: " + quantity);
+            }
+            Objects.requireNonNull(unitPrice, "unitPrice must not be null");
+            if (unitPrice.compareTo(BigDecimal.ZERO) < 0) {
+                throw new IllegalArgumentException("unitPrice must not be negative: " + unitPrice);
+            }
+        }
+
+        BigDecimal lineTotal() {
+            return unitPrice.multiply(BigDecimal.valueOf(quantity));
+        }
+    }
+
+    public record Receipt(
+            BigDecimal subtotal,
+            BigDecimal discount,
+            BigDecimal vat,
+            BigDecimal total
+    ) {
+    }
+
+    public Receipt process(List<LineItem> lineItems) {
+        if (lineItems == null || lineItems.isEmpty()) {
+            throw new IllegalArgumentException("order must contain at least one line item");
+        }
+
+        BigDecimal subtotal = lineItems.stream()
+                .map(LineItem::lineTotal)
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                .setScale(2, RoundingMode.HALF_UP);
+
+        boolean discountApplies = subtotal.compareTo(DISCOUNT_THRESHOLD) > 0;
+        BigDecimal discount = discountApplies
+                ? subtotal.multiply(DISCOUNT_RATE).setScale(2, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO;
+
+        BigDecimal discountedSubtotal = subtotal.subtract(discount);
+        BigDecimal vat = discountedSubtotal.multiply(VAT_RATE).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal total = discountedSubtotal.add(vat).setScale(2, RoundingMode.HALF_UP);
+
+        return new Receipt(subtotal, discount, vat, total);
+    }
+
+    public String toReceiptString(List<LineItem> lineItems) {
+        Receipt receipt = process(lineItems);
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("Order Receipt\n");
+        sb.append("-------------\n");
+        for (LineItem item : lineItems) {
+            sb.append(String.format(
+                    "%-20s %3d x %8s = %10s%n",
+                    item.description(),
+                    item.quantity(),
+                    formatEuro(item.unitPrice()),
+                    formatEuro(item.lineTotal().setScale(2, RoundingMode.HALF_UP))
+            ));
+        }
+        sb.append("-------------\n");
+        sb.append(String.format("%-20s %19s%n", "Subtotal (excl. VAT):", formatEuro(receipt.subtotal())));
+        sb.append(String.format("%-20s %19s%n", "Discount (10%):", formatEuro(receipt.discount())));
+        sb.append(String.format("%-20s %19s%n", "VAT (21%):", formatEuro(receipt.vat())));
+        sb.append(String.format("%-20s %19s%n", "Total:", formatEuro(receipt.total())));
+        return sb.toString();
+    }
+
+    private static String formatEuro(BigDecimal amount) {
+        return "€" + amount.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    public static void main(String[] args) {
+        OrderProcessor processor = new OrderProcessor();
+
+        List<LineItem> lineItems = List.of(
+                new LineItem("Widget", 3, new BigDecimal("15.00")),
+                new LineItem("Gadget", 2, new BigDecimal("30.00"))
+        );
+
+        System.out.print(processor.toReceiptString(lineItems));
+    }
+}
+
+````
+
+</details>
+
+*No tests shipped.*
+
+</TabItem>
+
+<TabItem value="uncle-bob-junior" label="uncle-bob-junior · 1.00">
+
+Gates: valid code Yes ·
+habit-hooks Pass ·
+ships tests Yes ·
+correct Yes
+
+<details open>
+<summary><code>LineItem.java</code></summary>
+
+
+````java
+// File: LineItem.java
+package com.postcodeloterij.orders;
+
+import java.math.BigDecimal;
+import java.util.Objects;
+
+/**
+ * One item on an order. Amounts are in EUR.
+ */
+public record LineItem(String description, int quantity, BigDecimal unitPrice) {
+
+    public LineItem {
+        Objects.requireNonNull(description, "description must not be null");
+        Objects.requireNonNull(unitPrice, "unitPrice must not be null");
+    }
+
+    public BigDecimal lineTotal() {
+        return unitPrice.multiply(BigDecimal.valueOf(quantity));
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>LineItemValidator.java</code></summary>
+
+
+````java
+// File: LineItemValidator.java
+package com.postcodeloterij.orders;
+
+import java.math.BigDecimal;
+import java.util.List;
+
+public final class LineItemValidator {
+
+    private static final int MINIMUM_QUANTITY = 1;
+    private static final BigDecimal MINIMUM_UNIT_PRICE = BigDecimal.ZERO;
+
+    public void validateAll(List<LineItem> lineItems) {
+        if (lineItems.isEmpty()) {
+            throw new OrderValidationException("Order must contain at least one line item");
+        }
+        lineItems.forEach(this::validate);
+    }
+
+    public void validate(LineItem item) {
+        if (item.description().isBlank()) {
+            throw new OrderValidationException("Line item description must not be blank");
+        }
+        if (item.quantity() < MINIMUM_QUANTITY) {
+            throw new OrderValidationException("Line item quantity must be at least " + MINIMUM_QUANTITY);
+        }
+        if (item.unitPrice().compareTo(MINIMUM_UNIT_PRICE) < 0) {
+            throw new OrderValidationException("Line item unit price must not be negative");
+        }
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>OrderPricingPolicy.java</code></summary>
+
+
+````java
+// File: OrderPricingPolicy.java
+package com.postcodeloterij.orders;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.List;
+
+public final class OrderPricingPolicy {
+
+    private static final BigDecimal VAT_RATE = new BigDecimal("0.21");
+    private static final BigDecimal DISCOUNT_RATE = new BigDecimal("0.10");
+    private static final BigDecimal DISCOUNT_THRESHOLD = new BigDecimal("100.00");
+    private static final int MONEY_SCALE = 2;
+
+    public OrderTotals calculate(List<LineItem> lineItems) {
+        BigDecimal subtotal = sumLineTotals(lineItems);
+        BigDecimal discount = calculateDiscount(subtotal);
+        BigDecimal discountedSubtotal = subtotal.subtract(discount);
+        BigDecimal vatAmount = round(discountedSubtotal.multiply(VAT_RATE));
+        BigDecimal grandTotal = round(discountedSubtotal.add(vatAmount));
+        return new OrderTotals(round(subtotal), discount, vatAmount, grandTotal);
+    }
+
+    private BigDecimal sumLineTotals(List<LineItem> lineItems) {
+        return lineItems.stream()
+                .map(LineItem::lineTotal)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private BigDecimal calculateDiscount(BigDecimal subtotal) {
+        boolean qualifiesForDiscount = subtotal.compareTo(DISCOUNT_THRESHOLD) > 0;
+        if (!qualifiesForDiscount) {
+            return round(BigDecimal.ZERO);
+        }
+        return round(subtotal.multiply(DISCOUNT_RATE));
+    }
+
+    private BigDecimal round(BigDecimal amount) {
+        return amount.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>OrderProcessor.java</code></summary>
+
+
+````java
+// File: OrderProcessor.java
+package com.postcodeloterij.orders;
+
+import java.util.List;
+
+public final class OrderProcessor {
+
+    private final LineItemValidator validator;
+    private final OrderPricingPolicy pricingPolicy;
+    private final ReceiptFormatter receiptFormatter;
+
+    public OrderProcessor(LineItemValidator validator, OrderPricingPolicy pricingPolicy, ReceiptFormatter receiptFormatter) {
+        this.validator = validator;
+        this.pricingPolicy = pricingPolicy;
+        this.receiptFormatter = receiptFormatter;
+    }
+
+    public OrderProcessor() {
+        this(new LineItemValidator(), new OrderPricingPolicy(), new ReceiptFormatter());
+    }
+
+    /**
+     * Validates the line items, computes VAT and any discount, and returns the receipt text.
+     * @throws OrderValidationException if any line item is invalid or the order is empty
+     */
+    public String process(List<LineItem> lineItems) {
+        validator.validateAll(lineItems);
+        OrderTotals totals = pricingPolicy.calculate(lineItems);
+        return receiptFormatter.format(lineItems, totals);
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>OrderTotals.java</code></summary>
+
+
+````java
+// File: OrderTotals.java
+package com.postcodeloterij.orders;
+
+import java.math.BigDecimal;
+
+/**
+ * Pricing breakdown for an order, all fields in EUR rounded to 2 decimals.
+ * discountAmount is always non-negative; it is the amount subtracted, not a negative delta.
+ */
+public record OrderTotals(BigDecimal preDiscountSubtotal,
+                           BigDecimal discountAmount,
+                           BigDecimal vatAmount,
+                           BigDecimal grandTotal) {
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>OrderValidationException.java</code></summary>
+
+
+````java
+// File: OrderValidationException.java
+package com.postcodeloterij.orders;
+
+public final class OrderValidationException extends RuntimeException {
+
+    public OrderValidationException(String message) {
+        super(message);
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>ReceiptFormatter.java</code></summary>
+
+
+````java
+// File: ReceiptFormatter.java
+package com.postcodeloterij.orders;
+
+import java.math.BigDecimal;
+
+public final class ReceiptFormatter {
+
+    private static final String CURRENCY = "EUR";
+    private static final String NEWLINE = System.lineSeparator();
+    private static final String RECEIPT_TITLE = "Receipt";
+
+    public String format(Iterable<LineItem> lineItems, OrderTotals totals) {
+        StringBuilder receipt = new StringBuilder();
+        receipt.append(RECEIPT_TITLE).append(NEWLINE);
+        lineItems.forEach(item -> appendLineItem(receipt, item));
+        appendTotalsSection(receipt, totals);
+        return receipt.toString();
+    }
+
+    private void appendLineItem(StringBuilder receipt, LineItem item) {
+        receipt.append(item.description())
+                .append(" x").append(item.quantity())
+                .append(": ").append(formatAmount(item.lineTotal())).append(" ").append(CURRENCY)
+                .append(NEWLINE);
+    }
+
+    private void appendTotalsSection(StringBuilder receipt, OrderTotals totals) {
+        receipt.append("Subtotal: ").append(formatAmount(totals.preDiscountSubtotal())).append(" ").append(CURRENCY).append(NEWLINE);
+        receipt.append("Discount: -").append(formatAmount(totals.discountAmount())).append(" ").append(CURRENCY).append(NEWLINE);
+        receipt.append("VAT (21%): ").append(formatAmount(totals.vatAmount())).append(" ").append(CURRENCY).append(NEWLINE);
+        receipt.append("Total: ").append(formatAmount(totals.grandTotal())).append(" ").append(CURRENCY).append(NEWLINE);
+    }
+
+    private String formatAmount(BigDecimal amount) {
+        return amount.toPlainString();
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary>Shipped tests (3 files)</summary>
+
+<details>
+<summary><code>LineItemValidatorTest.java</code></summary>
+
+
+````java
+// File: LineItemValidatorTest.java
+package com.postcodeloterij.orders;
+
+import org.junit.jupiter.api.Test;
+
+import java.math.BigDecimal;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
+class LineItemValidatorTest {
+
+    private final LineItemValidator validator = new LineItemValidator();
+
+    @Test
+    void acceptsAValidLineItem() {
+        LineItem item = new LineItem("Widget", 2, new BigDecimal("9.99"));
+        assertDoesNotThrow(() -> validator.validate(item));
+    }
+
+    @Test
+    void rejectsBlankDescription() {
+        LineItem item = new LineItem("   ", 1, new BigDecimal("9.99"));
+        assertThrows(OrderValidationException.class, () -> validator.validate(item));
+    }
+
+    @Test
+    void rejectsZeroQuantity() {
+        LineItem item = new LineItem("Widget", 0, new BigDecimal("9.99"));
+        assertThrows(OrderValidationException.class, () -> validator.validate(item));
+    }
+
+    @Test
+    void rejectsNegativeQuantity() {
+        LineItem item = new LineItem("Widget", -1, new BigDecimal("9.99"));
+        assertThrows(OrderValidationException.class, () -> validator.validate(item));
+    }
+
+    @Test
+    void rejectsNegativeUnitPrice() {
+        LineItem item = new LineItem("Widget", 1, new BigDecimal("-0.01"));
+        assertThrows(OrderValidationException.class, () -> validator.validate(item));
+    }
+
+    @Test
+    void rejectsEmptyOrder() {
+        assertThrows(OrderValidationException.class, () -> validator.validateAll(List.of()));
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>OrderPricingPolicyTest.java</code></summary>
+
+
+````java
+// File: OrderPricingPolicyTest.java
+package com.postcodeloterij.orders;
+
+import org.junit.jupiter.api.Test;
+
+import java.math.BigDecimal;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+class OrderPricingPolicyTest {
+
+    private final OrderPricingPolicy pricingPolicy = new OrderPricingPolicy();
+
+    @Test
+    void appliesNoDiscountBelowThreshold() {
+        List<LineItem> items = List.of(new LineItem("Widget", 2, new BigDecimal("30.00")));
+
+        OrderTotals totals = pricingPolicy.calculate(items);
+
+        assertEquals(new BigDecimal("60.00"), totals.preDiscountSubtotal());
+        assertEquals(new BigDecimal("0.00"), totals.discountAmount());
+        assertEquals(new BigDecimal("12.60"), totals.vatAmount());
+        assertEquals(new BigDecimal("72.60"), totals.grandTotal());
+    }
+
+    @Test
+    void appliesNoDiscountAtExactThreshold() {
+        List<LineItem> items = List.of(new LineItem("Widget", 2, new BigDecimal("50.00")));
+
+        OrderTotals totals = pricingPolicy.calculate(items);
+
+        assertEquals(new BigDecimal("0.00"), totals.discountAmount());
+        assertEquals(new BigDecimal("121.00"), totals.grandTotal());
+    }
+
+    @Test
+    void appliesDiscountAboveThreshold() {
+        List<LineItem> items = List.of(new LineItem("Widget", 3, new BigDecimal("50.00")));
+
+        OrderTotals totals = pricingPolicy.calculate(items);
+
+        assertEquals(new BigDecimal("150.00"), totals.preDiscountSubtotal());
+        assertEquals(new BigDecimal("15.00"), totals.discountAmount());
+        assertEquals(new BigDecimal("28.35"), totals.vatAmount());
+        assertEquals(new BigDecimal("163.35"), totals.grandTotal());
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>OrderProcessorTest.java</code></summary>
+
+
+````java
+// File: OrderProcessorTest.java
+package com.postcodeloterij.orders;
+
+import org.junit.jupiter.api.Test;
+
+import java.math.BigDecimal;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class OrderProcessorTest {
+
+    private final OrderProcessor processor = new OrderProcessor();
+
+    @Test
+    void producesReceiptWithDiscountApplied() {
+        List<LineItem> items = List.of(new LineItem("Widget", 3, new BigDecimal("50.00")));
+
+        String receipt = processor.process(items);
+
+        assertTrue(receipt.contains("Discount: -15.00 EUR"));
+        assertTrue(receipt.contains("Total: 163.35 EUR"));
+    }
+
+    @Test
+    void producesReceiptWithoutDiscount() {
+        List<LineItem> items = List.of(new LineItem("Widget", 2, new BigDecimal("30.00")));
+
+        String receipt = processor.process(items);
+
+        assertTrue(receipt.contains("Discount: -0.00 EUR"));
+        assertTrue(receipt.contains("Total: 72.60 EUR"));
+    }
+
+    @Test
+    void rejectsAnInvalidOrder() {
+        List<LineItem> items = List.of(new LineItem("", 1, new BigDecimal("10.00")));
+
+        assertThrows(OrderValidationException.class, () -> processor.process(items));
+    }
+}
+
+````
+
+</details>
+
+</details>
+
+</TabItem>
+
+</Tabs>

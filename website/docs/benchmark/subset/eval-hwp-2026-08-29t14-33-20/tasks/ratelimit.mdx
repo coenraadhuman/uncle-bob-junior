@@ -1,0 +1,339 @@
+---
+title: ratelimit
+sidebar_position: 6
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+> Add rate limiting to a Java HTTP handler so each client can't make more than a few requests per minute.
+
+## claude-cli&#58;haiku
+
+<Tabs>
+
+<TabItem value="baseline-no-ruleset" label="baseline (no ruleset) · 0.86">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests **No** ·
+correct Yes
+
+<details open>
+<summary><code>ApiController.java</code> · 1 smell</summary>
+
+- `unused-import` at line 1
+
+````java
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+import jakarta.servlet.http.HttpServletRequest;
+
+@RestController
+public class ApiController {
+    private static final RateLimiter rateLimiter = new RateLimiter(5, 60_000);
+
+    @GetMapping("/api/data")
+    public ResponseEntity<?> getData(HttpServletRequest request) {
+        String clientIp = request.getRemoteAddr();
+        
+        if (!rateLimiter.allowRequest(clientIp)) {
+            return ResponseEntity
+                .status(429)
+                .body("{\"error\":\"Rate limit exceeded. Max 5 requests per minute.\"}");
+        }
+
+        return ResponseEntity.ok("{\"data\":\"your response here\"}");
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>RateLimiter.java</code></summary>
+
+
+````java
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+
+public class RateLimiter {
+    private final int maxRequests;
+    private final long windowMs;
+    private final ConcurrentHashMap<String, CopyOnWriteArrayList<Long>> requestTimestamps;
+
+    public RateLimiter(int maxRequests, long windowMs) {
+        this.maxRequests = maxRequests;
+        this.windowMs = windowMs;
+        this.requestTimestamps = new ConcurrentHashMap<>();
+    }
+
+    public boolean allowRequest(String clientId) {
+        long now = System.currentTimeMillis();
+        CopyOnWriteArrayList<Long> timestamps = requestTimestamps.computeIfAbsent(
+            clientId,
+            k -> new CopyOnWriteArrayList<>()
+        );
+
+        timestamps.removeIf(timestamp -> now - timestamp > windowMs);
+
+        if (timestamps.size() < maxRequests) {
+            timestamps.add(now);
+            return true;
+        }
+        return false;
+    }
+
+    public void cleanup() {
+        long now = System.currentTimeMillis();
+        requestTimestamps.forEach((clientId, timestamps) -> {
+            timestamps.removeIf(timestamp -> now - timestamp > windowMs);
+            if (timestamps.isEmpty()) {
+                requestTimestamps.remove(clientId);
+            }
+        });
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>RateLimitingFilter.java</code></summary>
+
+
+````java
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpFilter;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+
+public class RateLimitingFilter extends HttpFilter {
+    private static final RateLimiter rateLimiter = new RateLimiter(5, 60_000);
+
+    static {
+        ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1, runnable -> {
+            Thread thread = new Thread(runnable, "RateLimiter-Cleanup");
+            thread.setDaemon(true);
+            return thread;
+        });
+        scheduler.scheduleAtFixedRate(rateLimiter::cleanup, 1, 1, TimeUnit.MINUTES);
+    }
+
+    @Override
+    protected void doFilter(HttpServletRequest request, HttpServletResponse response,
+                           FilterChain chain) throws IOException, ServletException {
+        String clientIp = getClientIp(request);
+
+        if (!rateLimiter.allowRequest(clientIp)) {
+            response.setStatus(429);
+            response.setContentType("application/json");
+            response.getWriter().write("{\"error\":\"Too many requests. Max 5 per minute.\"}");
+            return;
+        }
+
+        chain.doFilter(request, response);
+    }
+
+    private String getClientIp(HttpServletRequest request) {
+        String xForwardedFor = request.getHeader("X-Forwarded-For");
+        if (xForwardedFor != null && !xForwardedFor.isEmpty()) {
+            return xForwardedFor.split(",")[0].trim();
+        }
+        return request.getRemoteAddr();
+    }
+}
+
+````
+
+</details>
+
+*No tests shipped.*
+
+</TabItem>
+
+<TabItem value="uncle-bob-junior" label="uncle-bob-junior · 0.98">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests Yes ·
+correct Yes
+
+<details open>
+<summary><code>ClientRateLimiter.java</code></summary>
+
+
+````java
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.function.Supplier;
+
+public class ClientRateLimiter {
+  private static final int DEFAULT_MAX_REQUESTS = 5;
+  private static final int DEFAULT_WINDOW_MINUTES = 1;
+
+  private final int maxRequests;
+  private final long windowMillis;
+  private final Supplier<Long> timeProvider;
+  private final Map<String, Queue<Long>> clientRequests = new ConcurrentHashMap<>();
+
+  public ClientRateLimiter() {
+    this(DEFAULT_MAX_REQUESTS, DEFAULT_WINDOW_MINUTES);
+  }
+
+  public ClientRateLimiter(int maxRequests, int windowMinutes) {
+    this(maxRequests, windowMinutes, System::currentTimeMillis);
+  }
+
+  ClientRateLimiter(int maxRequests, int windowMinutes, Supplier<Long> timeProvider) {
+    this.maxRequests = maxRequests;
+    this.windowMillis = (long) windowMinutes * 60 * 1000;
+    this.timeProvider = timeProvider;
+  }
+
+  public boolean allowRequest(String clientId) {
+    long now = timeProvider.get();
+    Queue<Long> timestamps = clientRequests.computeIfAbsent(clientId, k -> new ConcurrentLinkedQueue<>());
+
+    while (!timestamps.isEmpty() && now - timestamps.peek() > windowMillis) {
+      timestamps.poll();
+    }
+
+    if (timestamps.size() < maxRequests) {
+      timestamps.offer(now);
+      return true;
+    }
+    return false;
+  }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>RateLimitFilter.java</code> · 1 smell</summary>
+
+- `unused-import` at line 1
+
+````java
+import jakarta.servlet.*;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
+
+public class RateLimitFilter implements Filter {
+  private final ClientRateLimiter rateLimiter = new ClientRateLimiter();
+
+  @Override
+  public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
+      throws IOException, ServletException {
+    HttpServletRequest httpRequest = (HttpServletRequest) request;
+    HttpServletResponse httpResponse = (HttpServletResponse) response;
+
+    String clientIp = getClientIp(httpRequest);
+    if (rateLimiter.allowRequest(clientIp)) {
+      chain.doFilter(request, response);
+    } else {
+      httpResponse.setStatus(429);
+      response.getWriter().write("Rate limit exceeded");
+    }
+  }
+
+  private String getClientIp(HttpServletRequest request) {
+    String xForwardedFor = request.getHeader("X-Forwarded-For");
+    if (xForwardedFor != null && !xForwardedFor.isEmpty()) {
+      return xForwardedFor.split(",")[0].trim();
+    }
+    return request.getRemoteAddr();
+  }
+
+  @Override
+  public void init(FilterConfig filterConfig) {}
+
+  @Override
+  public void destroy() {}
+}
+
+````
+
+</details>
+
+<details>
+<summary>Shipped tests (1 file)</summary>
+
+<details>
+<summary><code>ClientRateLimiterTest.java</code></summary>
+
+
+````java
+import org.junit.Before;
+import org.junit.Test;
+import static org.junit.Assert.*;
+
+public class ClientRateLimiterTest {
+  private ClientRateLimiter limiter;
+  private long currentTime = 0;
+
+  @Before
+  public void setUp() {
+    limiter = new ClientRateLimiter(3, 1, () -> currentTime);
+  }
+
+  @Test
+  public void allowsRequestsUnderLimit() {
+    assertTrue(limiter.allowRequest("client1"));
+    assertTrue(limiter.allowRequest("client1"));
+    assertTrue(limiter.allowRequest("client1"));
+  }
+
+  @Test
+  public void blocksRequestsOverLimit() {
+    limiter.allowRequest("client1");
+    limiter.allowRequest("client1");
+    limiter.allowRequest("client1");
+
+    assertFalse(limiter.allowRequest("client1"));
+  }
+
+  @Test
+  public void isolatesClientsFromEachOther() {
+    limiter.allowRequest("client1");
+    limiter.allowRequest("client1");
+    limiter.allowRequest("client1");
+
+    assertTrue(limiter.allowRequest("client2"));
+  }
+
+  @Test
+  public void allowsNewRequestsAfterWindowExpires() {
+    limiter.allowRequest("client1");
+    limiter.allowRequest("client1");
+    limiter.allowRequest("client1");
+    assertFalse(limiter.allowRequest("client1"));
+
+    currentTime += 61_000;
+
+    assertTrue(limiter.allowRequest("client1"));
+  }
+}
+
+````
+
+</details>
+
+</details>
+
+</TabItem>
+
+</Tabs>

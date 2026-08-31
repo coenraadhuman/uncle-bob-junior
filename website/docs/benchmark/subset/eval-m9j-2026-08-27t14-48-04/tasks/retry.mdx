@@ -1,0 +1,229 @@
+---
+title: retry
+sidebar_position: 1
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+> Write a reusable retry helper in Java&#58; it runs an operation, retries it up to a maximum number of attempts when it throws an exception, and waits a fixed delay between attempts.
+
+## claude-cli&#58;haiku
+
+<Tabs>
+
+<TabItem value="baseline-no-ruleset" label="baseline (no ruleset) · 0.88">
+
+Gates: valid code Yes ·
+habit-hooks Pass ·
+ships tests **No** ·
+correct Yes
+
+<details open>
+<summary><code>RetryHelper.java</code></summary>
+
+
+````java
+/**
+ * Executes an operation with automatic retry logic on failure.
+ */
+public class RetryHelper {
+    private final int maxAttempts;
+    private final long delayMillis;
+
+    public RetryHelper(int maxAttempts, long delayMillis) {
+        this.maxAttempts = maxAttempts;
+        this.delayMillis = delayMillis;
+    }
+
+    /**
+     * Executes an operation that doesn't return a value, retrying on exception.
+     */
+    public void execute(Operation operation) throws Exception {
+        Exception lastException = null;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                operation.run();
+                return;
+            } catch (Exception e) {
+                lastException = e;
+                if (attempt < maxAttempts) {
+                    Thread.sleep(delayMillis);
+                }
+            }
+        }
+        throw lastException;
+    }
+
+    /**
+     * Executes an operation that returns a value, retrying on exception.
+     */
+    public <T> T executeWithResult(OperationWithResult<T> operation) throws Exception {
+        Exception lastException = null;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                return operation.run();
+            } catch (Exception e) {
+                lastException = e;
+                if (attempt < maxAttempts) {
+                    Thread.sleep(delayMillis);
+                }
+            }
+        }
+        throw lastException;
+    }
+
+    @FunctionalInterface
+    public interface Operation {
+        void run() throws Exception;
+    }
+
+    @FunctionalInterface
+    public interface OperationWithResult<T> {
+        T run() throws Exception;
+    }
+}
+
+````
+
+</details>
+
+*No tests shipped.*
+
+</TabItem>
+
+<TabItem value="uncle-bob-junior" label="uncle-bob-junior · 1.00">
+
+Gates: valid code Yes ·
+habit-hooks Pass ·
+ships tests Yes ·
+correct Yes
+
+<details open>
+<summary><code>Retry.java</code></summary>
+
+
+````java
+public class Retry<T> {
+    private static final int DEFAULT_MAX_ATTEMPTS = 3;
+    private static final long DEFAULT_DELAY_MILLIS = 1000;
+
+    private final int maxAttempts;
+    private final long delayMillis;
+
+    public Retry() {
+        this(DEFAULT_MAX_ATTEMPTS, DEFAULT_DELAY_MILLIS);
+    }
+
+    public Retry(int maxAttempts, long delayMillis) {
+        validateAttempts(maxAttempts);
+        validateDelay(delayMillis);
+        this.maxAttempts = maxAttempts;
+        this.delayMillis = delayMillis;
+    }
+
+    public T execute(Supplier<T> operation) throws Exception {
+        Exception lastException = null;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                return operation.get();
+            } catch (Exception e) {
+                lastException = e;
+                if (shouldRetry(attempt)) {
+                    sleep();
+                }
+            }
+        }
+        throw lastException;
+    }
+
+    private boolean shouldRetry(int currentAttempt) {
+        return currentAttempt < maxAttempts;
+    }
+
+    private void sleep() throws InterruptedException {
+        Thread.sleep(delayMillis);
+    }
+
+    private void validateAttempts(int attempts) {
+        if (attempts < 1) {
+            throw new IllegalArgumentException("maxAttempts must be at least 1");
+        }
+    }
+
+    private void validateDelay(long delay) {
+        if (delay < 0) {
+            throw new IllegalArgumentException("delayMillis cannot be negative");
+        }
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary>Shipped tests (1 file)</summary>
+
+<details>
+<summary><code>RetryTest.java</code></summary>
+
+
+````java
+public class RetryTest {
+    private Retry<String> retry;
+
+    @Before
+    public void setUp() {
+        retry = new Retry<>(3, 100);
+    }
+
+    @Test
+    public void successOnFirstAttempt() throws Exception {
+        String result = retry.execute(() -> "success");
+        assertEquals("success", result);
+    }
+
+    @Test
+    public void successAfterRetries() throws Exception {
+        AtomicInteger attempts = new AtomicInteger(0);
+        String result = retry.execute(() -> {
+            attempts.incrementAndGet();
+            if (attempts.get() < 3) {
+                throw new RuntimeException("fail");
+            }
+            return "success";
+        });
+        assertEquals("success", result);
+        assertEquals(3, attempts.get());
+    }
+
+    @Test
+    public void throwsAfterMaxAttempts() {
+        assertThrows(RuntimeException.class, () ->
+            retry.execute(() -> {
+                throw new RuntimeException("always fails");
+            })
+        );
+    }
+
+    @Test
+    public void invalidMaxAttempts() {
+        assertThrows(IllegalArgumentException.class, () -> new Retry<>(0, 1000));
+    }
+
+    @Test
+    public void negativeDelay() {
+        assertThrows(IllegalArgumentException.class, () -> new Retry<>(3, -1));
+    }
+}
+
+````
+
+</details>
+
+</details>
+
+</TabItem>
+
+</Tabs>

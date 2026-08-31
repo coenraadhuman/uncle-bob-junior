@@ -75,7 +75,20 @@ test('a project without .habit-hooks config has not opted in', () => {
   assert.equal(result.stdout, '');
 });
 
-test('smelly branch changes block the stop with the findings as reason', scanOnly, () => {
+// A transcript whose last turn did (or did not) edit files.
+function transcriptWith(lastTurnTool) {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ubj-verify-transcript-')), 'transcript.jsonl');
+  const entries = [
+    { type: 'user', message: { role: 'user', content: 'earlier prompt' } },
+    { type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', name: 'Edit', input: {} }] } },
+    { type: 'user', message: { role: 'user', content: 'latest prompt' } },
+    { type: 'assistant', message: { role: 'assistant', content: lastTurnTool ? [{ type: 'tool_use', name: lastTurnTool, input: {} }] : [{ type: 'text', text: 'just talk' }] } },
+  ];
+  fs.writeFileSync(file, entries.map((entry) => JSON.stringify(entry)).join('\n') + '\n');
+  return file;
+}
+
+test('smelly branch changes block the stop with the findings as reason (missing transcript keeps verifying)', scanOnly, () => {
   const repo = optedInRepo();
   fs.writeFileSync(path.join(repo, 'Big.java'), OVERSIZED_JAVA);
   const result = runVerify({ cwd: repo }, { CLAUDE_CONFIG_DIR: activeConfigDir() });
@@ -85,6 +98,28 @@ test('smelly branch changes block the stop with the findings as reason', scanOnl
   assert.match(output.reason, /UNCLE_BOB_JUNIOR VERIFICATION/);
   assert.match(output.reason, /oversized-function/);
   assert.match(output.reason, /Big\.java/);
+});
+
+test('a chat-only turn skips verification even with a smelly branch', () => {
+  const repo = optedInRepo();
+  fs.writeFileSync(path.join(repo, 'Big.java'), OVERSIZED_JAVA);
+  const result = runVerify(
+    { cwd: repo, transcript_path: transcriptWith(null) },
+    { CLAUDE_CONFIG_DIR: activeConfigDir() },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, '', 'no coding job this turn means no scan');
+});
+
+test('a turn that edited files is verified', scanOnly, () => {
+  const repo = optedInRepo();
+  fs.writeFileSync(path.join(repo, 'Big.java'), OVERSIZED_JAVA);
+  const result = runVerify(
+    { cwd: repo, transcript_path: transcriptWith('Write') },
+    { CLAUDE_CONFIG_DIR: activeConfigDir() },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).decision, 'block', 'the edit in the last turn triggers the scan');
 });
 
 test('a clean branch lets the stop through', scanOnly, () => {

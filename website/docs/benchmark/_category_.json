@@ -2,8 +2,7 @@
   "label": "Benchmark",
   "position": 3,
   "link": {
-    "type": "generated-index",
-    "description": "With vs without the ruleset, judged by habit-hooks and correctness gates.",
-    "slug": "/benchmark"
+    "type": "doc",
+    "id": "benchmark/intro"
   }
 }

@@ -1,0 +1,195 @@
+---
+title: csv
+sidebar_position: 3
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+> Write a Java program that reads sales.csv and prints the sum of the 'amount' column.
+
+## claude-cli&#58;haiku
+
+<Tabs>
+
+<TabItem value="baseline-no-ruleset" label="baseline (no ruleset) · 0.86">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests **No** ·
+correct Yes
+
+<details open>
+<summary><code>SalesSumCalculator.java</code> · 1 smell</summary>
+
+- `oversized-function` at line 6
+
+````java
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.io.IOException;
+
+public class SalesSumCalculator {
+    public static void main(String[] args) {
+        try (BufferedReader reader = new BufferedReader(new FileReader("sales.csv"))) {
+            // Read header line and find 'amount' column index
+            String[] headers = reader.readLine().split(",");
+            int amountIndex = -1;
+            for (int i = 0; i < headers.length; i++) {
+                if (headers[i].trim().equals("amount")) {
+                    amountIndex = i;
+                    break;
+                }
+            }
+            
+            if (amountIndex == -1) {
+                System.err.println("'amount' column not found");
+                return;
+            }
+            
+            // Sum the amount column
+            double sum = 0.0;
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String[] values = line.split(",");
+                if (values.length > amountIndex) {
+                    sum += Double.parseDouble(values[amountIndex].trim());
+                }
+            }
+            
+            System.out.println(sum);
+        } catch (IOException e) {
+            System.err.println("Error: " + e.getMessage());
+        }
+    }
+}
+
+````
+
+</details>
+
+*No tests shipped.*
+
+</TabItem>
+
+<TabItem value="uncle-bob-junior" label="uncle-bob-junior · 1.00">
+
+Gates: valid code Yes ·
+habit-hooks Pass ·
+ships tests Yes ·
+correct Yes
+
+<details open>
+<summary><code>SalesProcessor.java</code></summary>
+
+
+````java
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+
+public class SalesProcessor {
+    public static void main(String[] args) throws IOException {
+        double total = sumAmountsFromCsv("sales.csv");
+        System.out.println("Total: " + total);
+    }
+    
+    static double sumAmountsFromCsv(String filePath) throws IOException {
+        List<String> lines = Files.readAllLines(Path.of(filePath));
+        return sumAmounts(lines);
+    }
+    
+    static double sumAmounts(List<String> lines) {
+        if (lines.isEmpty()) {
+            return 0.0;
+        }
+        
+        int amountColumnIndex = findColumnIndex(lines.get(0), "amount");
+        
+        return lines.stream()
+                    .skip(1)
+                    .mapToDouble(line -> parseAmount(line, amountColumnIndex))
+                    .sum();
+    }
+    
+    private static int findColumnIndex(String headerLine, String columnName) {
+        String[] headers = headerLine.split(",");
+        for (int i = 0; i < headers.length; i++) {
+            if (headers[i].trim().equalsIgnoreCase(columnName)) {
+                return i;
+            }
+        }
+        throw new IllegalArgumentException("Column not found: " + columnName);
+    }
+    
+    private static double parseAmount(String line, int columnIndex) {
+        String[] fields = line.split(",");
+        return Double.parseDouble(fields[columnIndex].trim());
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary>Shipped tests (1 file)</summary>
+
+<details>
+<summary><code>SalesProcessorTest.java</code></summary>
+
+
+````java
+import java.util.Arrays;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+public class SalesProcessorTest {
+    @Test
+    void sumAmountsWithValidData() {
+        List<String> lines = Arrays.asList(
+            "product,amount",
+            "Item1,10.5",
+            "Item2,20.3",
+            "Item3,15.2"
+        );
+        
+        double result = SalesProcessor.sumAmounts(lines);
+        
+        assertEquals(46.0, result, 0.01);
+    }
+    
+    @Test
+    void sumAmountsWithEmptyLines() {
+        List<String> lines = Arrays.asList("product,amount");
+        
+        double result = SalesProcessor.sumAmounts(lines);
+        
+        assertEquals(0.0, result);
+    }
+    
+    @Test
+    void sumAmountsWithAmountInDifferentPosition() {
+        List<String> lines = Arrays.asList(
+            "id,product,amount,date",
+            "1,Item1,10.5,2026-01-01",
+            "2,Item2,20.3,2026-01-02"
+        );
+        
+        double result = SalesProcessor.sumAmounts(lines);
+        
+        assertEquals(30.8, result, 0.01);
+    }
+}
+
+````
+
+</details>
+
+</details>
+
+</TabItem>
+
+</Tabs>

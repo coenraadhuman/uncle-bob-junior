@@ -1,0 +1,327 @@
+---
+title: order
+sidebar_position: 5
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+> Write Java code that processes an order&#58; validate the line items, compute the total with 21% VAT, apply a 10% discount when the pre-VAT total exceeds 100 euros, and produce a receipt string.
+
+## claude-cli&#58;haiku
+
+<Tabs>
+
+<TabItem value="baseline-no-ruleset" label="baseline (no ruleset) · 0.84">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests **No** ·
+correct Yes
+
+<details open>
+<summary><code>Order.java</code> · 2 smells</summary>
+
+- `high-complexity` at line 17
+- `oversized-function` at line 31
+
+````java
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.ArrayList;
+import java.util.List;
+
+public class Order {
+    private static final BigDecimal VAT_RATE = new BigDecimal("0.21");
+    private static final BigDecimal DISCOUNT_THRESHOLD = new BigDecimal("100.00");
+    private static final BigDecimal DISCOUNT_RATE = new BigDecimal("0.10");
+    
+    private List<LineItem> items;
+    
+    public Order() {
+        this.items = new ArrayList<>();
+    }
+    
+    public void addLineItem(String description, BigDecimal quantity, BigDecimal unitPrice) 
+            throws IllegalArgumentException {
+        if (description == null || description.trim().isEmpty()) {
+            throw new IllegalArgumentException("Description cannot be empty");
+        }
+        if (quantity == null || quantity.signum() < 0) {
+            throw new IllegalArgumentException("Quantity must be non-negative");
+        }
+        if (unitPrice == null || unitPrice.signum() < 0) {
+            throw new IllegalArgumentException("Unit price must be non-negative");
+        }
+        items.add(new LineItem(description, quantity, unitPrice));
+    }
+    
+    public String generateReceipt() {
+        StringBuilder receipt = new StringBuilder();
+        receipt.append("=== RECEIPT ===\n");
+        
+        BigDecimal subtotal = BigDecimal.ZERO;
+        
+        for (LineItem item : items) {
+            BigDecimal lineTotal = item.getTotal();
+            subtotal = subtotal.add(lineTotal);
+            receipt.append(String.format("%s x %.2f @ €%.2f = €%.2f\n",
+                item.description, item.quantity, item.unitPrice, lineTotal));
+        }
+        
+        receipt.append("\nSubtotal: €").append(formatCurrency(subtotal));
+        
+        BigDecimal discount = BigDecimal.ZERO;
+        if (subtotal.compareTo(DISCOUNT_THRESHOLD) > 0) {
+            discount = subtotal.multiply(DISCOUNT_RATE).setScale(2, RoundingMode.HALF_UP);
+            receipt.append("\nDiscount (10%): -€").append(formatCurrency(discount));
+        }
+        
+        BigDecimal discountedSubtotal = subtotal.subtract(discount);
+        BigDecimal vat = discountedSubtotal.multiply(VAT_RATE).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal total = discountedSubtotal.add(vat);
+        
+        receipt.append("\nVAT (21%): €").append(formatCurrency(vat));
+        receipt.append("\nTotal: €").append(formatCurrency(total));
+        
+        return receipt.toString();
+    }
+    
+    private String formatCurrency(BigDecimal value) {
+        return value.setScale(2, RoundingMode.HALF_UP).toString();
+    }
+    
+    private static class LineItem {
+        String description;
+        BigDecimal quantity;
+        BigDecimal unitPrice;
+        
+        LineItem(String description, BigDecimal quantity, BigDecimal unitPrice) {
+            this.description = description;
+            this.quantity = quantity;
+            this.unitPrice = unitPrice;
+        }
+        
+        BigDecimal getTotal() {
+            return quantity.multiply(unitPrice).setScale(2, RoundingMode.HALF_UP);
+        }
+    }
+    
+    public static void main(String[] args) {
+        Order order = new Order();
+        order.addLineItem("Widget A", new BigDecimal("2"), new BigDecimal("45.00"));
+        order.addLineItem("Widget B", new BigDecimal("3"), new BigDecimal("20.00"));
+        
+        System.out.println(order.generateReceipt());
+    }
+}
+
+````
+
+</details>
+
+*No tests shipped.*
+
+</TabItem>
+
+<TabItem value="uncle-bob-junior" label="uncle-bob-junior · 0.98">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests Yes ·
+correct Yes
+
+<details open>
+<summary><code>LineItem.java</code></summary>
+
+
+````java
+record LineItem(String description, double unitPrice, int quantity) {
+    public LineItem {
+        if (description == null || description.isBlank()) {
+            throw new IllegalArgumentException("Description cannot be empty");
+        }
+        if (unitPrice < 0) {
+            throw new IllegalArgumentException("Unit price cannot be negative");
+        }
+        if (quantity < 0) {
+            throw new IllegalArgumentException("Quantity cannot be negative");
+        }
+    }
+
+    double subtotal() {
+        return unitPrice * quantity;
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>Order.java</code> · 1 smell</summary>
+
+- `oversized-function` at line 41
+
+````java
+import java.util.*;
+
+class Order {
+    private static final double VAT_RATE = 0.21;
+    private static final double DISCOUNT_RATE = 0.10;
+    private static final double DISCOUNT_THRESHOLD = 100.0;
+
+    private final List<LineItem> items;
+
+    public Order(List<LineItem> items) {
+        if (items == null || items.isEmpty()) {
+            throw new IllegalArgumentException("Order must contain at least one item");
+        }
+        this.items = new ArrayList<>(items);
+    }
+
+    public double preVatTotal() {
+        return items.stream().mapToDouble(LineItem::subtotal).sum();
+    }
+
+    public boolean qualifiesForDiscount() {
+        return preVatTotal() > DISCOUNT_THRESHOLD;
+    }
+
+    public double discountAmount() {
+        return qualifiesForDiscount() ? preVatTotal() * DISCOUNT_RATE : 0.0;
+    }
+
+    public double subtotalAfterDiscount() {
+        return preVatTotal() - discountAmount();
+    }
+
+    public double vatAmount() {
+        return subtotalAfterDiscount() * VAT_RATE;
+    }
+
+    public double total() {
+        return subtotalAfterDiscount() + vatAmount();
+    }
+
+    public String receipt() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("========== RECEIPT ==========\n");
+        for (LineItem item : items) {
+            sb.append(String.format("%-20s %2d x €%7.2f = €%8.2f\n",
+                item.description(), item.quantity(), item.unitPrice(), item.subtotal()));
+        }
+        sb.append("-----------------------------\n");
+        sb.append(String.format("Subtotal:                 €%8.2f\n", preVatTotal()));
+        if (qualifiesForDiscount()) {
+            sb.append(String.format("Discount (10%%):          -€%8.2f\n", discountAmount()));
+        }
+        sb.append(String.format("VAT (21%%):                €%8.2f\n", vatAmount()));
+        sb.append("=============================\n");
+        sb.append(String.format("TOTAL:                    €%8.2f\n", total()));
+        return sb.toString();
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary>Shipped tests (2 files)</summary>
+
+<details>
+<summary><code>LineItemTest.java</code></summary>
+
+
+````java
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
+
+class LineItemTest {
+    @Test void rejectsBlankDescription() {
+        assertThrows(IllegalArgumentException.class, () -> new LineItem("", 10.0, 1));
+    }
+
+    @Test void rejectsNegativePrice() {
+        assertThrows(IllegalArgumentException.class, () -> new LineItem("Item", -0.01, 1));
+    }
+
+    @Test void rejectsNegativeQuantity() {
+        assertThrows(IllegalArgumentException.class, () -> new LineItem("Item", 10.0, -1));
+    }
+
+    @Test void calculatesSubtotal() {
+        assertEquals(7.50, new LineItem("Coffee", 2.50, 3).subtotal());
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>OrderTest.java</code></summary>
+
+
+````java
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
+
+class OrderTest {
+    @Test void rejectsEmptyOrder() {
+        assertThrows(IllegalArgumentException.class, () -> new Order(List.of()));
+    }
+
+    @Test void rejectsNullOrder() {
+        assertThrows(IllegalArgumentException.class, () -> new Order(null));
+    }
+
+    @Test void calculatesWithoutDiscount() {
+        var order = new Order(List.of(new LineItem("Item", 50.0, 1)));
+        assertEquals(50.0, order.preVatTotal());
+        assertFalse(order.qualifiesForDiscount());
+        assertEquals(50.0, order.subtotalAfterDiscount());
+        assertEquals(10.5, order.vatAmount(), 0.01);
+        assertEquals(60.5, order.total(), 0.01);
+    }
+
+    @Test void calculatesWithDiscount() {
+        var order = new Order(List.of(new LineItem("Item", 50.0, 3)));
+        assertEquals(150.0, order.preVatTotal());
+        assertTrue(order.qualifiesForDiscount());
+        assertEquals(15.0, order.discountAmount());
+        assertEquals(135.0, order.subtotalAfterDiscount());
+        assertEquals(28.35, order.vatAmount(), 0.01);
+        assertEquals(163.35, order.total(), 0.01);
+    }
+
+    @Test void discountThresholdIsExclusive() {
+        assertFalse(new Order(List.of(new LineItem("X", 100.0, 1))).qualifiesForDiscount());
+        assertTrue(new Order(List.of(new LineItem("X", 100.01, 1))).qualifiesForDiscount());
+    }
+
+    @Test void generatesReceipt() {
+        var order = new Order(List.of(
+            new LineItem("Coffee", 2.50, 2),
+            new LineItem("Sandwich", 5.00, 1)
+        ));
+        var receipt = order.receipt();
+        assertTrue(receipt.contains("Coffee") && receipt.contains("TOTAL"));
+    }
+
+    @Test void receiptIncludesDiscountWhenApplicable() {
+        var order = new Order(List.of(new LineItem("Item", 50.0, 3)));
+        assertTrue(order.receipt().contains("Discount"));
+    }
+}
+
+````
+
+</details>
+
+</details>
+
+</TabItem>
+
+</Tabs>

@@ -1,0 +1,47 @@
+---
+title: Scoreboard
+sidebar_position: 1
+---
+
+Run `eval-NYB-2026-08-29T13:59:24`: the same tasks and models, once bare (baseline) and once
+with the uncle-bob-junior ruleset as system prompt, judged by
+[habit-hooks](https://github.com/habit-hooks/habit-hooks) plus valid-code,
+ships-tests, and correctness gates. Single-shot generations, so expect
+run-to-run variance.
+
+## Mean score per model and arm
+
+```mermaid
+xychart-beta
+    title "Mean score per model and arm"
+    x-axis ["claude-cli:haiku / baseline (no ruleset)", "claude-cli:haiku / uncle-bob-junior", "claude-cli:sonnet / baseline (no ruleset)", "claude-cli:sonnet / uncle-bob-junior"]
+    y-axis "mean score" 0 --> 1
+    bar [0.866, 0.997, 0.844, 0.997]
+```
+
+## Per task
+
+| Task | Arm | Score | Valid code | Habit-hooks | Ships tests | Correct | Oversized function | Too many parameters | High complexity | Unused variable |
+|---|---|---:|:---:|:---:|:---:|:---:|---:|---:|---:|---:|
+| [csv](tasks/csv) | claude-cli&#58;haiku · baseline (no ruleset) | 0.86 | Yes | **Fail** | **No** | Yes | 1 | 0 | 0 | 0 |
+| [csv](tasks/csv) | claude-cli&#58;haiku · uncle-bob-junior | 0.98 | Yes | **Fail** | Yes | Yes | 1 | 0 | 0 | 0 |
+| [csv](tasks/csv) | claude-cli&#58;sonnet · baseline (no ruleset) | 0.84 | Yes | **Fail** | **No** | Yes | 1 | 0 | 1 | 0 |
+| [csv](tasks/csv) | claude-cli&#58;sonnet · uncle-bob-junior | 1.00 | Yes | Pass | Yes | Yes | 0 | 0 | 0 | 0 |
+| [email](tasks/email) | claude-cli&#58;haiku · baseline (no ruleset) | 0.88 | Yes | Pass | **No** | Yes | 0 | 0 | 0 | 0 |
+| [email](tasks/email) | claude-cli&#58;haiku · uncle-bob-junior | 1.00 | Yes | Pass | Yes | Yes | 0 | 0 | 0 | 0 |
+| [email](tasks/email) | claude-cli&#58;sonnet · baseline (no ruleset) | 0.88 | Yes | Pass | **No** | Yes | 0 | 0 | 0 | 0 |
+| [email](tasks/email) | claude-cli&#58;sonnet · uncle-bob-junior | 1.00 | Yes | Pass | Yes | Yes | 0 | 0 | 0 | 0 |
+| [order](tasks/order) | claude-cli&#58;haiku · baseline (no ruleset) | 0.86 | Yes | **Fail** | **No** | Yes | 1 | 0 | 0 | 0 |
+| [order](tasks/order) | claude-cli&#58;haiku · uncle-bob-junior | 1.00 | Yes | Pass | Yes | Yes | 0 | 0 | 0 | 0 |
+| [order](tasks/order) | claude-cli&#58;sonnet · baseline (no ruleset) | 0.83 | Yes | **Fail** | **No** | Yes | 1 | 1 | 1 | 0 |
+| [order](tasks/order) | claude-cli&#58;sonnet · uncle-bob-junior | 0.98 | Yes | **Fail** | Yes | Yes | 0 | 1 | 0 | 0 |
+| [ratelimit](tasks/ratelimit) | claude-cli&#58;haiku · baseline (no ruleset) | 0.86 | Yes | **Fail** | **No** | Yes | 1 | 0 | 0 | 0 |
+| [ratelimit](tasks/ratelimit) | claude-cli&#58;haiku · uncle-bob-junior | 1.00 | Yes | Pass | Yes | Yes | 0 | 0 | 0 | 0 |
+| [ratelimit](tasks/ratelimit) | claude-cli&#58;sonnet · baseline (no ruleset) | 0.84 | Yes | **Fail** | **No** | Yes | 1 | 1 | 0 | 0 |
+| [ratelimit](tasks/ratelimit) | claude-cli&#58;sonnet · uncle-bob-junior | 1.00 | Yes | Pass | Yes | Yes | 0 | 0 | 0 | 0 |
+| [retry](tasks/retry) | claude-cli&#58;haiku · baseline (no ruleset) | 0.88 | Yes | Pass | **No** | Yes | 0 | 0 | 0 | 0 |
+| [retry](tasks/retry) | claude-cli&#58;haiku · uncle-bob-junior | 1.00 | Yes | Pass | Yes | Yes | 0 | 0 | 0 | 0 |
+| [retry](tasks/retry) | claude-cli&#58;sonnet · baseline (no ruleset) | 0.83 | Yes | **Fail** | **No** | Yes | 1 | 0 | 1 | 1 |
+| [retry](tasks/retry) | claude-cli&#58;sonnet · uncle-bob-junior | 1.00 | Yes | Pass | Yes | Yes | 0 | 0 | 0 | 0 |
+
+The generated code per task lives under [Tasks](tasks).

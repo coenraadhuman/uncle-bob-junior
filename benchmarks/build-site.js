@@ -36,24 +36,37 @@ const SITE_DOCS_DIR = path.join(WEBSITE_DIR, 'docs');
 const SKILL_PATH = path.join(__dirname, '..', 'plugins', 'uncle-bob-junior', 'skills', 'uncle-bob-junior', 'SKILL.md');
 const REFERENCES_DIR = path.join(path.dirname(SKILL_PATH), 'references');
 const README_PATH = path.join(__dirname, '..', 'README.md');
+const BENCH_README_PATH = path.join(__dirname, 'README.md');
 const REPO_URL = 'https://github.com/coenraadhuman/uncle-bob-junior';
 // Outer fences use four backticks so model code containing ``` cannot close them.
 const FENCE = '````';
 const RENDER_TIMEOUT_MS = 300_000;
 
 // Plain text dropped into MDX prose: neutralize the characters MDX would
-// read as JSX or expressions.
+// read as JSX, expressions, or directives (remark-directive eats ':name',
+// which truncated 'claude-cli:haiku' to 'claude-cli' in headings).
 function mdxEscape(text) {
   return String(text)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/\{/g, '&#123;')
-    .replace(/\}/g, '&#125;');
+    .replace(/\}/g, '&#125;')
+    .replace(/:/g, '&#58;');
 }
 
 function runStamp(name) {
   return name.match(/\d{4}-\d{2}-\d{2}t[\d-]+/)?.[0] || '';
+}
+
+// Human page title for a run: its date and time when the id carries one
+// ('eval-dwh-2026-08-31t11-59-48' -> '2026-08-31 11:59'), else the id.
+function runTitle(run) {
+  const stamp = runStamp(run.id);
+  if (!stamp) return run.data.evalId || run.id;
+  const [date, time] = stamp.split('t');
+  const [hours, minutes] = time.split('-');
+  return `${date} ${hours}:${minutes}`;
 }
 
 // Every stored run with a report.json, newest first.
@@ -80,63 +93,35 @@ function isFullRun(data, canonicalTasks) {
   return canonicalTasks.every((task) => covered.has(task));
 }
 
-// The numbered checklist items from the ruleset's own SKILL.md — they are
-// already markdown, which MDX renders natively.
-function checklistItems(skillMarkdown) {
-  const body = String(skillMarkdown).replace(/^---[\s\S]*?---\s*/, '');
-  const section = body.split('## The checklist')[1]?.split(/\n## /)[0] || '';
-  return section.split('\n').filter((line) => /^\d+\.\s/.test(line)).map((line) => line.replace(/^\d+\.\s*/, ''));
-}
-
-function landingPage() {
-  const items = checklistItems(fs.readFileSync(SKILL_PATH, 'utf8'));
-  return `---
-title: Uncle Bob Junior
-slug: /
-sidebar_position: 1
----
-
-A clean-code ruleset for Claude Code: software that is easy to read, simple to
-understand, and safe to change. It ships as a Claude Code plugin — always-on
-rules, slash commands, a mode statusline, and a habit-hooks verification stop
-hook. See the [README](${REPO_URL}#readme) for installation.
-
-## The checklist
-
-${items.map((item, index) => `${index + 1}. ${item}`).join('\n')}
-
-[Read the full ruleset and its reference files](ruleset/skill) — the slim
-core above is what every session gets; the depth loads on demand.
-
-[Install, update, or remove the plugin](plugin), browse the
-[commands and intensity levels](commands), or check the [FAQ](faq).
-
-## Does it work?
-
-The repo benchmarks the ruleset against a no-ruleset baseline on the same models
-and tasks using [promptfoo](https://github.com/promptfoo/promptfoo), judged by [habit-hooks](https://github.com/habit-hooks/habit-hooks),
-an independent smell detector. [See the scoreboard and the generated code side
-by side](benchmark/scoreboard), browse [past runs](benchmark/history) and
-[subset runs](benchmark/subset), or watch the ruleset play
-[Conway's Game of Life](gameoflife).
-`;
+// The homepage is a hand-written React page (website/src/pages/index.js), so
+// the docs root must stay free: builds from before that change left a
+// generated index.mdx behind, which would collide with the page route.
+function removeGeneratedLanding(siteDocsDir) {
+  fs.rmSync(path.join(siteDocsDir, 'index.mdx'), { force: true });
 }
 
 // --- Pages embedded from the README ------------------------------------------
 
-// One `## Heading` section of the README, verbatim (its ### subsections
+// One `## Heading` section of a README, verbatim (its ### subsections
 // included). Throws when the heading is gone so a README restructure breaks
 // the site build loudly instead of silently dropping a page.
-function readmeSection(heading) {
-  const readme = fs.readFileSync(README_PATH, 'utf8');
+function readmeSection(heading, readmePath = README_PATH) {
+  const readme = fs.readFileSync(readmePath, 'utf8');
   const section = readme.split(/\n(?=## )/).find((part) => part.startsWith(`## ${heading}`));
-  if (!section) throw new Error(`README.md has no "## ${heading}" section for the site to embed`);
+  if (!section) throw new Error(`${path.basename(readmePath)} has no "## ${heading}" section for the site to embed`);
   return section.replace(`## ${heading}`, '').trim();
 }
 
-// Repo-relative links work on GitHub, not on the site — point them at the repo.
-function repoLinks(markdown) {
-  return markdown.replace(/\]\((?!https?:|#|\/)([^)]+)\)/g, `](${REPO_URL}/blob/main/$1)`);
+// Everything between a README's H1 and its first `## ` section.
+function readmePreamble(readmePath) {
+  const readme = fs.readFileSync(readmePath, 'utf8');
+  return readme.replace(/^#\s.+\n/, '').split(/\n(?=## )/)[0].trim();
+}
+
+// Repo-relative links work on GitHub, not on the site — point them at the
+// repo, prefixed with the directory the source README lives in.
+function repoLinks(markdown, baseDir = '') {
+  return markdown.replace(/\]\((?!https?:|#|\/)([^)]+)\)/g, `](${REPO_URL}/blob/main/${baseDir}$1)`);
 }
 
 function readmePage(title, position, headings) {
@@ -158,6 +143,30 @@ function writeReadmePages(siteDocsDir) {
   fs.writeFileSync(path.join(siteDocsDir, 'plugin.md'), readmePage('Claude Code Plugin', 5, ['Install']));
   fs.writeFileSync(path.join(siteDocsDir, 'commands.md'), readmePage('Commands & Levels', 6, ['Commands', 'Levels']));
   fs.writeFileSync(path.join(siteDocsDir, 'faq.md'), readmePage('FAQ', 7, ['FAQ']));
+}
+
+// How the benchmark works — arms, judges (habit-hooks smell detection, the
+// gates), scoring threshold, and the task set — embedded from the benchmarks
+// README so the site never drifts from the method actually in force.
+function methodologyPage() {
+  const embed = (markdown) => repoLinks(markdown, 'benchmarks/');
+  return `---
+title: Methodology
+sidebar_position: 1
+---
+
+*Embedded from \`benchmarks/README.md\` on every site build.*
+
+${embed(readmePreamble(BENCH_README_PATH))}
+
+## Running it, and the tasks
+
+${embed(readmeSection('Run it', BENCH_README_PATH))}
+
+## Reading the results
+
+${embed(readmeSection('Reading the results', BENCH_README_PATH))}
+`;
 }
 
 // --- The ruleset section -----------------------------------------------------
@@ -253,7 +262,7 @@ function scoreboardTable(rows, { linkTasks = true } = {}) {
   const header = `| Task | Arm | Score | Valid code | Habit-hooks | Ships tests | Correct | ${smells.map(humanize).join(' | ')} |`;
   const divider = `|---|---|---:|:---:|:---:|:---:|:---:|${smells.map(() => '---:').join('|')}|`;
   const body = rows.map((row) => {
-    const task = linkTasks ? `[${mdxEscape(row.task)}](${slug(row.task)})` : mdxEscape(row.task);
+    const task = linkTasks ? `[${mdxEscape(row.task)}](tasks/${slug(row.task)})` : mdxEscape(row.task);
     return `| ${task} | ${mdxEscape(`${row.model} · ${row.arm}`)} | ${row.score.toFixed(2)} | ${gateCells(row)} | ` +
       smells.map((rule) => row.smellCounts[rule] ?? 'n/a').join(' | ') + ' |';
   });
@@ -268,10 +277,77 @@ ships-tests, and correctness gates. Single-shot generations, so expect
 run-to-run variance.`;
 }
 
-function scoreboardPage(data) {
+// 'eval-x-2026-08-31t11-59-48' -> '08-31 11:59', compact enough for an x-axis.
+function chartLabel(run) {
+  const stamp = runStamp(run.id);
+  if (!stamp) return run.id.slice(0, 11);
+  const [date, time] = stamp.split('t');
+  const [hours, minutes] = time.split('-');
+  return `${date.slice(5)} ${hours}:${minutes}`;
+}
+
+// One line chart per model: mean score per run, oldest to newest, baseline
+// and ruleset as two lines. Mermaid's xychart has no legend, so the text
+// names the series; the ruleset is the upper line throughout the history.
+function trendCharts(runs) {
+  const chronological = [...runs].reverse();
+  const models = [...new Set(chronological.flatMap((run) => run.data.means.map((m) => m.key.split(' / ')[0])))].sort();
+  return models.map((model) => {
+    const meanOf = (run, arm) => run.data.means.find((m) => m.key === `${model} / ${arm}`)?.mean;
+    const points = chronological.filter((run) => meanOf(run, 'uncle-bob-junior') !== undefined && meanOf(run, 'baseline (no ruleset)') !== undefined);
+    if (points.length < 2) return '';
+    return [
+      `### ${mdxEscape(model)}`,
+      '',
+      '```mermaid',
+      'xychart-beta',
+      `    title "${model} — mean score per run (upper line: ruleset, lower: baseline)"`,
+      `    x-axis [${points.map((run) => `"${chartLabel(run)}"`).join(', ')}]`,
+      '    y-axis "mean score" 0 --> 1',
+      `    line [${points.map((run) => meanOf(run, 'baseline (no ruleset)').toFixed(3)).join(', ')}]`,
+      `    line [${points.map((run) => meanOf(run, 'uncle-bob-junior').toFixed(3)).join(', ')}]`,
+      '```',
+    ].join('\n');
+  }).filter(Boolean).join('\n\n');
+}
+
+// The benchmark section's front door: what the benchmark is, how the two
+// arms have trended across the stored history, and where to go next.
+function introPage(runs) {
+  const button = (to, label) => `<a className="button button--primary" href="${to}">${label}</a>`;
   return `---
-title: Benchmark Scoreboard
-sidebar_position: 1
+title: Benchmark
+slug: /benchmark
+---
+
+Does the ruleset actually change the code Claude writes? Every stored run
+answers with the same experiment: identical tasks, once bare (baseline) and
+once with the uncle-bob-junior ruleset as system prompt, judged by
+[habit-hooks](https://github.com/habit-hooks/habit-hooks) and correctness
+gates — no LLM grading.
+
+## The trend, oldest to newest
+
+Mean score per run and arm. Task sets grew over time (each run's own pages
+list its coverage), so read the lines as the arms' gap per run rather than
+one continuous series.
+
+${trendCharts(runs)}
+
+## Dig in
+
+<div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+${button('methodology', 'Methodology')}
+${button('scoreboard', 'Featured scoreboard')}
+${button('history', 'Past runs')}
+${button('subset', 'Subset runs')}
+</div>
+`;
+}
+function scoreboardPage(data, { title = 'Scoreboard', position = 1, footer = '' } = {}) {
+  return `---
+title: ${title}
+sidebar_position: ${position}
 ---
 
 ${runSummary(data)}
@@ -284,23 +360,7 @@ ${meanChart(data.means)}
 
 ${scoreboardTable(data.rows)}
 
-Older full runs live under [past runs](history); partial runs under
-[subset runs](subset).
-`;
-}
-
-// One compact page per non-featured run: chart plus scoreboard, no code pages.
-function runPage(run, position) {
-  return `---
-title: ${run.data.evalId}
-sidebar_position: ${position}
----
-
-${runSummary(run.data)}
-
-${meanChart(run.data.means)}
-
-${scoreboardTable(run.data.rows, { linkTasks: false })}
+The generated code per task lives under [Tasks](tasks).${footer}
 `;
 }
 
@@ -382,53 +442,76 @@ function lastRowPerArm(rows) {
 
 const TABS_IMPORT = "import Tabs from '@theme/Tabs';\nimport TabItem from '@theme/TabItem';";
 
-function taskPage(runDir, task, allRows, { title = task, position = null } = {}) {
+// Baseline-vs-ruleset code tabs for one task's rows, one section per model.
+function modelSections(runDir, allRows, heading) {
   const rows = lastRowPerArm(allRows);
   const models = [...new Set(rows.map((row) => row.model))];
-  const sections = models.map((model) => {
+  return models.map((model) => {
     const arms = rows
       .filter((row) => row.model === model)
       .sort((a, b) => Number(b.arm.includes('baseline')) - Number(a.arm.includes('baseline')));
     const tabs = arms.map((row) => armTab(runDir, row, slug(row.arm))).join('\n\n');
-    return `## ${mdxEscape(model)}\n\n<Tabs>\n\n${tabs}\n\n</Tabs>`;
+    return `${heading} ${mdxEscape(model)}\n\n<Tabs>\n\n${tabs}\n\n</Tabs>`;
   }).join('\n\n');
+}
+
+function taskPage(runDir, task, allRows, { title = task, position = null } = {}) {
   return `---
 title: ${title}
 ${position === null ? '' : `sidebar_position: ${position}\n`}---
 
 ${TABS_IMPORT}
 
-> ${mdxEscape(rows[0].prompt || '')}
+> ${mdxEscape(allRows[0].prompt || '')}
 
-${sections}
+${modelSections(runDir, allRows, '##')}
 `;
 }
 
 // --- Assembly ----------------------------------------------------------------
 
 // slug pins the generated index's URL so in-page links can target it; without
-// one Docusaurus defaults to /category/<label>, which nothing links to.
-function writeCategory(dir, label, position, description, categorySlug) {
+// one Docusaurus defaults to /category/<label>, which nothing links to. Pass
+// an object instead of a slug string to use a custom link (e.g. a doc).
+function writeCategory(dir, label, position, description, slugOrLink) {
+  const link = typeof slugOrLink === 'object'
+    ? slugOrLink
+    : { type: 'generated-index', description, slug: slugOrLink };
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, '_category_.json'), JSON.stringify({
-    label,
-    position,
-    link: { type: 'generated-index', description, slug: categorySlug },
-  }, null, 2) + '\n');
+  fs.writeFileSync(path.join(dir, '_category_.json'), JSON.stringify({ label, position, link }, null, 2) + '\n');
 }
 
-function writeRunPages(dir, runs) {
-  runs.forEach((run, index) => {
-    fs.writeFileSync(path.join(dir, `${slug(run.id)}.mdx`), runPage(run, index + 2));
+// The Tasks section of a run: one code page per task, baseline vs ruleset.
+function writeTaskPages(dir, run, baseSlug, categoryPosition) {
+  const tasksDir = path.join(dir, 'tasks');
+  writeCategory(tasksDir, 'Tasks', categoryPosition, 'The run\'s generated code, task by task: baseline vs ruleset.', `${baseSlug}/tasks`);
+  [...new Set(run.data.rows.map((row) => row.task))].forEach((task, index) => {
+    const rows = run.data.rows.filter((row) => row.task === task);
+    fs.writeFileSync(path.join(tasksDir, `${slug(task)}.mdx`), taskPage(run.dir, task, rows, { position: index + 1 }));
   });
 }
 
-function writeFeatured(benchmarkDir, featured) {
-  fs.writeFileSync(path.join(benchmarkDir, 'scoreboard.mdx'), scoreboardPage(featured.data));
-  for (const task of new Set(featured.data.rows.map((row) => row.task))) {
-    const rows = featured.data.rows.filter((row) => row.task === task);
-    fs.writeFileSync(path.join(benchmarkDir, `${slug(task)}.mdx`), taskPage(featured.dir, task, rows));
-  }
+// Past and subset runs mirror the featured layout: one datetime-named
+// category per run holding its Scoreboard and Tasks, newest first.
+function writeRunSections(dir, runs, baseSlug) {
+  runs.forEach((run, index) => {
+    const runDir = path.join(dir, slug(run.id));
+    const runSlug = `${baseSlug}/${slug(run.id)}`;
+    writeCategory(runDir, runTitle(run), index + 1, `Run ${run.data.evalId}.`, runSlug);
+    fs.writeFileSync(path.join(runDir, 'scoreboard.mdx'), scoreboardPage(run.data));
+    writeTaskPages(runDir, run, runSlug, 2);
+  });
+}
+
+function writeFeatured(benchmarkDir, featured, runs) {
+  fs.writeFileSync(path.join(benchmarkDir, 'intro.mdx'), introPage(runs));
+  fs.writeFileSync(path.join(benchmarkDir, 'methodology.md'), methodologyPage());
+  fs.writeFileSync(path.join(benchmarkDir, 'scoreboard.mdx'), scoreboardPage(featured.data, {
+    title: 'Benchmark Scoreboard',
+    position: 2,
+    footer: ' Older full runs live under [past runs](history); partial runs under [subset runs](subset).',
+  }));
+  writeTaskPages(benchmarkDir, featured, '/benchmark', 3);
 }
 
 // One page per stored Game of Life run — the run directories share the
@@ -443,7 +526,7 @@ function writeGameOfLife(siteDocsDir, gameOfLifeResultsDir) {
     if (rows.length === 0) return;
     fs.writeFileSync(
       path.join(dir, `${slug(run.id)}.mdx`),
-      taskPage(run.dir, 'gameoflife', rows, { title: run.data.evalId, position: index + 1 }),
+      taskPage(run.dir, 'gameoflife', rows, { title: runTitle(run), position: index + 1 }),
     );
   });
 }
@@ -466,22 +549,62 @@ function buildSite(_evalIdIgnored, {
   const benchmarkDir = path.join(siteDocsDir, 'benchmark');
   fs.rmSync(benchmarkDir, { recursive: true, force: true });
   fs.rmSync(path.join(siteDocsDir, 'gameoflife'), { recursive: true, force: true });
-  writeCategory(benchmarkDir, 'Benchmark', 3, 'With vs without the ruleset, judged by habit-hooks and correctness gates.', '/benchmark');
+  // The category opens on the intro page (trend graphs + section buttons).
+  writeCategory(benchmarkDir, 'Benchmark', 3, 'With vs without the ruleset, judged by habit-hooks and correctness gates.', { type: 'doc', id: 'benchmark/intro' });
   writeCategory(path.join(benchmarkDir, 'history'), 'Past runs', 90, 'Older full runs, newest first. All runs are re-judged with the current judges.', '/benchmark/history');
   writeCategory(path.join(benchmarkDir, 'subset'), 'Subset runs', 91, 'Runs covering only part of the current task set: iteration runs and runs from before newer tasks existed.', '/benchmark/subset');
 
-  fs.writeFileSync(path.join(siteDocsDir, 'index.mdx'), landingPage());
+  removeGeneratedLanding(siteDocsDir);
   writeReadmePages(siteDocsDir);
   writeRuleset(siteDocsDir);
-  writeFeatured(benchmarkDir, featured);
-  writeRunPages(path.join(benchmarkDir, 'history'), fullRuns.filter((run) => run !== featured));
-  writeRunPages(path.join(benchmarkDir, 'subset'), runs.filter((run) => !fullRuns.includes(run)));
+  writeFeatured(benchmarkDir, featured, runs);
+  writeRunSections(path.join(benchmarkDir, 'history'), fullRuns.filter((run) => run !== featured), '/benchmark/history');
+  writeRunSections(path.join(benchmarkDir, 'subset'), runs.filter((run) => !fullRuns.includes(run)), '/benchmark/subset');
   writeGameOfLife(siteDocsDir, gameOfLifeResultsDir);
   return siteDocsDir;
 }
 
-// Render the static site into /docs. Skipped (with a hint) when the website
-// dependencies are not installed; never throws further than the caller's try.
+const DOCS_OUTPUT_DIR = path.join(__dirname, '..', 'docs');
+
+function htmlPages(dir) {
+  const pages = [];
+  (function walk(current) {
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      if (entry.isDirectory()) walk(path.join(current, entry.name));
+      else if (entry.name.endsWith('.html')) pages.push(path.join(current, entry.name));
+    }
+  })(dir);
+  return pages;
+}
+
+// Every internal href on every rendered page must resolve to a rendered
+// file. Returned (not thrown) so the test suite and renderSite share one
+// checker: rendering fails loudly on dead links, and the committed docs/
+// stays guarded by the suite.
+function brokenSiteLinks(docsDir = DOCS_OUTPUT_DIR) {
+  const { baseUrl } = require(path.join(WEBSITE_DIR, 'docusaurus.config.js'));
+  const resolves = (href) => {
+    const relative = href.slice(baseUrl.length).replace(/\/$/, '');
+    if (relative === '') return true;
+    return [path.join(docsDir, relative, 'index.html'), path.join(docsDir, relative), path.join(docsDir, `${relative}.html`)]
+      .some((candidate) => fs.existsSync(candidate));
+  };
+  const broken = [];
+  for (const page of htmlPages(docsDir)) {
+    const html = fs.readFileSync(page, 'utf8');
+    for (const match of html.matchAll(/href="([^"#]+)"/g)) {
+      const href = match[1];
+      if (/^(https?:|mailto:|data:)/.test(href) || !href.startsWith('/')) continue;
+      if (!href.startsWith(baseUrl)) broken.push(`${href} escapes the base URL <- ${path.relative(docsDir, page)}`);
+      else if (!resolves(href)) broken.push(`${href} <- ${path.relative(docsDir, page)}`);
+    }
+  }
+  return broken;
+}
+
+// Render the static site into /docs and verify its links. Skipped (with a
+// hint) when the website dependencies are not installed; a render with dead
+// internal links throws, so no regeneration path can publish one silently.
 function renderSite() {
   if (!fs.existsSync(path.join(WEBSITE_DIR, 'node_modules'))) {
     return { rendered: false, reason: 'website dependencies missing; run: npm --prefix website install' };
@@ -489,7 +612,14 @@ function renderSite() {
   execFileSync('npm', ['--prefix', WEBSITE_DIR, 'run', 'build'], {
     stdio: ['ignore', 'pipe', 'pipe'],
     timeout: RENDER_TIMEOUT_MS,
+    // A separate generated-files dir, so a concurrently running dev server
+    // (which owns .docusaurus/) can never poison a production build.
+    env: { ...process.env, DOCUSAURUS_GENERATED_FILES_DIR_NAME: '.docusaurus-build' },
   });
+  const broken = brokenSiteLinks();
+  if (broken.length > 0) {
+    throw new Error(`site rendered with dead internal links:\n${broken.join('\n')}`);
+  }
   return { rendered: true };
 }
 
@@ -503,6 +633,6 @@ function main() {
 if (require.main === module) main();
 
 module.exports = {
-  buildSite, renderSite, newestRunId, checklistItems, mdxEscape, hitSmells,
+  buildSite, renderSite, brokenSiteLinks, newestRunId, mdxEscape, hitSmells,
   isFullRun, readmeSection,
 };

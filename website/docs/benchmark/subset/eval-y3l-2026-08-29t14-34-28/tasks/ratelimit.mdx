@@ -1,0 +1,324 @@
+---
+title: ratelimit
+sidebar_position: 6
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+> Add rate limiting to a Java HTTP handler so each client can't make more than a few requests per minute.
+
+## claude-cli&#58;haiku
+
+<Tabs>
+
+<TabItem value="baseline-no-ruleset" label="baseline (no ruleset) · 0.84">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests **No** ·
+correct Yes
+
+<details open>
+<summary><code>RateLimitedHandler.java</code> · 1 smell</summary>
+
+- `oversized-function` at line 9
+
+````java
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
+import java.io.IOException;
+
+public class RateLimitedHandler implements HttpHandler {
+    private final RateLimiter rateLimiter = new RateLimiter();
+    
+    @Override
+    public void handle(HttpExchange exchange) throws IOException {
+        String clientIp = getClientIp(exchange);
+        
+        if (!rateLimiter.allowRequest(clientIp)) {
+            exchange.getResponseHeaders().set("Retry-After", "60");
+            exchange.sendResponseHeaders(429, 0);
+            exchange.getResponseBody().close();
+            return;
+        }
+        
+        // Handle the actual request
+        String response = "OK";
+        exchange.getResponseHeaders().set("Content-Type", "text/plain");
+        exchange.sendResponseHeaders(200, response.length());
+        exchange.getResponseBody().write(response.getBytes());
+        exchange.close();
+    }
+    
+    private String getClientIp(HttpExchange exchange) {
+        String ip = exchange.getRequestHeaders().getFirst("X-Forwarded-For");
+        if (ip != null && !ip.isEmpty()) {
+            return ip.split(",")[0].trim();
+        }
+        return exchange.getRemoteAddress().getAddress().getHostAddress();
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>RateLimiter.java</code> · 1 smell</summary>
+
+- `unused-import` at line 1
+
+````java
+import java.time.Instant;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+
+public class RateLimiter {
+    private static final long WINDOW_MILLIS = 60_000; // 1 minute
+    private static final int MAX_REQUESTS = 10;
+    
+    private final Map<String, ClientQuota> quotas = new ConcurrentHashMap<>();
+    private final long cleanupIntervalMillis = 120_000; // 2 minutes
+    private volatile long lastCleanup = System.currentTimeMillis();
+    
+    public boolean allowRequest(String clientIp) {
+        cleanupIfNeeded();
+        ClientQuota quota = quotas.compute(clientIp, (ip, existing) -> {
+            if (existing == null || existing.isExpired()) {
+                return new ClientQuota();
+            }
+            return existing;
+        });
+        return quota.tryConsume();
+    }
+    
+    private void cleanupIfNeeded() {
+        long now = System.currentTimeMillis();
+        if (now - lastCleanup < cleanupIntervalMillis) {
+            return;
+        }
+        synchronized (this) {
+            now = System.currentTimeMillis();
+            if (now - lastCleanup < cleanupIntervalMillis) {
+                return;
+            }
+            quotas.entrySet().removeIf(e -> e.getValue().isExpired());
+            lastCleanup = now;
+        }
+    }
+    
+    private static class ClientQuota {
+        private long windowStartMillis = System.currentTimeMillis();
+        private int requestCount = 0;
+        
+        synchronized boolean tryConsume() {
+            long now = System.currentTimeMillis();
+            if (now - windowStartMillis > WINDOW_MILLIS) {
+                windowStartMillis = now;
+                requestCount = 0;
+            }
+            if (requestCount < MAX_REQUESTS) {
+                requestCount++;
+                return true;
+            }
+            return false;
+        }
+        
+        boolean isExpired() {
+            return System.currentTimeMillis() - windowStartMillis > WINDOW_MILLIS;
+        }
+    }
+}
+
+````
+
+</details>
+
+*No tests shipped.*
+
+</TabItem>
+
+<TabItem value="uncle-bob-junior" label="uncle-bob-junior · 1.00">
+
+Gates: valid code Yes ·
+habit-hooks Pass ·
+ships tests Yes ·
+correct Yes
+
+<details open>
+<summary><code>RateLimiter.java</code></summary>
+
+
+````java
+import java.util.*;
+import java.util.concurrent.*;
+
+public class RateLimiter {
+    private static final int MAX_REQUESTS = 5;
+    private static final long WINDOW_MILLIS = 60_000;
+    
+    private final Map<String, Queue<Long>> requestsByClient = new ConcurrentHashMap<>();
+    private final Clock clock;
+    
+    public RateLimiter() {
+        this(System::currentTimeMillis);
+    }
+    
+    RateLimiter(Clock clock) {
+        this.clock = clock;
+    }
+    
+    public boolean allowRequest(String clientId) {
+        long now = clock.currentTimeMillis();
+        Queue<Long> requests = requestsByClient.computeIfAbsent(clientId, k -> new ConcurrentLinkedQueue<>());
+        
+        requests.removeIf(timestamp -> now - timestamp > WINDOW_MILLIS);
+        
+        if (requests.size() >= MAX_REQUESTS) {
+            return false;
+        }
+        
+        requests.offer(now);
+        return true;
+    }
+    
+    @FunctionalInterface
+    interface Clock {
+        long currentTimeMillis();
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>RateLimitingFilter.java</code></summary>
+
+
+````java
+import org.springframework.stereotype.Component;
+import org.springframework.web.filter.OncePerRequestFilter;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
+
+@Component
+public class RateLimitingFilter extends OncePerRequestFilter {
+    private final RateLimiter rateLimiter = new RateLimiter();
+    
+    @Override
+    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
+            throws ServletException, IOException {
+        String clientIp = getClientIp(request);
+        
+        if (!rateLimiter.allowRequest(clientIp)) {
+            response.setStatus(429);
+            response.getWriter().write("Too many requests");
+            return;
+        }
+        
+        chain.doFilter(request, response);
+    }
+    
+    private String getClientIp(HttpServletRequest request) {
+        String xForwardedFor = request.getHeader("X-Forwarded-For");
+        if (xForwardedFor != null && !xForwardedFor.isEmpty()) {
+            return xForwardedFor.split(",")[0].trim();
+        }
+        return request.getRemoteAddr();
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary>Shipped tests (1 file)</summary>
+
+<details>
+<summary><code>RateLimiterTest.java</code></summary>
+
+
+````java
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
+
+public class RateLimiterTest {
+    private RateLimiter rateLimiter;
+    private long fakeTime;
+    
+    @BeforeEach
+    void setup() {
+        fakeTime = 0;
+        rateLimiter = new RateLimiter(() -> fakeTime);
+    }
+    
+    @Test
+    void allowsRequestsWithinLimit() {
+        String clientId = "192.168.1.1";
+        
+        for (int i = 0; i < 5; i++) {
+            assertTrue(rateLimiter.allowRequest(clientId));
+        }
+    }
+    
+    @Test
+    void blocksRequestsExceedingLimit() {
+        String clientId = "192.168.1.1";
+        
+        for (int i = 0; i < 5; i++) {
+            rateLimiter.allowRequest(clientId);
+        }
+        
+        assertFalse(rateLimiter.allowRequest(clientId));
+    }
+    
+    @Test
+    void isolatesLimitPerClient() {
+        assertTrue(rateLimiter.allowRequest("192.168.1.1"));
+        assertTrue(rateLimiter.allowRequest("192.168.1.2"));
+    }
+    
+    @Test
+    void allowsNewRequestsAfterTimeWindow() {
+        String clientId = "192.168.1.1";
+        
+        for (int i = 0; i < 5; i++) {
+            rateLimiter.allowRequest(clientId);
+        }
+        assertFalse(rateLimiter.allowRequest(clientId));
+        
+        fakeTime += 61_000;
+        
+        assertTrue(rateLimiter.allowRequest(clientId));
+    }
+    
+    @Test
+    void allowsPartialRefillBeforeWindowExpires() {
+        String clientId = "192.168.1.1";
+        
+        rateLimiter.allowRequest(clientId);
+        fakeTime += 30_000;
+        rateLimiter.allowRequest(clientId);
+        
+        fakeTime += 30_500;
+        
+        assertTrue(rateLimiter.allowRequest(clientId));
+    }
+}
+
+````
+
+</details>
+
+</details>
+
+</TabItem>
+
+</Tabs>

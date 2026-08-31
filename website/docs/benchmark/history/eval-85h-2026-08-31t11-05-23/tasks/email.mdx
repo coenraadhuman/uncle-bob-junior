@@ -1,0 +1,143 @@
+---
+title: email
+sidebar_position: 4
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+> Write a Java method that validates email addresses.
+
+## claude-cli&#58;haiku
+
+<Tabs>
+
+<TabItem value="baseline-no-ruleset" label="baseline (no ruleset) · 0.86">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests **No** ·
+correct Yes
+
+<details open>
+<summary><code>EmailValidator-2.java</code> · 1 smell</summary>
+
+- `unused-import` at line 1
+
+````java
+import org.apache.commons.validator.routines.EmailValidator;
+
+public class EmailValidator {
+    private static final EmailValidator validator = EmailValidator.getInstance();
+    
+    public static boolean isValidEmail(String email) {
+        return validator.isValid(email);
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>EmailValidator.java</code></summary>
+
+
+````java
+import java.util.regex.Pattern;
+
+public class EmailValidator {
+    private static final Pattern EMAIL_PATTERN = Pattern.compile(
+        "^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$"
+    );
+    
+    public static boolean isValidEmail(String email) {
+        if (email == null || email.isBlank()) {
+            return false;
+        }
+        return EMAIL_PATTERN.matcher(email).matches();
+    }
+}
+
+````
+
+</details>
+
+*No tests shipped.*
+
+</TabItem>
+
+<TabItem value="uncle-bob-junior" label="uncle-bob-junior · 1.00">
+
+Gates: valid code Yes ·
+habit-hooks Pass ·
+ships tests Yes ·
+correct Yes
+
+<details open>
+<summary><code>EmailValidator.java</code></summary>
+
+
+````java
+public class EmailValidator {
+  private static final String EMAIL_PATTERN =
+      "^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$";
+
+  public static boolean isValid(String email) {
+    if (email == null || email.isBlank()) {
+      return false;
+    }
+    return email.matches(EMAIL_PATTERN);
+  }
+}
+
+````
+
+</details>
+
+<details>
+<summary>Shipped tests (1 file)</summary>
+
+<details>
+<summary><code>EmailValidatorTest.java</code></summary>
+
+
+````java
+public class EmailValidatorTest {
+  @Test
+  void validEmailsPass() {
+    assertTrue(EmailValidator.isValid("user@example.com"));
+    assertTrue(EmailValidator.isValid("coenraad.human@postcodeloterij.nl"));
+    assertTrue(EmailValidator.isValid("john+tag@domain.co.uk"));
+    assertTrue(EmailValidator.isValid("a@b.co"));
+  }
+
+  @Test
+  void invalidEmailsFail() {
+    assertFalse(EmailValidator.isValid(null));
+    assertFalse(EmailValidator.isValid(""));
+    assertFalse(EmailValidator.isValid("   "));
+    assertFalse(EmailValidator.isValid("notanemail"));
+    assertFalse(EmailValidator.isValid("user@"));
+    assertFalse(EmailValidator.isValid("@example.com"));
+    assertFalse(EmailValidator.isValid("user @example.com"));
+    assertFalse(EmailValidator.isValid("user@example"));
+  }
+
+  @Test
+  void edgeCases() {
+    assertFalse(EmailValidator.isValid("user..name@example.com"));
+    assertTrue(EmailValidator.isValid("user_name@example.com"));
+    assertTrue(EmailValidator.isValid("user-name@example-domain.com"));
+  }
+}
+
+````
+
+</details>
+
+</details>
+
+</TabItem>
+
+</Tabs>

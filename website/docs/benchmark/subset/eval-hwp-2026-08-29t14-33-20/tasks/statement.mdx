@@ -1,0 +1,483 @@
+---
+title: statement
+sidebar_position: 8
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+> Analyse a bank statement in Java&#58; each line of statement.txt reads 'date;description;amount;currency' (e.g. 2026-01-15;ALBERT HEIJN;-23.95;EUR). Convert USD and GBP amounts to EUR with fixed rates, categorise every transaction as salary, rent, groceries, or other from description keywords, total each category per month, flag transactions above 2000 EUR and repeated identical amounts on the same day as suspicious, and print a month-by-month report.
+
+## claude-cli&#58;haiku
+
+<Tabs>
+
+<TabItem value="baseline-no-ruleset" label="baseline (no ruleset) · 0.81">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests **No** ·
+correct Yes
+
+<details open>
+<summary><code>BankStatementAnalyzer.java</code> · 4 smells</summary>
+
+- `too-many-parameters` at line 22
+- `high-complexity` at line 42
+- `oversized-function` at line 57
+- `oversized-function` at line 110
+
+````java
+import java.io.*;
+import java.time.*;
+import java.util.*;
+import java.util.stream.*;
+
+// Assumptions:
+// - USD to EUR: 0.92, GBP to EUR: 1.17 (fixed rates)
+// - Categories: salary/wage/income, rent/mortgage, Albert Heijn/supermarket/grocery/food, else other
+// - Suspicious: amounts > 2000 EUR or same EUR amount repeated on same day
+
+public class BankStatementAnalyzer {
+    
+    static class Transaction {
+        LocalDate date;
+        String description;
+        double amount;
+        String currency;
+        double amountEUR;
+        String category;
+        boolean suspicious;
+        
+        Transaction(LocalDate date, String description, double amount, String currency) {
+            this.date = date;
+            this.description = description;
+            this.amount = amount;
+            this.currency = currency;
+            this.amountEUR = convertToEUR(amount, currency);
+            this.category = categorize(description);
+            this.suspicious = false;
+        }
+    }
+    
+    static double convertToEUR(double amount, String currency) {
+        return switch (currency) {
+            case "USD" -> amount * 0.92;
+            case "GBP" -> amount * 1.17;
+            case "EUR" -> amount;
+            default -> amount;
+        };
+    }
+    
+    static String categorize(String description) {
+        String desc = description.toLowerCase();
+        if (desc.contains("salary") || desc.contains("wage") || desc.contains("income")) {
+            return "salary";
+        }
+        if (desc.contains("rent") || desc.contains("mortgage")) {
+            return "rent";
+        }
+        if (desc.contains("albert heijn") || desc.contains("supermarket") || 
+            desc.contains("grocery") || desc.contains("food")) {
+            return "groceries";
+        }
+        return "other";
+    }
+    
+    public static void main(String[] args) {
+        List<Transaction> transactions = new ArrayList<>();
+        
+        try (BufferedReader reader = new BufferedReader(new FileReader("statement.txt"))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String[] parts = line.split(";");
+                if (parts.length == 4) {
+                    LocalDate date = LocalDate.parse(parts[0]);
+                    String description = parts[1];
+                    double amount = Double.parseDouble(parts[2]);
+                    String currency = parts[3].toUpperCase();
+                    transactions.add(new Transaction(date, description, amount, currency));
+                }
+            }
+        } catch (IOException e) {
+            System.err.println("Error reading file: " + e.getMessage());
+            return;
+        }
+        
+        flagSuspiciousTransactions(transactions);
+        
+        Map<YearMonth, Map<String, List<Transaction>>> monthlyData = 
+            transactions.stream().collect(Collectors.groupingBy(
+                t -> YearMonth.from(t.date),
+                Collectors.groupingBy(t -> t.category)
+            ));
+        
+        monthlyData.entrySet().stream()
+            .sorted(Map.Entry.comparingByKey())
+            .forEach(entry -> printMonthlyReport(entry.getKey(), entry.getValue()));
+    }
+    
+    static void flagSuspiciousTransactions(List<Transaction> transactions) {
+        for (Transaction t : transactions) {
+            if (Math.abs(t.amountEUR) > 2000) {
+                t.suspicious = true;
+            }
+        }
+        
+        Map<LocalDate, Map<Double, Long>> amountCounts = transactions.stream()
+            .collect(Collectors.groupingBy(
+                t -> t.date,
+                Collectors.groupingBy(t -> t.amountEUR, Collectors.counting())
+            ));
+        
+        for (Transaction t : transactions) {
+            if (amountCounts.get(t.date).getOrDefault(t.amountEUR, 0L) > 1) {
+                t.suspicious = true;
+            }
+        }
+    }
+    
+    static void printMonthlyReport(YearMonth month, Map<String, List<Transaction>> categories) {
+        System.out.println("\n=== " + month + " ===");
+        
+        double grandTotal = 0;
+        String[] categoryOrder = {"salary", "rent", "groceries", "other"};
+        
+        for (String category : categoryOrder) {
+            List<Transaction> catTransactions = categories.getOrDefault(category, new ArrayList<>());
+            double total = catTransactions.stream().mapToDouble(t -> t.amountEUR).sum();
+            grandTotal += total;
+            
+            System.out.printf("%-12s: %10.2f EUR (%d transactions)\n", category, total, catTransactions.size());
+            
+            for (Transaction t : catTransactions) {
+                String flag = t.suspicious ? " [SUSPICIOUS]" : "";
+                System.out.printf("  %s | %-30s | %10.2f EUR%s\n", 
+                    t.date, t.description, t.amountEUR, flag);
+            }
+        }
+        
+        System.out.printf("%-12s: %10.2f EUR\n", "TOTAL", grandTotal);
+    }
+}
+
+````
+
+</details>
+
+*No tests shipped.*
+
+</TabItem>
+
+<TabItem value="uncle-bob-junior" label="uncle-bob-junior · 1.00">
+
+Gates: valid code Yes ·
+habit-hooks Pass ·
+ships tests Yes ·
+correct Yes
+
+<details open>
+<summary><code>BankStatementAnalyzer.java</code></summary>
+
+
+````java
+import java.io.*;
+import java.util.*;
+import java.util.stream.*;
+
+public class BankStatementAnalyzer {
+    public static void main(String[] args) throws IOException {
+        new BankStatementAnalyzer().run();
+    }
+    
+    private void run() throws IOException {
+        var transactions = readTransactions();
+        var analyzed = analyzeTransactions(transactions);
+        new MonthlyReporter().report(analyzed);
+    }
+    
+    private List<String> readTransactions() throws IOException {
+        try (var reader = new BufferedReader(new FileReader("statement.txt"))) {
+            return reader.lines()
+                .filter(line -> !line.trim().isEmpty())
+                .collect(Collectors.toList());
+        }
+    }
+    
+    private List<Transaction> analyzeTransactions(List<String> lines) {
+        var parsed = lines.stream().map(Transaction::parse).collect(Collectors.toList());
+        return new SuspiciousFlagService().flagAll(parsed);
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>DateAmountKey.java</code></summary>
+
+
+````java
+import java.time.*;
+import java.util.*;
+
+record DateAmountKey(LocalDate date, double amount) {
+    @Override
+    public boolean equals(Object o) {
+        if (!(o instanceof DateAmountKey k)) return false;
+        return date.equals(k.date) && Math.abs(amount - k.amount) < 0.01;
+    }
+    
+    @Override
+    public int hashCode() {
+        return Objects.hash(date, Math.round(amount * 100));
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>MonthlyReporter.java</code></summary>
+
+
+````java
+import java.util.*;
+import java.util.stream.*;
+
+class MonthlyReporter {
+    void report(List<Transaction> transactions) {
+        groupByMonth(transactions).entrySet().stream()
+            .sorted(Map.Entry.comparingByKey())
+            .forEach(this::printMonth);
+    }
+    
+    private Map<String, List<Transaction>> groupByMonth(List<Transaction> transactions) {
+        return transactions.stream()
+            .collect(Collectors.groupingBy(this::monthKey));
+    }
+    
+    private void printMonth(Map.Entry<String, List<Transaction>> entry) {
+        System.out.println("\n=== " + entry.getKey() + " ===");
+        printCategories(entry.getValue());
+        printSuspicious(entry.getValue());
+    }
+    
+    private void printCategories(List<Transaction> transactions) {
+        var totals = transactions.stream()
+            .collect(Collectors.groupingBy(
+                Transaction::category,
+                Collectors.summingDouble(Transaction::amountEur)
+            ));
+        totals.forEach((cat, total) -> 
+            System.out.printf("%s: %.2f EUR\n", cat, total));
+    }
+    
+    private void printSuspicious(List<Transaction> transactions) {
+        var flagged = transactions.stream()
+            .filter(Transaction::suspicious)
+            .collect(Collectors.toList());
+        
+        if (flagged.isEmpty()) return;
+        
+        System.out.println("\nSuspicious transactions:");
+        flagged.forEach(t -> 
+            System.out.printf("  %s | %s | %.2f EUR\n", t.date(), t.description(), t.amountEur()));
+    }
+    
+    private String monthKey(Transaction t) {
+        return String.format("%d-%02d", t.date().getYear(), t.date().getMonthValue());
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>SuspiciousFlagService.java</code></summary>
+
+
+````java
+import java.util.*;
+import java.util.stream.*;
+
+class SuspiciousFlagService {
+    private static final double LARGE_AMOUNT = 2000.0;
+    
+    List<Transaction> flagAll(List<Transaction> transactions) {
+        var flaggedLarge = flagLargeAmounts(transactions);
+        return flagDuplicateDayAmounts(flaggedLarge);
+    }
+    
+    private List<Transaction> flagLargeAmounts(List<Transaction> transactions) {
+        return transactions.stream()
+            .map(t -> Math.abs(t.amountEur()) > LARGE_AMOUNT ? t.withSuspicious() : t)
+            .collect(Collectors.toList());
+    }
+    
+    private List<Transaction> flagDuplicateDayAmounts(List<Transaction> transactions) {
+        var duplicates = findDuplicateDayAmounts(transactions);
+        return transactions.stream()
+            .map(t -> duplicates.contains(dateAmountKey(t)) ? t.withSuspicious() : t)
+            .collect(Collectors.toList());
+    }
+    
+    private Set<DateAmountKey> findDuplicateDayAmounts(List<Transaction> transactions) {
+        return transactions.stream()
+            .collect(Collectors.groupingBy(this::dateAmountKey))
+            .entrySet().stream()
+            .filter(e -> e.getValue().size() > 1)
+            .map(Map.Entry::getKey)
+            .collect(Collectors.toSet());
+    }
+    
+    private DateAmountKey dateAmountKey(Transaction t) {
+        return new DateAmountKey(t.date(), t.amountEur());
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>Transaction.java</code></summary>
+
+
+````java
+import java.time.*;
+import java.util.*;
+
+record Transaction(
+    LocalDate date,
+    String description,
+    double amount,
+    String currency,
+    double amountEur,
+    String category,
+    boolean suspicious
+) {
+    static Transaction parse(String line) {
+        var parts = line.split(";");
+        if (parts.length != 4) throw new IllegalArgumentException("Invalid: " + line);
+        var date = LocalDate.parse(parts[0]);
+        var desc = parts[1].trim();
+        var amt = Double.parseDouble(parts[2]);
+        var curr = parts[3].trim();
+        var eurAmt = convertToEur(amt, curr);
+        var cat = categorizeTransaction(desc);
+        return new Transaction(date, desc, amt, curr, eurAmt, cat, false);
+    }
+    
+    private static double convertToEur(double amount, String currency) {
+        return switch (currency) {
+            case "USD" -> amount * 0.92;
+            case "GBP" -> amount * 1.17;
+            case "EUR" -> amount;
+            default -> throw new IllegalArgumentException("Unknown: " + currency);
+        };
+    }
+    
+    private static String categorizeTransaction(String description) {
+        var lower = description.toLowerCase();
+        if (hasAny(lower, "salary", "wage", "payment", "deposit")) return "salary";
+        if (hasAny(lower, "rent", "landlord", "lease")) return "rent";
+        if (hasAny(lower, "albert heijn", "supermarket", "grocery", "food", "market")) return "groceries";
+        return "other";
+    }
+    
+    private static boolean hasAny(String text, String... keywords) {
+        return Arrays.stream(keywords).anyMatch(text::contains);
+    }
+    
+    Transaction withSuspicious() {
+        return new Transaction(date, description, amount, currency, amountEur, category, true);
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary>Shipped tests (1 file)</summary>
+
+<details>
+<summary><code>BankStatementAnalyzerTest.java</code></summary>
+
+
+````java
+import java.time.*;
+import java.util.*;
+
+class BankStatementAnalyzerTest {
+    public static void main(String[] args) {
+        testTransactionParsing();
+        testCurrencyConversion();
+        testCategorization();
+        testLargeAmountFlag();
+        testDuplicateAmountFlag();
+        System.out.println("✓ All tests passed");
+    }
+    
+    private static void testTransactionParsing() {
+        var t = Transaction.parse("2026-01-15;ALBERT HEIJN;-23.95;EUR");
+        assert t.date().equals(LocalDate.of(2026, 1, 15));
+        assert t.description().equals("ALBERT HEIJN");
+        assert t.amount() == -23.95;
+        assert t.currency().equals("EUR");
+        assert Math.abs(t.amountEur() - (-23.95)) < 0.01;
+    }
+    
+    private static void testCurrencyConversion() {
+        var eur = Transaction.parse("2026-01-01;test;100;EUR");
+        var usd = Transaction.parse("2026-01-01;test;100;USD");
+        var gbp = Transaction.parse("2026-01-01;test;100;GBP");
+        
+        assert Math.abs(eur.amountEur() - 100) < 0.01;
+        assert Math.abs(usd.amountEur() - 92) < 0.01;
+        assert Math.abs(gbp.amountEur() - 117) < 0.01;
+    }
+    
+    private static void testCategorization() {
+        assert Transaction.parse("2026-01-01;Monthly Salary;100;EUR").category().equals("salary");
+        assert Transaction.parse("2026-01-01;Rent Payment;-800;EUR").category().equals("rent");
+        assert Transaction.parse("2026-01-01;ALBERT HEIJN;-50;EUR").category().equals("groceries");
+        assert Transaction.parse("2026-01-01;Mystery;100;EUR").category().equals("other");
+    }
+    
+    private static void testLargeAmountFlag() {
+        var normal = Transaction.parse("2026-01-01;normal;1500;EUR");
+        var large = Transaction.parse("2026-01-01;large;2500;EUR");
+        
+        var flagged = new SuspiciousFlagService().flagAll(List.of(normal, large));
+        
+        assert !flagged.get(0).suspicious();
+        assert flagged.get(1).suspicious();
+    }
+    
+    private static void testDuplicateAmountFlag() {
+        var t1 = Transaction.parse("2026-01-01;shop1;-50;EUR");
+        var t2 = Transaction.parse("2026-01-01;shop2;-50;EUR");
+        var t3 = Transaction.parse("2026-01-02;shop3;-50;EUR");
+        
+        var flagged = new SuspiciousFlagService().flagAll(List.of(t1, t2, t3));
+        
+        assert flagged.get(0).suspicious();
+        assert flagged.get(1).suspicious();
+        assert !flagged.get(2).suspicious();
+    }
+}
+
+````
+
+</details>
+
+</details>
+
+</TabItem>
+
+</Tabs>

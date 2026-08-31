@@ -1,0 +1,322 @@
+---
+title: ratelimit
+sidebar_position: 6
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+> Add rate limiting to a Java HTTP handler so each client can't make more than a few requests per minute.
+
+## claude-cli&#58;haiku
+
+<Tabs>
+
+<TabItem value="baseline-no-ruleset" label="baseline (no ruleset) · 0.86">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests **No** ·
+correct Yes
+
+<details open>
+<summary><code>RateLimitedHttpServer.java</code></summary>
+
+
+````java
+import com.sun.net.httpserver.*;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+
+public class RateLimitedHttpServer {
+    public static void main(String[] args) throws IOException {
+        RateLimiter rateLimiter = new RateLimiter();
+        
+        HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0);
+        
+        server.createContext("/api", exchange -> {
+            String clientIp = exchange.getRemoteAddress().getAddress().getHostAddress();
+            
+            if (!rateLimiter.allowRequest(clientIp)) {
+                exchange.getResponseHeaders().set("Retry-After", "60");
+                exchange.sendResponseHeaders(429, -1);
+                exchange.close();
+                return;
+            }
+            
+            // Handle the request
+            String response = "Hello from " + exchange.getRequestURI().getPath();
+            exchange.getResponseHeaders().set("Content-Type", "text/plain");
+            exchange.sendResponseHeaders(200, response.getBytes().length);
+            exchange.getResponseBody().write(response.getBytes());
+            exchange.close();
+        });
+
+        server.setExecutor(null);
+        server.start();
+        System.out.println("Server running on port 8080");
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>RateLimiter.java</code> · 1 smell</summary>
+
+- `oversized-function` at line 25
+
+````java
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+
+public class RateLimiter {
+    private static class ClientQuota {
+        long tokens;
+        long lastRefillTime;
+        long lastAccessTime;
+
+        ClientQuota() {
+            this.tokens = MAX_REQUESTS;
+            this.lastRefillTime = System.currentTimeMillis();
+            this.lastAccessTime = System.currentTimeMillis();
+        }
+    }
+
+    private static final int MAX_REQUESTS = 10;
+    private static final long WINDOW_MILLIS = 60_000; // 60 seconds
+    private static final long CLEANUP_INTERVAL = 300_000; // 5 minutes
+    private static final long ENTRY_EXPIRY = 600_000; // 10 minutes
+
+    private final Map<String, ClientQuota> quotas = new ConcurrentHashMap<>();
+    private long lastCleanup = System.currentTimeMillis();
+
+    public boolean allowRequest(String clientIp) {
+        long now = System.currentTimeMillis();
+        
+        // Cleanup stale entries periodically
+        if (now - lastCleanup > CLEANUP_INTERVAL) {
+            quotas.entrySet().removeIf(e -> 
+                now - e.getValue().lastAccessTime > ENTRY_EXPIRY
+            );
+            lastCleanup = now;
+        }
+
+        ClientQuota quota = quotas.computeIfAbsent(clientIp, k -> new ClientQuota());
+        quota.lastAccessTime = now;
+
+        // Refill tokens based on elapsed time
+        long elapsedMillis = now - quota.lastRefillTime;
+        long tokensToAdd = (elapsedMillis / WINDOW_MILLIS) * MAX_REQUESTS;
+        
+        if (tokensToAdd > 0) {
+            quota.tokens = Math.min(MAX_REQUESTS, quota.tokens + tokensToAdd);
+            quota.lastRefillTime += (tokensToAdd / MAX_REQUESTS) * WINDOW_MILLIS;
+        }
+
+        // Allow request if tokens available
+        if (quota.tokens > 0) {
+            quota.tokens--;
+            return true;
+        }
+        return false;
+    }
+}
+
+````
+
+</details>
+
+*No tests shipped.*
+
+</TabItem>
+
+<TabItem value="uncle-bob-junior" label="uncle-bob-junior · 0.98">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests Yes ·
+correct Yes
+
+<details open>
+<summary><code>HttpResponse.java</code></summary>
+
+
+````java
+class HttpResponse {
+  final int statusCode;
+  final String body;
+
+  HttpResponse(int statusCode, String body) {
+    this.statusCode = statusCode;
+    this.body = body;
+  }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>RateLimitedHandler.java</code></summary>
+
+
+````java
+class RateLimitedHandler {
+  private final RateLimiter rateLimiter;
+
+  RateLimitedHandler(RateLimiter rateLimiter) {
+    this.rateLimiter = rateLimiter;
+  }
+
+  HttpResponse handle(String clientIp, String requestBody) {
+    if (!rateLimiter.isAllowed(clientIp)) {
+      return new HttpResponse(429, "Too Many Requests");
+    }
+    return new HttpResponse(200, "OK");
+  }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>RateLimiter.java</code> · 1 smell</summary>
+
+- `unused-import` at line 3
+
+````java
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.time.Instant;
+
+class RateLimiter {
+  private static final int REQUESTS_PER_MINUTE = 5;
+  private static final long WINDOW_DURATION_MILLIS = 60_000;
+
+  private final Map<String, Queue<Long>> requestsByClient = new ConcurrentHashMap<>();
+
+  boolean isAllowed(String clientId) {
+    Queue<Long> timestamps = requestsByClient.computeIfAbsent(clientId, _ -> new LinkedList<>());
+    long now = System.currentTimeMillis();
+    long windowStart = now - WINDOW_DURATION_MILLIS;
+
+    while (!timestamps.isEmpty() && timestamps.peek() < windowStart) {
+      timestamps.poll();
+    }
+
+    if (timestamps.size() >= REQUESTS_PER_MINUTE) {
+      return false;
+    }
+
+    timestamps.offer(now);
+    return true;
+  }
+}
+
+````
+
+</details>
+
+<details>
+<summary>Shipped tests (2 files)</summary>
+
+<details>
+<summary><code>RateLimitedHandlerTest.java</code></summary>
+
+
+````java
+import org.junit.Test;
+import static org.junit.Assert.*;
+
+class RateLimitedHandlerTest {
+  private final RateLimiter rateLimiter = new RateLimiter();
+  private final RateLimitedHandler handler = new RateLimitedHandler(rateLimiter);
+
+  @Test
+  void returns200ForAllowedRequest() {
+    HttpResponse response = handler.handle("192.168.1.1", "test");
+    assertEquals(200, response.statusCode);
+    assertEquals("OK", response.body);
+  }
+
+  @Test
+  void returns429WhenRateLimited() {
+    String clientIp = "192.168.1.1";
+    for (int i = 0; i < 5; i++) {
+      handler.handle(clientIp, "test");
+    }
+
+    HttpResponse response = handler.handle(clientIp, "test");
+    assertEquals(429, response.statusCode);
+    assertEquals("Too Many Requests", response.body);
+  }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>RateLimiterTest.java</code></summary>
+
+
+````java
+import java.util.concurrent.TimeUnit;
+import org.junit.Test;
+import static org.junit.Assert.*;
+
+class RateLimiterTest {
+  private final RateLimiter rateLimiter = new RateLimiter();
+  private final String clientId = "192.168.1.1";
+
+  @Test
+  void allowsFirstFiveRequests() {
+    for (int i = 0; i < 5; i++) {
+      assertTrue(rateLimiter.isAllowed(clientId));
+    }
+  }
+
+  @Test
+  void blocksSixthRequest() {
+    for (int i = 0; i < 5; i++) {
+      rateLimiter.isAllowed(clientId);
+    }
+    assertFalse(rateLimiter.isAllowed(clientId));
+  }
+
+  @Test
+  void allowsRequestsAfterWindowExpires() throws InterruptedException {
+    for (int i = 0; i < 5; i++) {
+      rateLimiter.isAllowed(clientId);
+    }
+    assertFalse(rateLimiter.isAllowed(clientId));
+    
+    TimeUnit.SECONDS.sleep(1);
+    assertTrue(rateLimiter.isAllowed(clientId));
+  }
+
+  @Test
+  void isolatesClientQuotas() {
+    String client1 = "192.168.1.1";
+    String client2 = "192.168.1.2";
+
+    for (int i = 0; i < 5; i++) {
+      rateLimiter.isAllowed(client1);
+    }
+
+    assertTrue(rateLimiter.isAllowed(client2));
+  }
+}
+
+````
+
+</details>
+
+</details>
+
+</TabItem>
+
+</Tabs>

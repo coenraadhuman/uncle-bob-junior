@@ -1,0 +1,210 @@
+---
+title: csv
+sidebar_position: 3
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+> Write a Java program that reads sales.csv and prints the sum of the 'amount' column.
+
+## claude-cli&#58;haiku
+
+<Tabs>
+
+<TabItem value="baseline-no-ruleset" label="baseline (no ruleset) · 0.86">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests **No** ·
+correct Yes
+
+<details open>
+<summary><code>SalesCalculator.java</code> · 1 smell</summary>
+
+- `oversized-function` at line 6
+
+````java
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.io.IOException;
+
+public class SalesCalculator {
+    public static void main(String[] args) {
+        String fileName = "sales.csv";
+        double total = 0.0;
+        int amountColumnIndex = -1;
+        
+        try (BufferedReader reader = new BufferedReader(new FileReader(fileName))) {
+            String line;
+            boolean isHeader = true;
+            
+            while ((line = reader.readLine()) != null) {
+                String[] values = line.split(",");
+                
+                if (isHeader) {
+                    // Find the index of the "amount" column
+                    for (int i = 0; i < values.length; i++) {
+                        if (values[i].trim().equalsIgnoreCase("amount")) {
+                            amountColumnIndex = i;
+                            break;
+                        }
+                    }
+                    isHeader = false;
+                } else {
+                    // Sum the amount column
+                    if (amountColumnIndex >= 0 && amountColumnIndex < values.length) {
+                        try {
+                            total += Double.parseDouble(values[amountColumnIndex].trim());
+                        } catch (NumberFormatException e) {
+                            System.err.println("Warning: Could not parse amount: " + values[amountColumnIndex]);
+                        }
+                    }
+                }
+            }
+            
+            System.out.println("Total Amount: " + total);
+        } catch (IOException e) {
+            System.err.println("Error reading file: " + e.getMessage());
+        }
+    }
+}
+
+````
+
+</details>
+
+*No tests shipped.*
+
+</TabItem>
+
+<TabItem value="uncle-bob-junior" label="uncle-bob-junior · 0.99">
+
+Gates: valid code Yes ·
+habit-hooks **Fail** ·
+ships tests Yes ·
+correct Yes
+
+<details open>
+<summary><code>SalesAnalyzer.java</code> · 1 smell</summary>
+
+- `swallowed-exception` at line 41
+
+````java
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+
+public class SalesAnalyzer {
+    private static final String AMOUNT_COLUMN = "amount";
+    
+    public static void main(String[] args) throws IOException {
+        double sum = calculateSalesSum(Path.of("sales.csv"));
+        System.out.println("Total: " + sum);
+    }
+    
+    static double calculateSalesSum(Path csvFile) throws IOException {
+        List<String> lines = Files.readAllLines(csvFile);
+        if (lines.isEmpty()) {
+            return 0.0;
+        }
+        
+        int amountColumnIndex = findColumnIndex(lines.get(0));
+        return sumAmountColumn(lines, amountColumnIndex);
+    }
+    
+    private static int findColumnIndex(String headerLine) {
+        String[] headers = headerLine.split(",");
+        for (int i = 0; i < headers.length; i++) {
+            if (headers[i].trim().equalsIgnoreCase(AMOUNT_COLUMN)) {
+                return i;
+            }
+        }
+        throw new IllegalArgumentException("Column '" + AMOUNT_COLUMN + "' not found");
+    }
+    
+    private static double sumAmountColumn(List<String> lines, int columnIndex) {
+        double sum = 0.0;
+        for (int i = 1; i < lines.size(); i++) {
+            String[] values = lines.get(i).split(",");
+            if (columnIndex < values.length) {
+                try {
+                    sum += Double.parseDouble(values[columnIndex].trim());
+                } catch (NumberFormatException e) {
+                    // Skip rows with invalid amounts
+                }
+            }
+        }
+        return sum;
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary>Shipped tests (1 file)</summary>
+
+<details>
+<summary><code>SalesAnalyzerTest.java</code></summary>
+
+
+````java
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import static org.junit.jupiter.api.Assertions.*;
+
+public class SalesAnalyzerTest {
+    @Test
+    void sumsSalesCorrectly(@TempDir Path tempDir) throws IOException {
+        Path csvFile = tempDir.resolve("sales.csv");
+        Files.write(csvFile, "amount,date\n10.5,2026-01-01\n20.3,2026-01-02\n15.2,2026-01-03\n".getBytes());
+        
+        double sum = SalesAnalyzer.calculateSalesSum(csvFile);
+        
+        assertEquals(46.0, sum, 0.01);
+    }
+    
+    @Test
+    void handlesEmptyFile(@TempDir Path tempDir) throws IOException {
+        Path csvFile = tempDir.resolve("sales.csv");
+        Files.write(csvFile, "amount\n".getBytes());
+        
+        double sum = SalesAnalyzer.calculateSalesSum(csvFile);
+        
+        assertEquals(0.0, sum);
+    }
+    
+    @Test
+    void skipsInvalidAmounts(@TempDir Path tempDir) throws IOException {
+        Path csvFile = tempDir.resolve("sales.csv");
+        Files.write(csvFile, "amount\n10\ninvalid\n20\n".getBytes());
+        
+        double sum = SalesAnalyzer.calculateSalesSum(csvFile);
+        
+        assertEquals(30.0, sum);
+    }
+    
+    @Test
+    void throwsWhenColumnMissing(@TempDir Path tempDir) throws IOException {
+        Path csvFile = tempDir.resolve("sales.csv");
+        Files.write(csvFile, "price,date\n10,2026-01-01\n".getBytes());
+        
+        assertThrows(IllegalArgumentException.class, () -> SalesAnalyzer.calculateSalesSum(csvFile));
+    }
+}
+
+````
+
+</details>
+
+</details>
+
+</TabItem>
+
+</Tabs>
