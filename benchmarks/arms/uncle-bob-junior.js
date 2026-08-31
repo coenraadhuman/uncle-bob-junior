@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { DELIVERY_INSTRUCTION } = require('./delivery');
 
-const SKILL_PATH = path.join(__dirname, '..', '..', 'skills', 'uncle-bob-junior', 'SKILL.md');
+const SKILL_PATH = path.join(__dirname, '..', '..', 'plugins', 'uncle-bob-junior', 'skills', 'uncle-bob-junior', 'SKILL.md');
 const system = fs.readFileSync(SKILL_PATH, 'utf8').replace(/^---[\s\S]*?---\s*/, '');
 
 module.exports = ({ vars }) => [

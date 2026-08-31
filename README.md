@@ -705,7 +705,7 @@ Agents working on a repo can also read the compact ruleset straight from a commi
 /plugin remove uncle-bob-junior
 ```
 
-This removes the plugin's own files. Run `node scripts/uninstall.js` **before** it to also clean up the mode flag, `~/.config/uncle-bob-junior/config.json`, and (if you accepted the setup nudge) the statusline entry in `~/.claude/settings.json`.
+This removes the plugin's own files. Run `node plugins/uncle-bob-junior/scripts/uninstall.js` **before** it to also clean up the mode flag, `~/.config/uncle-bob-junior/config.json`, and (if you accepted the setup nudge) the statusline entry in `~/.claude/settings.json`.
 
 ## Commands
 
@@ -718,7 +718,7 @@ This removes the plugin's own files. Run `node scripts/uninstall.js` **before** 
 | `/uncle-bob-junior-gain`                           | Render the newest with/without promptfoo eval as a scoreboard.            |
 | `/uncle-bob-junior-help`                           | Quick reference for the commands above.                                   |
 
-Commands ship both as skills (`skills/`) and as file-based commands (`commands/*.toml`).
+Commands ship both as skills and as file-based commands inside the plugin (`plugins/uncle-bob-junior/{skills,commands}`).
 
 ## Levels
 
@@ -753,7 +753,30 @@ All benchmark code on the site is model-generated output, labelled as such.
 
 ## Development
 
-When changing a rule, keep `skills/uncle-bob-junior/SKILL.md` (the runtime
+### Repository structure
+
+The plugin payload lives under `plugins/`, cleanly separated from the repo's
+tooling — installing the plugin ships only the plugin:
+
+```
+uncle-bob-junior/
+├── .claude-plugin/
+│   └── marketplace.json            # marketplace → ./plugins/uncle-bob-junior
+├── plugins/
+│   └── uncle-bob-junior/
+│       ├── .claude-plugin/
+│       │   └── plugin.json         # plugin manifest (hooks entry point)
+│       ├── skills/                 # SKILL.md per skill + references/
+│       ├── commands/               # file-based /uncle-bob-junior commands
+│       ├── hooks/                  # lifecycle hooks incl. habit-hooks verify
+│       └── scripts/uninstall.js    # state cleanup
+├── benchmarks/                     # with/without eval, judges, site content generator
+├── website/                        # Docusaurus showcase site (builds into /docs)
+├── tests/                          # repo test suite
+└── AGENTS.md                       # compact ruleset for agents working here
+```
+
+When changing a rule, keep `plugins/uncle-bob-junior/skills/uncle-bob-junior/SKILL.md` (the runtime
 source of truth) and `AGENTS.md` (the compact repo-local version) aligned:
 
 ```bash

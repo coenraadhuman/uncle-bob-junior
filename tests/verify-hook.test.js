@@ -12,13 +12,14 @@ const os = require('node:os');
 const path = require('node:path');
 
 const root = path.join(__dirname, '..');
+const pluginRoot = path.join(root, 'plugins', 'uncle-bob-junior');
 
 const hasHabitHooks = spawnSync('habit-hooks', ['--version'], { encoding: 'utf8' }).status === 0;
 const hasPmd = spawnSync('pmd', ['--version'], { encoding: 'utf8' }).status === 0;
 const scanOnly = { skip: !(hasHabitHooks && hasPmd) && 'habit-hooks + pmd not on PATH' };
 
 function runVerify(input, env = {}) {
-  return spawnSync(process.execPath, [path.join(root, 'hooks', 'uncle-bob-junior-verify.js')], {
+  return spawnSync(process.execPath, [path.join(pluginRoot, 'hooks', 'uncle-bob-junior-verify.js')], {
     env: { ...process.env, ...env },
     input: JSON.stringify(input),
     encoding: 'utf8',

@@ -12,7 +12,7 @@ const PINNED_SEMVER = /^\d+\.\d+\.\d+$/;
 
 // Every file that declares the project version, and who reads it.
 const VERSION_FILES = [
-  '.claude-plugin/plugin.json',  // Claude Code plugin — what users install
+  'plugins/uncle-bob-junior/.claude-plugin/plugin.json',  // Claude Code plugin — what users install
   'package.json',                // repo root (private, drives the test tooling)
 ];
 

@@ -10,10 +10,11 @@ const fs = require('fs');
 const path = require('path');
 
 const root = path.join(__dirname, '..');
+const pluginRoot = path.join(root, 'plugins', 'uncle-bob-junior');
 
 // The skills directory is the canonical command set.
-const commands = fs.readdirSync(path.join(root, 'skills'))
-  .filter((name) => fs.existsSync(path.join(root, 'skills', name, 'SKILL.md')))
+const commands = fs.readdirSync(path.join(pluginRoot, 'skills'))
+  .filter((name) => fs.existsSync(path.join(pluginRoot, 'skills', name, 'SKILL.md')))
   // The debt/gain/help/audit/review skills all get commands; the base skill does too.
   .concat('uncle-bob-junior')
   .filter((name, index, all) => all.indexOf(name) === index);
@@ -26,7 +27,7 @@ test('skills exist to derive the command set from', () => {
 test('every skill ships a Claude commands/*.toml', () => {
   for (const name of commands) {
     assert.ok(
-      fs.existsSync(path.join(root, 'commands', `${name}.toml`)),
+      fs.existsSync(path.join(pluginRoot, 'commands', `${name}.toml`)),
       `missing commands/${name}.toml`,
     );
   }

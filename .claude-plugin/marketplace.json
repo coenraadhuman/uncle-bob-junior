@@ -10,7 +10,7 @@
     {
       "name": "uncle-bob-junior",
       "description": "Enforces clean code: one job per function, names that reveal intent, flat control flow, tests.",
-      "source": "./",
+      "source": "./plugins/uncle-bob-junior",
       "category": "productivity"
     }
   ]

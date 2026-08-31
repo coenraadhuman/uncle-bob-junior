@@ -14,6 +14,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 
 const root = path.join(__dirname, '..');
+const pluginRoot = path.join(root, 'plugins', 'uncle-bob-junior');
 const HOOKS_JSON = 'hooks/claude-hooks.json';
 const HOST_PLUGIN_MANIFESTS = [
   '.claude-plugin/plugin.json',
@@ -26,7 +27,7 @@ const HOOK_SCRIPT = /hooks[\\/]([\w.-]+\.(?:js|mjs|cjs|ps1|sh))/;
 // Read inside each case so a missing/malformed file fails as a clean assertion,
 // not a load-time crash.
 function commandHooks() {
-  const config = JSON.parse(fs.readFileSync(path.join(root, HOOKS_JSON), 'utf8'));
+  const config = JSON.parse(fs.readFileSync(path.join(pluginRoot, HOOKS_JSON), 'utf8'));
   return Object.values(config.hooks)
     .flat()
     .flatMap((entry) => entry.hooks);
@@ -79,7 +80,7 @@ test('every hook command points at a script that ships in hooks/', () => {
     const cmd = hook.command;
     const match = cmd.match(HOOK_SCRIPT);
     assert.ok(match, `cannot find a hooks/ script in command: ${cmd}`);
-    const script = path.join(root, 'hooks', match[1]);
+    const script = path.join(pluginRoot, 'hooks', match[1]);
     assert.ok(fs.existsSync(script), `command references a missing hook script: ${match[1]}`);
   }
 });
@@ -89,7 +90,7 @@ test('every hook command points at a script that ships in hooks/', () => {
 // fires. The hook must never wait on stdin forever — that freezes the whole
 // session. It has to self-exit even when stdin stays open and empty.
 test('uncle-bob-junior-mode-tracker self-exits when stdin never closes (no freeze)', async () => {
-  const hook = path.join(root, 'hooks', 'uncle-bob-junior-mode-tracker.js');
+  const hook = path.join(pluginRoot, 'hooks', 'uncle-bob-junior-mode-tracker.js');
   // stdin is a pipe we never write to or end, reproducing the deadlock.
   const child = spawn(process.execPath, [hook], { stdio: ['pipe', 'ignore', 'ignore'] });
 
@@ -107,7 +108,7 @@ test('uncle-bob-junior-mode-tracker self-exits when stdin never closes (no freez
 
 test('The Claude plugin manifest points at the hook config explicitly', () => {
   for (const rel of HOST_PLUGIN_MANIFESTS) {
-    const manifest = JSON.parse(fs.readFileSync(path.join(root, rel), 'utf8'));
+    const manifest = JSON.parse(fs.readFileSync(path.join(pluginRoot, rel), 'utf8'));
     assert.equal(manifest.hooks, `./${HOOKS_JSON}`, `${rel} must not rely on root hooks auto-discovery`);
   }
 });

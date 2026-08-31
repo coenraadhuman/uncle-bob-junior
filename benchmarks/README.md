@@ -4,7 +4,7 @@ Does the ruleset actually change the code an agent writes? Two arms, same
 model, same tasks:
 
 - **baseline** — the bare task prompt, nothing else.
-- **uncle-bob-junior** — the same prompt with `skills/uncle-bob-junior/SKILL.md`
+- **uncle-bob-junior** — the same prompt with `plugins/uncle-bob-junior/skills/uncle-bob-junior/SKILL.md`
   as system prompt.
 
 Each answer is scored by deterministic judges, no LLM grading:
@@ -59,7 +59,7 @@ gets no tools (`--tools ""`): generations are single-shot text, so a model
 can never hang the eval by running its own answer (the Game of Life task
 produces a program that never exits). Both arms are
 prompt functions in [`arms/`](arms/) — baseline sends the bare task, the
-ruleset arm loads `skills/uncle-bob-junior/SKILL.md` as system prompt — and
+ruleset arm loads `plugins/uncle-bob-junior/skills/uncle-bob-junior/SKILL.md` as system prompt — and
 the asserts in [`promptfoo-metrics.js`](promptfoo-metrics.js) wrap the
 judges above, plus [`correctness.js`](correctness.js), which promptfoo calls
 directly.

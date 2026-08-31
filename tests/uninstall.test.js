@@ -9,7 +9,7 @@ const { spawnSync } = require('child_process');
 const root = path.join(__dirname, '..');
 
 function runUninstall(env) {
-  return spawnSync(process.execPath, [path.join(root, 'scripts', 'uninstall.js')], {
+  return spawnSync(process.execPath, [path.join(root, 'plugins', 'uncle-bob-junior', 'scripts', 'uninstall.js')], {
     env: { ...process.env, ...env },
     encoding: 'utf8',
   });

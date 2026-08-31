@@ -7,11 +7,12 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const root = path.join(__dirname, '..');
+const pluginRoot = path.join(root, 'plugins', 'uncle-bob-junior');
 
 // isShellSafe gates the statusline setup snippet (issue #200): ordinary install
 // paths pass, paths carrying shell metacharacters are rejected so they never get
 // embedded in a shell command.
-const { DEFAULT_MODE, getDefaultMode, isShellSafe, writeDefaultMode } = require('../hooks/uncle-bob-junior-config');
+const { DEFAULT_MODE, getDefaultMode, isShellSafe, writeDefaultMode } = require('../plugins/uncle-bob-junior/hooks/uncle-bob-junior-config');
 assert.equal(isShellSafe('C:\\Users\\x\\.claude\\plugins\\uncle-bob-junior\\hooks\\uncle-bob-junior-statusline.ps1'), true);
 assert.equal(isShellSafe('/home/u/.claude/plugins/uncle-bob-junior/hooks/uncle-bob-junior-statusline.sh'), true);
 assert.equal(isShellSafe('/tmp/a"&calc.exe&"/x.sh'), false);
@@ -19,7 +20,7 @@ assert.equal(isShellSafe('/tmp/$(calc)/x.sh'), false);
 assert.equal(isShellSafe('/tmp/a;rm -rf/x.sh'), false);
 
 function run(script, env, input = '') {
-  return spawnSync(process.execPath, [path.join(root, 'hooks', script)], {
+  return spawnSync(process.execPath, [path.join(pluginRoot, 'hooks', script)], {
     env: { ...process.env, ...env },
     input,
     encoding: 'utf8',
@@ -57,6 +58,22 @@ let result = run('uncle-bob-junior-activate.js', baseEnv);
 assert.equal(result.status, 0, result.stderr);
 assert.equal(fs.readFileSync(baseState, 'utf8'), 'ultra');
 assert.match(result.stdout, /UNCLE_BOB_JUNIOR MODE ACTIVE — level: ultra/);
+
+// The slim core points at its references/ files. Injected context must carry
+// absolute paths (skill-relative ones mean nothing in a session), and the
+// files pointed at must exist.
+const referencesDir = path.join(pluginRoot, 'skills', 'uncle-bob-junior', 'references');
+for (const file of ['refactoring-moves.md', 'tests.md']) {
+  assert.ok(fs.existsSync(path.join(referencesDir, file)), `missing reference file: ${file}`);
+  assert.ok(
+    result.stdout.includes(path.join(referencesDir, file)),
+    `injected context must point at ${file} by absolute path`,
+  );
+}
+assert.ok(
+  !result.stdout.includes('`references/'),
+  'no unresolved skill-relative reference paths may reach the session context',
+);
 
 result = run(
   'uncle-bob-junior-mode-tracker.js',

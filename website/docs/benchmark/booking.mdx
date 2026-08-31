@@ -11,7 +11,7 @@ import TabItem from '@theme/TabItem';
 
 <Tabs>
 
-<TabItem value="baseline-no-ruleset" label="baseline (no ruleset) · 0.75">
+<TabItem value="baseline-no-ruleset" label="baseline (no ruleset) · 0.80">
 
 Gates: valid code yes ·
 habit-hooks **FAIL** ·
@@ -21,62 +21,72 @@ correct yes
 <details open>
 <summary><code>Booking.java</code> · 1 smell</summary>
 
-- `too-many-parameters` at line 17
+- `too-many-parameters` at line 18
 
 ````java
-import java.time.LocalDateTime;
+import java.time.*;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 
 class Booking {
     private final String bookingId;
+    private final String customerId;
     private final List<Seat> seats;
-    private final LocalDateTime bookingTime;
-    private final LocalDateTime eventDateTime;
-    private final Map<TicketType, Integer> ticketCounts;
     private final double totalPrice;
+    private final LocalDateTime bookedAt;
+    private final LocalDateTime eventDate;
     private BookingStatus status;
-    
+
     enum BookingStatus {
         CONFIRMED, CANCELLED
     }
-    
-    public Booking(String bookingId, List<Seat> seats, LocalDateTime eventDateTime, 
-                   Map<TicketType, Integer> ticketCounts, double totalPrice) {
+
+    public Booking(String bookingId, String customerId, List<Seat> seats, double totalPrice, LocalDateTime bookedAt, LocalDateTime eventDate) {
         this.bookingId = bookingId;
-        this.seats = seats;
-        this.bookingTime = LocalDateTime.now();
-        this.eventDateTime = eventDateTime;
-        this.ticketCounts = new HashMap<>(ticketCounts);
+        this.customerId = customerId;
+        this.seats = new ArrayList<>(seats);
         this.totalPrice = totalPrice;
+        this.bookedAt = bookedAt;
+        this.eventDate = eventDate;
         this.status = BookingStatus.CONFIRMED;
     }
-    
+
     public String getBookingId() {
         return bookingId;
     }
-    
+
+    public String getCustomerId() {
+        return customerId;
+    }
+
     public List<Seat> getSeats() {
-        return seats;
+        return new ArrayList<>(seats);
     }
-    
-    public LocalDateTime getEventDateTime() {
-        return eventDateTime;
-    }
-    
+
     public double getTotalPrice() {
         return totalPrice;
     }
-    
+
+    public LocalDateTime getEventDate() {
+        return eventDate;
+    }
+
     public BookingStatus getStatus() {
         return status;
     }
-    
+
     public void setStatus(BookingStatus status) {
         this.status = status;
     }
-    
-    public Map<TicketType, Integer> getTicketCounts() {
-        return ticketCounts;
+
+    public double calculateRefund(LocalDateTime cancelDate) {
+        long daysUntilEvent = ChronoUnit.DAYS.between(cancelDate, eventDate);
+        if (daysUntilEvent > 30) {
+            return totalPrice;
+        } else if (daysUntilEvent >= 7) {
+            return totalPrice * 0.5;
+        }
+        return 0;
     }
 }
 
@@ -85,348 +95,188 @@ class Booking {
 </details>
 
 <details>
-<summary><code>EventBookingEngine.java</code> · 8 smells</summary>
+<summary><code>BookingEngine.java</code> · 2 smells</summary>
 
-- `too-many-parameters` at line 95
-- `unused-import` at line 4
-- `oversized-function` at line 149
-- `oversized-function` at line 174
-- `oversized-function` at line 248
-- `oversized-function` at line 295
-- `high-complexity` at line 174
-- `oversized-file` at line 
+- `oversized-function` at line 24
+- `oversized-function` at line 56
 
 ````java
 import java.time.*;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.stream.*;
 
-public class EventBookingEngine {
-    
-    enum TicketType {
-        ADULT(100.0),
-        CHILD(50.0),
-        SENIOR(75.0),
-        STUDENT(60.0);
-        
-        private final double basePrice;
-        
-        TicketType(double basePrice) {
-            this.basePrice = basePrice;
-        }
-        
-        public double getBasePrice() {
-            return basePrice;
-        }
+class BookingEngine {
+    private final Event event;
+    private final Map<String, Hold> holds;
+    private final Map<String, Booking> bookings;
+    private final Queue<WaitListEntry> waitList;
+    private final ScheduledExecutorService executor;
+    private static final int HOLD_DURATION_MINUTES = 15;
+    private static final double GROUP_DISCOUNT_RATE = 0.05;
+    private static final int GROUP_DISCOUNT_THRESHOLD = 10;
+
+    public BookingEngine(Event event) {
+        this.event = event;
+        this.holds = new ConcurrentHashMap<>();
+        this.bookings = new ConcurrentHashMap<>();
+        this.waitList = new ConcurrentLinkedQueue<>();
+        this.executor = Executors.newScheduledThreadPool(1);
+        startHoldExpirationChecker();
     }
-    
-    static class Event {
-        private final String eventId;
-        private final LocalDateTime eventDate;
-        private final int totalSeats;
-        private int availableSeats;
-        
-        Event(String eventId, LocalDateTime eventDate, int totalSeats) {
-            this.eventId = eventId;
-            this.eventDate = eventDate;
-            this.totalSeats = totalSeats;
-            this.availableSeats = totalSeats;
+
+    public synchronized Hold holdSeats(String customerId, List<TicketType> ticketTypes) {
+        LocalDateTime now = LocalDateTime.now();
+        expireHolds(now);
+
+        if (ticketTypes.isEmpty() || ticketTypes.size() > event.getAvailableSeatsCount()) {
+            return null;
         }
-        
-        synchronized void reserveSeats(int count) {
-            if (availableSeats < count) {
-                throw new IllegalStateException("Not enough seats available");
+
+        List<Seat> selectedSeats = new ArrayList<>();
+        for (TicketType type : ticketTypes) {
+            Seat seat = event.getSeats().values().stream()
+                    .filter(s -> s.getStatus() == Seat.SeatStatus.AVAILABLE && s.getTicketType() == type)
+                    .findFirst()
+                    .orElse(null);
+            if (seat == null) {
+                return null;
             }
-            availableSeats -= count;
+            selectedSeats.add(seat);
         }
-        
-        synchronized void releaseSeats(int count) {
-            availableSeats = Math.min(availableSeats + count, totalSeats);
-        }
-        
-        int getAvailableSeats() {
-            return availableSeats;
-        }
-        
-        LocalDateTime getEventDate() {
-            return eventDate;
-        }
+
+        selectedSeats.forEach(s -> s.setStatus(Seat.SeatStatus.HELD));
+
+        double totalPrice = calculatePrice(selectedSeats, ticketTypes.size());
+        LocalDateTime expiresAt = now.plusMinutes(HOLD_DURATION_MINUTES);
+        String holdId = UUID.randomUUID().toString();
+
+        Hold hold = new Hold(holdId, customerId, selectedSeats, expiresAt, totalPrice);
+        holds.put(holdId, hold);
+
+        return hold;
     }
-    
-    static class SeatHold {
-        private final String holdId;
-        private final String customerId;
-        private final int seatCount;
-        private final LocalDateTime expiresAt;
-        private boolean confirmed;
-        
-        SeatHold(String customerId, int seatCount) {
-            this.holdId = UUID.randomUUID().toString();
-            this.customerId = customerId;
-            this.seatCount = seatCount;
-            this.expiresAt = LocalDateTime.now().plusMinutes(15);
-            this.confirmed = false;
+
+    public synchronized Booking confirmHold(String holdId) {
+        Hold hold = holds.get(holdId);
+        if (hold == null || hold.getStatus() != Hold.HoldStatus.ACTIVE) {
+            return null;
         }
-        
-        boolean isExpired() {
-            return LocalDateTime.now().isAfter(expiresAt);
+
+        LocalDateTime now = LocalDateTime.now();
+        if (hold.isExpired(now)) {
+            releaseHold(holdId);
+            return null;
         }
-        
-        void confirm() {
-            this.confirmed = true;
-        }
-        
-        String getHoldId() { return holdId; }
-        String getCustomerId() { return customerId; }
-        int getSeatCount() { return seatCount; }
-        boolean isConfirmed() { return confirmed; }
+
+        hold.getSeats().forEach(s -> s.setStatus(Seat.SeatStatus.CONFIRMED));
+
+        String bookingId = UUID.randomUUID().toString();
+        Booking booking = new Booking(bookingId, hold.getCustomerId(), hold.getSeats(), 
+                hold.getTotalPrice(), now, event.getEventDate());
+        bookings.put(bookingId, booking);
+
+        hold.setStatus(Hold.HoldStatus.CONFIRMED);
+        holds.remove(holdId);
+
+        return booking;
     }
-    
-    static class BookingRecord {
-        private final String bookingId;
-        private final String customerId;
-        private final int seatCount;
-        private final double totalPrice;
-        private final LocalDateTime bookingDate;
-        private final LocalDateTime eventDate;
-        
-        BookingRecord(String customerId, int seatCount, double totalPrice, LocalDateTime eventDate) {
-            this.bookingId = UUID.randomUUID().toString();
-            this.customerId = customerId;
-            this.seatCount = seatCount;
-            this.totalPrice = totalPrice;
-            this.bookingDate = LocalDateTime.now();
-            this.eventDate = eventDate;
+
+    public synchronized void releaseHold(String holdId) {
+        Hold hold = holds.get(holdId);
+        if (hold == null) {
+            return;
         }
-        
-        double calculateRefund() {
-            long daysUntilEvent = ChronoUnit.DAYS.between(LocalDateTime.now(), eventDate);
-            
-            if (daysUntilEvent > 30) {
-                return totalPrice;
-            } else if (daysUntilEvent >= 7) {
-                return totalPrice * 0.5;
-            }
-            return 0.0;
-        }
-        
-        String getBookingId() { return bookingId; }
-        int getSeatCount() { return seatCount; }
-        double getTotalPrice() { return totalPrice; }
+
+        hold.getSeats().forEach(s -> s.setStatus(Seat.SeatStatus.AVAILABLE));
+        hold.setStatus(Hold.HoldStatus.RELEASED);
+        holds.remove(holdId);
+
+        processWaitList();
     }
-    
-    static class WaitingListEntry {
-        private final String customerId;
-        private final int seatCount;
-        private final LocalDateTime requestTime;
-        
-        WaitingListEntry(String customerId, int seatCount) {
-            this.customerId = customerId;
-            this.seatCount = seatCount;
-            this.requestTime = LocalDateTime.now();
+
+    public synchronized double cancelBooking(String bookingId) {
+        Booking booking = bookings.get(bookingId);
+        if (booking == null || booking.getStatus() == Booking.BookingStatus.CANCELLED) {
+            return 0;
         }
+
+        LocalDateTime now = LocalDateTime.now();
+        double refund = booking.calculateRefund(now);
+
+        booking.getSeats().forEach(s -> s.setStatus(Seat.SeatStatus.AVAILABLE));
+        booking.setStatus(Booking.BookingStatus.CANCELLED);
+
+        processWaitList();
+
+        return refund;
     }
-    
-    static class BookingEngine {
-        private final Map<String, Event> events = new ConcurrentHashMap<>();
-        private final Map<String, SeatHold> activeHolds = new ConcurrentHashMap<>();
-        private final Map<String, String> holdToEventMap = new ConcurrentHashMap<>();
-        private final Map<String, BookingRecord> bookings = new ConcurrentHashMap<>();
-        private final Map<String, Queue<WaitingListEntry>> waitingLists = new ConcurrentHashMap<>();
-        private final ScheduledExecutorService expiryChecker = Executors.newScheduledThreadPool(1);
-        
-        public BookingEngine() {
-            startExpiryChecker();
+
+    public synchronized WaitListEntry joinWaitList(String customerId, List<TicketType> ticketTypes) {
+        if (!event.isSoldOut()) {
+            return null;
         }
-        
-        public void createEvent(String eventId, LocalDateTime eventDate, int totalSeats) {
-            events.put(eventId, new Event(eventId, eventDate, totalSeats));
-            waitingLists.put(eventId, new ConcurrentLinkedQueue<>());
-        }
-        
-        public SeatHold holdSeats(String eventId, String customerId, int seatCount) {
-            if (seatCount <= 0) {
-                throw new IllegalArgumentException("Must hold at least one seat");
-            }
-            
-            Event event = events.get(eventId);
-            if (event == null) {
-                throw new IllegalArgumentException("Event not found");
-            }
-            
-            synchronized (event) {
-                if (event.getAvailableSeats() < seatCount) {
-                    waitingLists.get(eventId).add(new WaitingListEntry(customerId, seatCount));
-                    throw new IllegalStateException("No seats available. Added to waiting list.");
-                }
-                event.reserveSeats(seatCount);
-            }
-            
-            SeatHold hold = new SeatHold(customerId, seatCount);
-            activeHolds.put(hold.getHoldId(), hold);
-            holdToEventMap.put(hold.getHoldId(), eventId);
-            
-            return hold;
-        }
-        
-        public BookingRecord confirmHold(String eventId, String holdId, List<TicketType> ticketTypes) {
-            SeatHold hold = activeHolds.get(holdId);
+
+        String waitListId = UUID.randomUUID().toString();
+        WaitListEntry entry = new WaitListEntry(waitListId, customerId, ticketTypes, LocalDateTime.now());
+        waitList.add(entry);
+
+        return entry;
+    }
+
+    private synchronized void processWaitList() {
+        while (!waitList.isEmpty() && !event.isSoldOut()) {
+            WaitListEntry entry = waitList.poll();
+            Hold hold = holdSeats(entry.getCustomerId(), entry.getTicketTypes());
             if (hold == null) {
-                throw new IllegalArgumentException("Hold not found");
-            }
-            
-            if (hold.isExpired()) {
-                releaseHold(holdId);
-                throw new IllegalStateException("Hold has expired");
-            }
-            
-            if (hold.isConfirmed()) {
-                throw new IllegalStateException("Hold already confirmed");
-            }
-            
-            if (ticketTypes.size() != hold.getSeatCount()) {
-                throw new IllegalArgumentException("Ticket count does not match hold");
-            }
-            
-            hold.confirm();
-            
-            double basePrice = ticketTypes.stream()
-                .mapToDouble(TicketType::getBasePrice)
-                .sum();
-            
-            double totalPrice = basePrice;
-            if (hold.getSeatCount() >= 10) {
-                totalPrice = basePrice * 0.95;
-            }
-            
-            Event event = events.get(eventId);
-            BookingRecord booking = new BookingRecord(hold.getCustomerId(), hold.getSeatCount(), 
-                                                      totalPrice, event.getEventDate());
-            bookings.put(booking.getBookingId(), booking);
-            
-            return booking;
-        }
-        
-        public void releaseHold(String holdId) {
-            SeatHold hold = activeHolds.remove(holdId);
-            String eventId = holdToEventMap.remove(holdId);
-            
-            if (hold != null && !hold.isConfirmed()) {
-                Event event = events.get(eventId);
-                if (event != null) {
-                    event.releaseSeats(hold.getSeatCount());
-                    processWaitingList(eventId);
-                }
-            }
-        }
-        
-        public double cancelBooking(String eventId, String bookingId) {
-            BookingRecord booking = bookings.remove(bookingId);
-            if (booking == null) {
-                throw new IllegalArgumentException("Booking not found");
-            }
-            
-            Event event = events.get(eventId);
-            event.releaseSeats(booking.getSeatCount());
-            processWaitingList(eventId);
-            
-            return booking.calculateRefund();
-        }
-        
-        public List<WaitingListEntry> getWaitingList(String eventId) {
-            Queue<WaitingListEntry> queue = waitingLists.get(eventId);
-            return queue != null ? new ArrayList<>(queue) : Collections.emptyList();
-        }
-        
-        public int getAvailableSeats(String eventId) {
-            Event event = events.get(eventId);
-            return event != null ? event.getAvailableSeats() : -1;
-        }
-        
-        private void processWaitingList(String eventId) {
-            Event event = events.get(eventId);
-            Queue<WaitingListEntry> waitingList = waitingLists.get(eventId);
-            
-            if (event == null || waitingList == null) {
-                return;
-            }
-            
-            while (!waitingList.isEmpty()) {
-                WaitingListEntry entry = waitingList.peek();
-                
-                synchronized (event) {
-                    if (event.getAvailableSeats() >= entry.seatCount) {
-                        event.reserveSeats(entry.seatCount);
-                        waitingList.poll();
-                        // In production: notifyCustomer(entry.customerId)
-                    } else {
-                        break;
-                    }
-                }
-            }
-        }
-        
-        private void startExpiryChecker() {
-            expiryChecker.scheduleAtFixedRate(() -> {
-                List<String> expiredHolds = activeHolds.entrySet().stream()
-                    .filter(e -> e.getValue().isExpired() && !e.getValue().isConfirmed())
-                    .map(Map.Entry::getKey)
-                    .toList();
-                
-                expiredHolds.forEach(this::releaseHold);
-            }, 1, 1, TimeUnit.MINUTES);
-        }
-        
-        public void shutdown() {
-            expiryChecker.shutdown();
-            try {
-                if (!expiryChecker.awaitTermination(5, TimeUnit.SECONDS)) {
-                    expiryChecker.shutdownNow();
-                }
-            } catch (InterruptedException e) {
-                expiryChecker.shutdownNow();
-                Thread.currentThread().interrupt();
+                waitList.add(entry);
+                break;
             }
         }
     }
-    
-    public static void main(String[] args) {
-        BookingEngine engine = new BookingEngine();
-        engine.createEvent("evt-001", LocalDateTime.now().plusDays(60), 20);
-        
-        System.out.println("=== Regular Booking (4 seats) ===");
-        SeatHold hold1 = engine.holdSeats("evt-001", "cust-001", 4);
-        BookingRecord booking1 = engine.confirmHold("evt-001", hold1.getHoldId(), 
-            Arrays.asList(TicketType.ADULT, TicketType.ADULT, TicketType.CHILD, TicketType.SENIOR));
-        System.out.println("Booking: " + booking1.getBookingId());
-        System.out.println("Price: $" + String.format("%.2f", booking1.getTotalPrice()));
-        System.out.println("Available seats: " + engine.getAvailableSeats("evt-001"));
-        
-        System.out.println("\n=== Group Booking (10 seats, 5% discount) ===");
-        SeatHold hold2 = engine.holdSeats("evt-001", "cust-002", 10);
-        List<TicketType> groupTickets = new ArrayList<>();
-        for (int i = 0; i < 10; i++) groupTickets.add(TicketType.ADULT);
-        BookingRecord booking2 = engine.confirmHold("evt-001", hold2.getHoldId(), groupTickets);
-        System.out.println("Booking: " + booking2.getBookingId());
-        System.out.println("Price: $" + String.format("%.2f", booking2.getTotalPrice()) + " (base: $1000)");
-        System.out.println("Available seats: " + engine.getAvailableSeats("evt-001"));
-        
-        System.out.println("\n=== Waiting List ===");
-        try {
-            engine.holdSeats("evt-001", "cust-003", 6);
-        } catch (IllegalStateException e) {
-            System.out.println("Status: " + e.getMessage());
-            System.out.println("Waiting list size: " + engine.getWaitingList("evt-001").size());
+
+    private synchronized void expireHolds(LocalDateTime now) {
+        List<String> expiredHoldIds = holds.entrySet().stream()
+                .filter(e -> e.getValue().isExpired(now))
+                .map(Map.Entry::getKey)
+                .toList();
+        expiredHoldIds.forEach(this::releaseHold);
+    }
+
+    private void startHoldExpirationChecker() {
+        executor.scheduleAtFixedRate(() -> expireHolds(LocalDateTime.now()), 
+                HOLD_DURATION_MINUTES, 1, TimeUnit.MINUTES);
+    }
+
+    private double calculatePrice(List<Seat> seats, int seatCount) {
+        double totalPrice = seats.stream()
+                .mapToDouble(s -> s.getTicketType().getBasePrice())
+                .sum();
+
+        if (seatCount >= GROUP_DISCOUNT_THRESHOLD) {
+            totalPrice *= (1 - GROUP_DISCOUNT_RATE);
         }
-        
-        System.out.println("\n=== Cancellation (>30 days, 100% refund) ===");
-        double refund = engine.cancelBooking("evt-001", booking1.getBookingId());
-        System.out.println("Refund: $" + String.format("%.2f", refund));
-        System.out.println("Available seats: " + engine.getAvailableSeats("evt-001"));
-        System.out.println("Waiting list served - Remaining: " + engine.getWaitingList("evt-001").size());
-        
-        engine.shutdown();
+
+        return totalPrice;
+    }
+
+    public Booking getBooking(String bookingId) {
+        return bookings.get(bookingId);
+    }
+
+    public Hold getHold(String holdId) {
+        return holds.get(holdId);
+    }
+
+    public int getWaitListSize() {
+        return waitList.size();
+    }
+
+    public int getAvailableSeatsCount() {
+        return event.getAvailableSeatsCount();
+    }
+
+    public void shutdown() {
+        executor.shutdown();
     }
 }
 
@@ -435,362 +285,539 @@ public class EventBookingEngine {
 </details>
 
 <details>
-<summary><code>EventSeatBookingEngine.java</code> · 13 smells</summary>
+<summary><code>Event.java</code></summary>
 
-- `too-many-parameters` at line 23
-- `too-many-parameters` at line 51
-- `too-many-parameters` at line 76
-- `too-many-parameters` at line 118
-- `too-many-parameters` at line 128
-- `too-many-parameters` at line 233
-- `oversized-function` at line 128
-- `oversized-function` at line 158
-- `oversized-function` at line 186
-- `oversized-function` at line 204
-- `oversized-function` at line 241
-- `oversized-function` at line 293
-- `oversized-file` at line 
 
 ````java
 import java.time.*;
+import java.util.*;
+import java.util.concurrent.*;
+
+class Event {
+    private final String eventId;
+    private final String eventName;
+    private final LocalDateTime eventDate;
+    private final Map<String, Seat> seats;
+
+    public Event(String eventId, String eventName, LocalDateTime eventDate) {
+        this.eventId = eventId;
+        this.eventName = eventName;
+        this.eventDate = eventDate;
+        this.seats = new ConcurrentHashMap<>();
+    }
+
+    public String getEventId() {
+        return eventId;
+    }
+
+    public String getEventName() {
+        return eventName;
+    }
+
+    public LocalDateTime getEventDate() {
+        return eventDate;
+    }
+
+    public Map<String, Seat> getSeats() {
+        return new HashMap<>(seats);
+    }
+
+    public void addSeat(Seat seat) {
+        seats.put(seat.getSeatNumber(), seat);
+    }
+
+    public int getAvailableSeatsCount() {
+        return (int) seats.values().stream()
+                .filter(s -> s.getStatus() == Seat.SeatStatus.AVAILABLE)
+                .count();
+    }
+
+    public boolean isSoldOut() {
+        return getAvailableSeatsCount() == 0;
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>EventSeatBookingEngine.java</code> · 8 smells</summary>
+
+- `too-many-parameters` at line 127
+- `oversized-function` at line 196
+- `oversized-function` at line 214
+- `oversized-function` at line 244
+- `oversized-function` at line 280
+- `oversized-function` at line 312
+- `oversized-function` at line 366
+- `oversized-file` at line 
+
+````java
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.stream.Collectors;
 
 public class EventSeatBookingEngine {
     
-    enum TicketType {
-        ADULT(50.00), CHILD(25.00), SENIOR(35.00), STUDENT(30.00);
-        private final double basePrice;
-        TicketType(double basePrice) { this.basePrice = basePrice; }
-        public double getBasePrice() { return basePrice; }
+    enum SeatType {
+        ADULT, CHILD, SENIOR, STUDENT
     }
     
-    enum SeatStatus { AVAILABLE, HELD, BOOKED }
+    enum SeatStatus {
+        AVAILABLE, HELD, BOOKED
+    }
     
-    static class Event {
-        String eventId;
-        String name;
-        LocalDateTime eventDate;
-        int totalSeats;
+    enum BookingStatus {
+        CONFIRMED, CANCELLED
+    }
+    
+    static class Ticket {
+        private final SeatType type;
+        private final double price;
         
-        Event(String eventId, String name, LocalDateTime eventDate, int totalSeats) {
-            this.eventId = eventId;
-            this.name = name;
-            this.eventDate = eventDate;
-            this.totalSeats = totalSeats;
+        Ticket(SeatType type, double price) {
+            this.type = type;
+            this.price = price;
+        }
+        
+        double getPrice() {
+            return price;
         }
     }
     
     static class Seat {
-        String seatId;
-        SeatStatus status;
-        String holdId;
-        LocalDateTime holdTime;
+        private final String seatId;
+        private SeatStatus status;
+        private String holdId;
+        private final SeatType type;
         
-        Seat(String seatId) {
+        Seat(String seatId, SeatType type) {
             this.seatId = seatId;
+            this.type = type;
             this.status = SeatStatus.AVAILABLE;
+        }
+        
+        synchronized boolean hold(String holdId) {
+            if (status == SeatStatus.AVAILABLE) {
+                this.status = SeatStatus.HELD;
+                this.holdId = holdId;
+                return true;
+            }
+            return false;
+        }
+        
+        synchronized boolean release() {
+            if (status == SeatStatus.HELD) {
+                this.status = SeatStatus.AVAILABLE;
+                this.holdId = null;
+                return true;
+            }
+            return false;
+        }
+        
+        synchronized boolean book() {
+            if (status == SeatStatus.HELD) {
+                this.status = SeatStatus.BOOKED;
+                return true;
+            }
+            return false;
+        }
+        
+        synchronized void cancel() {
+            this.status = SeatStatus.AVAILABLE;
+            this.holdId = null;
+        }
+        
+        String getSeatId() {
+            return seatId;
+        }
+        
+        SeatStatus getStatus() {
+            return status;
+        }
+        
+        SeatType getType() {
+            return type;
         }
     }
     
     static class SeatHold {
-        String holdId;
-        String customerId;
-        String eventId;
-        List<String> seatIds;
-        List<TicketType> ticketTypes;
-        LocalDateTime createdAt;
+        private final String holdId;
+        private final List<Seat> seats;
+        private final LocalDateTime expiresAt;
         
-        SeatHold(String holdId, String customerId, String eventId, List<String> seatIds, List<TicketType> ticketTypes, LocalDateTime createdAt) {
+        SeatHold(String holdId, List<Seat> seats, LocalDateTime createdAt) {
             this.holdId = holdId;
-            this.customerId = customerId;
-            this.eventId = eventId;
-            this.seatIds = new ArrayList<>(seatIds);
-            this.ticketTypes = new ArrayList<>(ticketTypes);
-            this.createdAt = createdAt;
+            this.seats = new ArrayList<>(seats);
+            this.expiresAt = createdAt.plusMinutes(15);
         }
         
-        boolean isExpired(LocalDateTime currentTime) {
-            return currentTime.isAfter(createdAt.plusMinutes(15));
+        String getHoldId() {
+            return holdId;
+        }
+        
+        List<Seat> getSeats() {
+            return new ArrayList<>(seats);
+        }
+        
+        boolean isExpired(LocalDateTime now) {
+            return now.isAfter(expiresAt);
+        }
+        
+        LocalDateTime getExpiresAt() {
+            return expiresAt;
         }
     }
     
     static class Booking {
-        String bookingId;
-        String customerId;
-        String eventId;
-        List<String> seatIds;
-        List<TicketType> ticketTypes;
-        LocalDateTime bookingDate;
-        double totalPrice;
-        boolean cancelled;
-        LocalDateTime cancellationDate;
+        private final String bookingId;
+        private final List<Seat> seats;
+        private final double totalPrice;
+        private final LocalDateTime eventDate;
+        private final LocalDateTime bookedAt;
+        private BookingStatus status;
         
-        Booking(String bookingId, String customerId, String eventId, List<String> seatIds, 
-                List<TicketType> ticketTypes, LocalDateTime bookingDate, double totalPrice) {
+        Booking(String bookingId, List<Seat> seats, double totalPrice, LocalDateTime eventDate) {
             this.bookingId = bookingId;
-            this.customerId = customerId;
-            this.eventId = eventId;
-            this.seatIds = new ArrayList<>(seatIds);
-            this.ticketTypes = new ArrayList<>(ticketTypes);
-            this.bookingDate = bookingDate;
+            this.seats = new ArrayList<>(seats);
             this.totalPrice = totalPrice;
-            this.cancelled = false;
+            this.eventDate = eventDate;
+            this.bookedAt = LocalDateTime.now();
+            this.status = BookingStatus.CONFIRMED;
         }
-    }
-    
-    static class WaitingListEntry {
-        String customerId;
-        List<TicketType> ticketTypes;
-        LocalDateTime requestTime;
         
-        WaitingListEntry(String customerId, List<TicketType> ticketTypes, LocalDateTime requestTime) {
-            this.customerId = customerId;
-            this.ticketTypes = new ArrayList<>(ticketTypes);
-            this.requestTime = requestTime;
+        String getBookingId() {
+            return bookingId;
         }
-    }
-    
-    private Map<String, Event> events;
-    private Map<String, Map<String, Seat>> eventSeats;
-    private Map<String, SeatHold> seatHolds;
-    private Map<String, Booking> bookings;
-    private Map<String, Queue<WaitingListEntry>> waitingLists;
-    private ScheduledExecutorService executor;
-    
-    public EventSeatBookingEngine() {
-        this.events = new ConcurrentHashMap<>();
-        this.eventSeats = new ConcurrentHashMap<>();
-        this.seatHolds = new ConcurrentHashMap<>();
-        this.bookings = new ConcurrentHashMap<>();
-        this.waitingLists = new ConcurrentHashMap<>();
-        this.executor = Executors.newScheduledThreadPool(1);
-        startHoldExpirationChecker();
-    }
-    
-    public void createEvent(String eventId, String name, LocalDateTime eventDate, int totalSeats) {
-        events.put(eventId, new Event(eventId, name, eventDate, totalSeats));
-        Map<String, Seat> seats = new ConcurrentHashMap<>();
-        for (int i = 1; i <= totalSeats; i++) {
-            seats.put("SEAT-" + i, new Seat("SEAT-" + i));
-        }
-        eventSeats.put(eventId, seats);
-        waitingLists.put(eventId, new ConcurrentLinkedQueue<>());
-    }
-    
-    public SeatHold holdSeats(String customerId, String eventId, List<TicketType> ticketTypes, LocalDateTime currentTime) {
-        Map<String, Seat> seats = eventSeats.get(eventId);
-        if (seats == null) throw new IllegalArgumentException("Event not found");
         
-        synchronized (seats) {
-            List<String> availableSeats = seats.values().stream()
-                    .filter(s -> s.status == SeatStatus.AVAILABLE)
-                    .map(s -> s.seatId)
-                    .limit(ticketTypes.size())
-                    .collect(Collectors.toList());
-            
-            if (availableSeats.size() < ticketTypes.size()) {
-                return null;
-            }
-            
-            String holdId = UUID.randomUUID().toString();
-            SeatHold hold = new SeatHold(holdId, customerId, eventId, availableSeats, ticketTypes, currentTime);
-            
-            for (String seatId : availableSeats) {
-                Seat seat = seats.get(seatId);
-                seat.status = SeatStatus.HELD;
-                seat.holdId = holdId;
-                seat.holdTime = currentTime;
-            }
-            
-            seatHolds.put(holdId, hold);
-            return hold;
+        List<Seat> getSeats() {
+            return new ArrayList<>(seats);
         }
-    }
-    
-    public boolean confirmHold(String holdId, String customerId, LocalDateTime currentTime) {
-        SeatHold hold = seatHolds.get(holdId);
-        if (hold == null || !hold.customerId.equals(customerId)) return false;
         
-        Map<String, Seat> seats = eventSeats.get(hold.eventId);
-        synchronized (seats) {
-            if (hold.isExpired(currentTime)) {
-                releaseHold(holdId, currentTime);
-                return false;
-            }
-            
-            double price = calculatePrice(hold.ticketTypes, hold.seatIds.size());
-            String bookingId = UUID.randomUUID().toString();
-            Booking booking = new Booking(bookingId, customerId, hold.eventId, hold.seatIds, hold.ticketTypes, currentTime, price);
-            
-            for (String seatId : hold.seatIds) {
-                Seat seat = seats.get(seatId);
-                seat.status = SeatStatus.BOOKED;
-            }
-            
-            bookings.put(bookingId, booking);
-            seatHolds.remove(holdId);
-            
-            processWaitingList(hold.eventId, currentTime);
-            return true;
+        double getTotalPrice() {
+            return totalPrice;
         }
-    }
-    
-    public boolean releaseHold(String holdId, LocalDateTime currentTime) {
-        SeatHold hold = seatHolds.get(holdId);
-        if (hold == null) return false;
         
-        Map<String, Seat> seats = eventSeats.get(hold.eventId);
-        synchronized (seats) {
-            for (String seatId : hold.seatIds) {
-                Seat seat = seats.get(seatId);
-                seat.status = SeatStatus.AVAILABLE;
-                seat.holdId = null;
-                seat.holdTime = null;
-            }
-            seatHolds.remove(holdId);
-            processWaitingList(hold.eventId, currentTime);
-            return true;
+        BookingStatus getStatus() {
+            return status;
         }
-    }
-    
-    public double cancelBooking(String bookingId, LocalDateTime currentTime) {
-        Booking booking = bookings.get(bookingId);
-        if (booking == null || booking.cancelled) return 0;
         
-        Map<String, Seat> seats = eventSeats.get(booking.eventId);
-        synchronized (seats) {
-            Event event = events.get(booking.eventId);
-            long daysBefore = ChronoUnit.DAYS.between(currentTime, event.eventDate);
+        double calculateRefund(LocalDateTime now) {
+            long daysBefore = ChronoUnit.DAYS.between(now, eventDate);
             
-            double refund = 0;
             if (daysBefore > 30) {
-                refund = booking.totalPrice;
+                return totalPrice;
             } else if (daysBefore >= 7) {
-                refund = booking.totalPrice * 0.5;
+                return totalPrice * 0.5;
+            } else {
+                return 0;
             }
-            
-            booking.cancelled = true;
-            booking.cancellationDate = currentTime;
-            
-            for (String seatId : booking.seatIds) {
-                Seat seat = seats.get(seatId);
-                seat.status = SeatStatus.AVAILABLE;
-            }
-            
-            processWaitingList(booking.eventId, currentTime);
-            return refund;
         }
     }
     
-    public boolean joinWaitingList(String customerId, String eventId, List<TicketType> ticketTypes, LocalDateTime currentTime) {
-        Queue<WaitingListEntry> waitingList = waitingLists.get(eventId);
-        if (waitingList == null) return false;
-        WaitingListEntry entry = new WaitingListEntry(customerId, ticketTypes, currentTime);
-        waitingList.offer(entry);
-        return true;
+    static class WaitlistEntry {
+        private final String entryId;
+        private final int seatsRequested;
+        private final Map<SeatType, Integer> seatTypes;
+        
+        WaitlistEntry(int seatsRequested, Map<SeatType, Integer> seatTypes) {
+            this.entryId = UUID.randomUUID().toString();
+            this.seatsRequested = seatsRequested;
+            this.seatTypes = new HashMap<>(seatTypes);
+        }
+        
+        String getEntryId() {
+            return entryId;
+        }
+        
+        int getSeatsRequested() {
+            return seatsRequested;
+        }
+        
+        Map<SeatType, Integer> getSeatTypes() {
+            return new HashMap<>(seatTypes);
+        }
     }
     
-    private void processWaitingList(String eventId, LocalDateTime currentTime) {
-        Map<String, Seat> seats = eventSeats.get(eventId);
-        Queue<WaitingListEntry> waitingList = waitingLists.get(eventId);
+    private final Map<String, Seat> allSeats;
+    private final Map<String, SeatHold> activeHolds;
+    private final Map<String, Booking> bookings;
+    private final Queue<WaitlistEntry> waitlist;
+    private final Map<SeatType, Ticket> ticketPrices;
+    private final LocalDateTime eventDate;
+    
+    public EventSeatBookingEngine(LocalDateTime eventDate, int totalSeats, Map<SeatType, Double> prices) {
+        this.eventDate = eventDate;
+        this.allSeats = new ConcurrentHashMap<>();
+        this.activeHolds = new ConcurrentHashMap<>();
+        this.bookings = new ConcurrentHashMap<>();
+        this.waitlist = new ConcurrentLinkedQueue<>();
+        this.ticketPrices = new ConcurrentHashMap<>();
         
-        while (!waitingList.isEmpty()) {
-            List<String> availableSeats = seats.values().stream()
-                    .filter(s -> s.status == SeatStatus.AVAILABLE)
-                    .map(s -> s.seatId)
-                    .collect(Collectors.toList());
+        for (int i = 0; i < totalSeats; i++) {
+            SeatType type = SeatType.values()[i % 4];
+            allSeats.put("SEAT-" + i, new Seat("SEAT-" + i, type));
+        }
+        
+        for (SeatType type : SeatType.values()) {
+            ticketPrices.put(type, new Ticket(type, prices.getOrDefault(type, 50.0)));
+        }
+    }
+    
+    public synchronized SeatHold findAndHoldSeats(int numSeats, Map<SeatType, Integer> seatTypes, LocalDateTime now) {
+        expireOldHolds(now);
+        
+        List<Seat> availableSeats = new ArrayList<>();
+        for (Map.Entry<SeatType, Integer> entry : seatTypes.entrySet()) {
+            SeatType type = entry.getKey();
+            int needed = entry.getValue();
             
-            if (availableSeats.isEmpty()) break;
+            allSeats.values().stream()
+                .filter(s -> s.getType() == type && s.getStatus() == SeatStatus.AVAILABLE)
+                .limit(needed)
+                .forEach(availableSeats::add);
+        }
+        
+        if (availableSeats.size() < numSeats) {
+            waitlist.add(new WaitlistEntry(numSeats, seatTypes));
+            return null;
+        }
+        
+        String holdId = UUID.randomUUID().toString();
+        SeatHold hold = new SeatHold(holdId, availableSeats, now);
+        
+        for (Seat seat : availableSeats) {
+            seat.hold(holdId);
+        }
+        
+        activeHolds.put(holdId, hold);
+        return hold;
+    }
+    
+    public synchronized String confirmBooking(String holdId) {
+        SeatHold hold = activeHolds.get(holdId);
+        if (hold == null) {
+            throw new IllegalArgumentException("Hold not found: " + holdId);
+        }
+        
+        List<Seat> seats = hold.getSeats();
+        for (Seat seat : seats) {
+            if (!seat.book()) {
+                throw new IllegalStateException("Cannot book seat: " + seat.getSeatId());
+            }
+        }
+        
+        double totalPrice = seats.stream()
+            .mapToDouble(s -> ticketPrices.get(s.getType()).getPrice())
+            .sum();
+        
+        if (seats.size() >= 10) {
+            totalPrice *= 0.95;
+        }
+        
+        String bookingId = UUID.randomUUID().toString();
+        Booking booking = new Booking(bookingId, seats, totalPrice, eventDate);
+        bookings.put(bookingId, booking);
+        activeHolds.remove(holdId);
+        
+        return bookingId;
+    }
+    
+    public synchronized void releaseHold(String holdId) {
+        SeatHold hold = activeHolds.remove(holdId);
+        if (hold != null) {
+            hold.getSeats().forEach(Seat::release);
+        }
+    }
+    
+    public synchronized double cancelBooking(String bookingId, LocalDateTime cancellationTime) {
+        Booking booking = bookings.get(bookingId);
+        if (booking == null) {
+            throw new IllegalArgumentException("Booking not found: " + bookingId);
+        }
+        
+        if (booking.getStatus() == BookingStatus.CANCELLED) {
+            throw new IllegalStateException("Booking already cancelled");
+        }
+        
+        double refund = booking.calculateRefund(cancellationTime);
+        booking.status = BookingStatus.CANCELLED;
+        
+        for (Seat seat : booking.getSeats()) {
+            seat.cancel();
+        }
+        
+        processWaitlist(cancellationTime);
+        return refund;
+    }
+    
+    private void expireOldHolds(LocalDateTime now) {
+        List<String> expiredHolds = activeHolds.values().stream()
+            .filter(h -> h.isExpired(now))
+            .map(SeatHold::getHoldId)
+            .collect(Collectors.toList());
+        
+        for (String holdId : expiredHolds) {
+            releaseHold(holdId);
+        }
+    }
+    
+    private void processWaitlist(LocalDateTime now) {
+        while (!waitlist.isEmpty()) {
+            WaitlistEntry entry = waitlist.peek();
+            Map<SeatType, Integer> needed = entry.getSeatTypes();
             
-            WaitingListEntry entry = waitingList.peek();
-            if (availableSeats.size() >= entry.ticketTypes.size()) {
-                waitingList.poll();
-                SeatHold hold = holdSeats(entry.customerId, eventId, entry.ticketTypes, currentTime);
-                if (hold != null) {
-                    System.out.println("Waiting list customer " + entry.customerId + " offered hold: " + hold.holdId);
+            List<Seat> available = new ArrayList<>();
+            for (Map.Entry<SeatType, Integer> typeEntry : needed.entrySet()) {
+                SeatType type = typeEntry.getKey();
+                int count = typeEntry.getValue();
+                
+                allSeats.values().stream()
+                    .filter(s -> s.getType() == type && s.getStatus() == SeatStatus.AVAILABLE)
+                    .limit(count)
+                    .forEach(available::add);
+            }
+            
+            if (available.size() >= entry.getSeatsRequested()) {
+                waitlist.poll();
+                String holdId = UUID.randomUUID().toString();
+                SeatHold hold = new SeatHold(holdId, available, now);
+                
+                for (Seat seat : available) {
+                    seat.hold(holdId);
                 }
+                
+                activeHolds.put(holdId, hold);
             } else {
                 break;
             }
         }
     }
     
-    private double calculatePrice(List<TicketType> ticketTypes, int seatCount) {
-        double basePrice = ticketTypes.stream().mapToDouble(TicketType::getBasePrice).sum();
-        if (seatCount >= 10) basePrice *= 0.95;
-        return basePrice;
+    public int getAvailableSeats() {
+        return (int) allSeats.values().stream()
+            .filter(s -> s.getStatus() == SeatStatus.AVAILABLE)
+            .count();
     }
     
-    private void startHoldExpirationChecker() {
-        executor.scheduleAtFixedRate(() -> {
-            LocalDateTime now = LocalDateTime.now();
-            seatHolds.values().stream()
-                    .filter(h -> h.isExpired(now))
-                    .map(h -> h.holdId)
-                    .collect(Collectors.toList())
-                    .forEach(holdId -> releaseHold(holdId, LocalDateTime.now()));
-        }, 1, 1, TimeUnit.MINUTES);
+    public int getHeldSeats() {
+        return (int) allSeats.values().stream()
+            .filter(s -> s.getStatus() == SeatStatus.HELD)
+            .count();
     }
     
-    public int getAvailableSeats(String eventId) {
-        return (int) eventSeats.get(eventId).values().stream()
-                .filter(s -> s.status == SeatStatus.AVAILABLE).count();
+    public int getBookedSeats() {
+        return (int) allSeats.values().stream()
+            .filter(s -> s.getStatus() == SeatStatus.BOOKED)
+            .count();
     }
     
-    public int getWaitingListSize(String eventId) {
-        Queue<WaitingListEntry> waitingList = waitingLists.get(eventId);
-        return waitingList != null ? waitingList.size() : 0;
+    public int getWaitlistSize() {
+        return waitlist.size();
     }
     
     public static void main(String[] args) {
-        EventSeatBookingEngine engine = new EventSeatBookingEngine();
-        LocalDateTime eventDate = LocalDateTime.now().plusDays(60);
-        engine.createEvent("EVT-001", "Concert", eventDate, 25);
+        LocalDateTime eventDate = LocalDateTime.now().plusMonths(2);
+        Map<SeatType, Double> prices = new HashMap<>();
+        prices.put(SeatType.ADULT, 50.0);
+        prices.put(SeatType.CHILD, 25.0);
+        prices.put(SeatType.SENIOR, 35.0);
+        prices.put(SeatType.STUDENT, 30.0);
+        
+        EventSeatBookingEngine engine = new EventSeatBookingEngine(eventDate, 20, prices);
         LocalDateTime now = LocalDateTime.now();
         
-        System.out.println("--- Test 1: Regular booking ---");
-        SeatHold hold1 = engine.holdSeats("CUST-001", "EVT-001", 
-                Arrays.asList(TicketType.ADULT, TicketType.CHILD), now);
-        System.out.println("Hold created: " + (hold1 != null ? hold1.holdId : "Failed"));
-        if (hold1 != null) {
-            engine.confirmHold(hold1.holdId, "CUST-001", now);
-            System.out.println("Booking confirmed. Available: " + engine.getAvailableSeats("EVT-001"));
-        }
+        Map<SeatType, Integer> request1 = new HashMap<>();
+        request1.put(SeatType.ADULT, 10);
+        SeatHold hold1 = engine.findAndHoldSeats(10, request1, now);
+        String booking1 = engine.confirmBooking(hold1.getHoldId());
+        System.out.println("Booking 1 (10 adults, group discount): " + booking1);
         
-        System.out.println("\n--- Test 2: Group booking (10+ seats, 5% discount) ---");
-        List<TicketType> groupTickets = Arrays.asList(TicketType.ADULT, TicketType.ADULT, TicketType.STUDENT,
-                TicketType.CHILD, TicketType.CHILD, TicketType.CHILD, TicketType.CHILD, TicketType.CHILD,
-                TicketType.SENIOR, TicketType.SENIOR);
-        SeatHold hold2 = engine.holdSeats("CUST-002", "EVT-001", groupTickets, now);
-        if (hold2 != null) {
-            engine.confirmHold(hold2.holdId, "CUST-002", now);
-            System.out.println("Group booking confirmed. Available: " + engine.getAvailableSeats("EVT-001"));
-        }
+        Map<SeatType, Integer> request2 = new HashMap<>();
+        request2.put(SeatType.SENIOR, 5);
+        SeatHold hold2 = engine.findAndHoldSeats(5, request2, now);
+        String booking2 = engine.confirmBooking(hold2.getHoldId());
+        System.out.println("Booking 2 (5 seniors): " + booking2);
         
-        System.out.println("\n--- Test 3: Cancellation with refund (>30 days before) ---");
-        SeatHold hold3 = engine.holdSeats("CUST-003", "EVT-001", Arrays.asList(TicketType.ADULT), now);
-        if (hold3 != null) {
-            engine.confirmHold(hold3.holdId, "CUST-003", now);
-            String bookingId = engine.bookings.entrySet().stream()
-                    .filter(e -> e.getValue().customerId.equals("CUST-003"))
-                    .map(e -> e.getKey()).findFirst().orElse(null);
-            if (bookingId != null) {
-                double refund = engine.cancelBooking(bookingId, now);
-                System.out.println("100% refund issued: EUR " + String.format("%.2f", refund));
-                System.out.println("Available after cancellation: " + engine.getAvailableSeats("EVT-001"));
-            }
-        }
+        Map<SeatType, Integer> request3 = new HashMap<>();
+        request3.put(SeatType.CHILD, 5);
+        SeatHold hold3 = engine.findAndHoldSeats(5, request3, now);
+        System.out.println("Booking 3 on waitlist: " + (hold3 == null ? "Yes" : "No"));
         
-        System.out.println("\n--- Test 4: Waiting list ---");
-        engine.joinWaitingList("CUST-004", "EVT-001", Arrays.asList(TicketType.SENIOR, TicketType.SENIOR), now);
-        System.out.println("Customer added to waiting list. Size: " + engine.getWaitingListSize("EVT-001"));
-        
-        System.out.println("\n--- Test 5: Hold expiration (15 minutes) ---");
-        SeatHold hold5 = engine.holdSeats("CUST-005", "EVT-001", Arrays.asList(TicketType.ADULT), now);
-        System.out.println("Hold created: " + (hold5 != null ? hold5.holdId : "Failed"));
-        System.out.println("(Expiration check runs every 1 minute in background)");
+        double refund = engine.cancelBooking(booking2, eventDate.minusDays(45));
+        System.out.println("Refund (45 days before): " + refund);
+        System.out.println("Available: " + engine.getAvailableSeats() + ", Held: " + engine.getHeldSeats() + 
+                          ", Booked: " + engine.getBookedSeats() + ", Waitlist: " + engine.getWaitlistSize());
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>Hold.java</code> · 1 smell</summary>
+
+- `too-many-parameters` at line 16
+
+````java
+import java.time.*;
+import java.util.*;
+
+class Hold {
+    private final String holdId;
+    private final String customerId;
+    private final List<Seat> seats;
+    private final LocalDateTime expiresAt;
+    private final double totalPrice;
+    private HoldStatus status;
+
+    enum HoldStatus {
+        ACTIVE, EXPIRED, CONFIRMED, RELEASED
+    }
+
+    public Hold(String holdId, String customerId, List<Seat> seats, LocalDateTime expiresAt, double totalPrice) {
+        this.holdId = holdId;
+        this.customerId = customerId;
+        this.seats = new ArrayList<>(seats);
+        this.expiresAt = expiresAt;
+        this.totalPrice = totalPrice;
+        this.status = HoldStatus.ACTIVE;
+    }
+
+    public String getHoldId() {
+        return holdId;
+    }
+
+    public String getCustomerId() {
+        return customerId;
+    }
+
+    public List<Seat> getSeats() {
+        return new ArrayList<>(seats);
+    }
+
+    public LocalDateTime getExpiresAt() {
+        return expiresAt;
+    }
+
+    public double getTotalPrice() {
+        return totalPrice;
+    }
+
+    public HoldStatus getStatus() {
+        return status;
+    }
+
+    public void setStatus(HoldStatus status) {
+        this.status = status;
+    }
+
+    public boolean isExpired(LocalDateTime now) {
+        return now.isAfter(expiresAt) && status == HoldStatus.ACTIVE;
     }
 }
 
@@ -804,26 +831,32 @@ public class EventSeatBookingEngine {
 
 ````java
 class Seat {
-    private final int seatId;
+    private final String seatNumber;
+    private final TicketType ticketType;
     private SeatStatus status;
-    
+
     enum SeatStatus {
-        AVAILABLE, HELD, BOOKED
+        AVAILABLE, HELD, CONFIRMED
     }
-    
-    public Seat(int seatId) {
-        this.seatId = seatId;
+
+    public Seat(String seatNumber, TicketType ticketType) {
+        this.seatNumber = seatNumber;
+        this.ticketType = ticketType;
         this.status = SeatStatus.AVAILABLE;
     }
-    
-    public int getSeatId() {
-        return seatId;
+
+    public String getSeatNumber() {
+        return seatNumber;
     }
-    
+
+    public TicketType getTicketType() {
+        return ticketType;
+    }
+
     public SeatStatus getStatus() {
         return status;
     }
-    
+
     public void setStatus(SeatStatus status) {
         this.status = status;
     }
@@ -834,52 +867,426 @@ class Seat {
 </details>
 
 <details>
-<summary><code>SeatHold.java</code> · 1 smell</summary>
+<summary><code>SeatBookingEngine.java</code> · 9 smells</summary>
 
-- `too-many-parameters` at line 12
+- `too-many-parameters` at line 48
+- `too-many-parameters` at line 73
+- `too-many-parameters` at line 128
+- `oversized-function` at line 185
+- `oversized-function` at line 228
+- `oversized-function` at line 276
+- `oversized-function` at line 309
+- `oversized-function` at line 377
+- `oversized-file` at line 
 
 ````java
-import java.time.LocalDateTime;
+import java.time.*;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
+import java.util.concurrent.*;
+import java.util.stream.Collectors;
 
-class SeatHold {
-    private final String holdId;
-    private final List<Seat> seats;
-    private final LocalDateTime expiresAt;
-    private final Map<TicketType, Integer> ticketCounts;
-    private final double totalPrice;
+public class SeatBookingEngine {
     
-    public SeatHold(String holdId, List<Seat> seats, Map<TicketType, Integer> ticketCounts, double totalPrice) {
-        this.holdId = holdId;
-        this.seats = seats;
-        this.ticketCounts = new HashMap<>(ticketCounts);
-        this.totalPrice = totalPrice;
-        this.expiresAt = LocalDateTime.now().plus(15, ChronoUnit.MINUTES);
+    enum TicketType {
+        ADULT(10000), CHILD(5000), SENIOR(7500), STUDENT(6000);
+        
+        private final int basePrice;
+        
+        TicketType(int basePrice) {
+            this.basePrice = basePrice;
+        }
+        
+        public int getBasePrice() {
+            return basePrice;
+        }
     }
     
-    public String getHoldId() {
-        return holdId;
+    static class Ticket {
+        private final TicketType type;
+        private final int price;
+        
+        Ticket(TicketType type, int price) {
+            this.type = type;
+            this.price = price;
+        }
+        
+        public TicketType getType() {
+            return type;
+        }
+        
+        public int getPrice() {
+            return price;
+        }
     }
     
-    public List<Seat> getSeats() {
-        return seats;
+    static class SeatHold {
+        private final String holdId;
+        private final String eventId;
+        private final int seatId;
+        private final Ticket ticket;
+        private final LocalDateTime expiresAt;
+        
+        SeatHold(String holdId, String eventId, int seatId, Ticket ticket, LocalDateTime expiresAt) {
+            this.holdId = holdId;
+            this.eventId = eventId;
+            this.seatId = seatId;
+            this.ticket = ticket;
+            this.expiresAt = expiresAt;
+        }
+        
+        public String getHoldId() { return holdId; }
+        public String getEventId() { return eventId; }
+        public int getSeatId() { return seatId; }
+        public Ticket getTicket() { return ticket; }
+        public boolean isExpired() { return LocalDateTime.now().isAfter(expiresAt); }
     }
     
-    public LocalDateTime getExpiresAt() {
-        return expiresAt;
+    static class Booking {
+        private final String bookingId;
+        private final String eventId;
+        private final int seatId;
+        private final Ticket ticket;
+        private final LocalDateTime bookedAt;
+        private BookingStatus status;
+        
+        enum BookingStatus { CONFIRMED, CANCELLED }
+        
+        Booking(String bookingId, String eventId, int seatId, Ticket ticket) {
+            this.bookingId = bookingId;
+            this.eventId = eventId;
+            this.seatId = seatId;
+            this.ticket = ticket;
+            this.bookedAt = LocalDateTime.now();
+            this.status = BookingStatus.CONFIRMED;
+        }
+        
+        public String getBookingId() { return bookingId; }
+        public String getEventId() { return eventId; }
+        public int getSeatId() { return seatId; }
+        public Ticket getTicket() { return ticket; }
+        public BookingStatus getStatus() { return status; }
+        public void cancel() { this.status = BookingStatus.CANCELLED; }
     }
     
-    public boolean isExpired() {
-        return LocalDateTime.now().isAfter(expiresAt);
+    static class WaitlistEntry {
+        private final String entryId;
+        private final List<TicketType> ticketTypes;
+        private final LocalDateTime createdAt;
+        
+        WaitlistEntry(String entryId, List<TicketType> ticketTypes) {
+            this.entryId = entryId;
+            this.ticketTypes = new ArrayList<>(ticketTypes);
+            this.createdAt = LocalDateTime.now();
+        }
+        
+        public String getEntryId() { return entryId; }
+        public List<TicketType> getTicketTypes() { return ticketTypes; }
     }
     
-    public Map<TicketType, Integer> getTicketCounts() {
-        return ticketCounts;
+    static class Event {
+        private final String eventId;
+        private final int capacity;
+        private final LocalDateTime eventDate;
+        
+        Event(String eventId, int capacity, LocalDateTime eventDate) {
+            this.eventId = eventId;
+            this.capacity = capacity;
+            this.eventDate = eventDate;
+        }
+        
+        public String getEventId() { return eventId; }
+        public int getCapacity() { return capacity; }
+        public LocalDateTime getEventDate() { return eventDate; }
     }
     
-    public double getTotalPrice() {
-        return totalPrice;
+    static class ReservationResult {
+        private final String reservationId;
+        private final List<Integer> seatIds;
+        private final int totalPrice;
+        private final boolean success;
+        private final String message;
+        
+        ReservationResult(String reservationId, List<Integer> seatIds, int totalPrice, 
+                         boolean success, String message) {
+            this.reservationId = reservationId;
+            this.seatIds = new ArrayList<>(seatIds);
+            this.totalPrice = totalPrice;
+            this.success = success;
+            this.message = message;
+        }
+        
+        public String getReservationId() { return reservationId; }
+        public List<Integer> getSeatIds() { return seatIds; }
+        public int getTotalPrice() { return totalPrice; }
+        public boolean isSuccess() { return success; }
+        public String getMessage() { return message; }
+    }
+    
+    static class CancellationRefund {
+        private final int amount;
+        private final String message;
+        
+        CancellationRefund(int amount, String message) {
+            this.amount = amount;
+            this.message = message;
+        }
+        
+        public int getAmount() { return amount; }
+        public String getMessage() { return message; }
+    }
+    
+    private final Map<String, Event> events;
+    private final Map<String, SeatHold> holds;
+    private final Map<String, Booking> bookings;
+    private final Map<String, Queue<WaitlistEntry>> waitlists;
+    private final Map<String, Set<Integer>> eventSeats;
+    private final ScheduledExecutorService scheduler;
+    private final Object lock = new Object();
+    
+    public SeatBookingEngine() {
+        this.events = new ConcurrentHashMap<>();
+        this.holds = new ConcurrentHashMap<>();
+        this.bookings = new ConcurrentHashMap<>();
+        this.waitlists = new ConcurrentHashMap<>();
+        this.eventSeats = new ConcurrentHashMap<>();
+        this.scheduler = Executors.newScheduledThreadPool(1);
+        startHoldExpirationScheduler();
+    }
+    
+    public void createEvent(String eventId, int capacity, LocalDateTime eventDate) {
+        events.put(eventId, new Event(eventId, capacity, eventDate));
+        Set<Integer> seats = ConcurrentHashMap.newKeySet();
+        for (int i = 1; i <= capacity; i++) {
+            seats.add(i);
+        }
+        eventSeats.put(eventId, seats);
+        waitlists.put(eventId, new LinkedList<>());
+    }
+    
+    public ReservationResult holdSeats(String eventId, List<TicketType> ticketTypes) {
+        synchronized (lock) {
+            if (!events.containsKey(eventId)) {
+                return new ReservationResult("", Collections.emptyList(), 0, false, 
+                    "Event not found");
+            }
+            
+            List<Integer> availableSeats = getAvailableSeats(eventId);
+            
+            if (availableSeats.size() < ticketTypes.size()) {
+                String entryId = UUID.randomUUID().toString();
+                waitlists.get(eventId).offer(new WaitlistEntry(entryId, ticketTypes));
+                return new ReservationResult(entryId, Collections.emptyList(), 0, false, 
+                    "No seats available, added to waitlist");
+            }
+            
+            String reservationId = UUID.randomUUID().toString();
+            List<Integer> heldSeats = new ArrayList<>();
+            int totalPrice = 0;
+            LocalDateTime expiresAt = LocalDateTime.now().plusMinutes(15);
+            boolean isGroupBooking = ticketTypes.size() >= 10;
+            
+            for (int i = 0; i < ticketTypes.size(); i++) {
+                int seatId = availableSeats.get(i);
+                TicketType type = ticketTypes.get(i);
+                int price = type.getBasePrice();
+                
+                if (isGroupBooking) {
+                    price = (int) (price * 0.95);
+                }
+                
+                Ticket ticket = new Ticket(type, price);
+                String holdId = reservationId + "_" + i;
+                holds.put(holdId, new SeatHold(holdId, eventId, seatId, ticket, expiresAt));
+                heldSeats.add(seatId);
+                totalPrice += price;
+            }
+            
+            return new ReservationResult(reservationId, heldSeats, totalPrice, true, 
+                "Seats held for 15 minutes");
+        }
+    }
+    
+    public boolean confirmReservation(String reservationId) {
+        synchronized (lock) {
+            List<SeatHold> reservation = holds.values().stream()
+                .filter(h -> h.getHoldId().startsWith(reservationId + "_"))
+                .collect(Collectors.toList());
+            
+            if (reservation.isEmpty()) {
+                return false;
+            }
+            
+            for (SeatHold hold : reservation) {
+                if (hold.isExpired()) {
+                    holds.remove(hold.getHoldId());
+                    return false;
+                }
+            }
+            
+            String eventId = reservation.get(0).getEventId();
+            for (SeatHold hold : reservation) {
+                String bookingId = UUID.randomUUID().toString();
+                bookings.put(bookingId, new Booking(bookingId, eventId, hold.getSeatId(), 
+                    hold.getTicket()));
+                holds.remove(hold.getHoldId());
+            }
+            
+            processWaitlist(eventId);
+            return true;
+        }
+    }
+    
+    public boolean releaseSeats(String reservationId) {
+        synchronized (lock) {
+            List<SeatHold> toRelease = holds.values().stream()
+                .filter(h -> h.getHoldId().startsWith(reservationId + "_"))
+                .collect(Collectors.toList());
+            
+            if (toRelease.isEmpty()) {
+                return false;
+            }
+            
+            String eventId = toRelease.get(0).getEventId();
+            toRelease.forEach(hold -> holds.remove(hold.getHoldId()));
+            processWaitlist(eventId);
+            
+            return true;
+        }
+    }
+    
+    public CancellationRefund cancelBooking(String bookingId) {
+        synchronized (lock) {
+            Booking booking = bookings.get(bookingId);
+            if (booking == null || booking.getStatus() == Booking.BookingStatus.CANCELLED) {
+                return new CancellationRefund(0, "Booking not found or already cancelled");
+            }
+            
+            Event event = events.get(booking.getEventId());
+            if (event == null) {
+                return new CancellationRefund(0, "Event not found");
+            }
+            
+            long daysUntilEvent = ChronoUnit.DAYS.between(LocalDateTime.now(), 
+                event.getEventDate());
+            int refund = calculateRefund(booking.getTicket().getPrice(), daysUntilEvent);
+            
+            booking.cancel();
+            processWaitlist(booking.getEventId());
+            
+            return new CancellationRefund(refund, "Booking cancelled. Refund: " + refund);
+        }
+    }
+    
+    private int calculateRefund(int price, long daysUntilEvent) {
+        if (daysUntilEvent > 30) {
+            return price;
+        } else if (daysUntilEvent >= 7) {
+            return price / 2;
+        } else {
+            return 0;
+        }
+    }
+    
+    private void processWaitlist(String eventId) {
+        Queue<WaitlistEntry> waitlist = waitlists.get(eventId);
+        if (waitlist == null || waitlist.isEmpty()) {
+            return;
+        }
+        
+        while (!waitlist.isEmpty()) {
+            List<Integer> availableSeats = getAvailableSeats(eventId);
+            WaitlistEntry entry = waitlist.peek();
+            
+            if (availableSeats.size() >= entry.getTicketTypes().size()) {
+                waitlist.poll();
+                ReservationResult result = holdSeats(eventId, entry.getTicketTypes());
+                if (result.isSuccess()) {
+                    confirmReservation(result.getReservationId());
+                }
+            } else {
+                break;
+            }
+        }
+    }
+    
+    private List<Integer> getAvailableSeats(String eventId) {
+        Set<Integer> booked = bookings.values().stream()
+            .filter(b -> b.getStatus() == Booking.BookingStatus.CONFIRMED && 
+                b.getEventId().equals(eventId))
+            .map(Booking::getSeatId)
+            .collect(Collectors.toSet());
+        
+        Set<Integer> held = holds.values().stream()
+            .filter(h -> !h.isExpired() && h.getEventId().equals(eventId))
+            .map(SeatHold::getSeatId)
+            .collect(Collectors.toSet());
+        
+        Set<Integer> allSeats = eventSeats.get(eventId);
+        if (allSeats == null) {
+            return Collections.emptyList();
+        }
+        
+        return allSeats.stream()
+            .filter(s -> !booked.contains(s) && !held.contains(s))
+            .sorted()
+            .collect(Collectors.toList());
+    }
+    
+    private void startHoldExpirationScheduler() {
+        scheduler.scheduleAtFixedRate(() -> {
+            synchronized (lock) {
+                List<String> expiredHolds = holds.values().stream()
+                    .filter(SeatHold::isExpired)
+                    .map(SeatHold::getHoldId)
+                    .collect(Collectors.toList());
+                
+                Set<String> affectedEvents = new HashSet<>();
+                for (String holdId : expiredHolds) {
+                    SeatHold hold = holds.remove(holdId);
+                    if (hold != null) {
+                        affectedEvents.add(hold.getEventId());
+                    }
+                }
+                
+                for (String eventId : affectedEvents) {
+                    processWaitlist(eventId);
+                }
+            }
+        }, 1, 1, TimeUnit.MINUTES);
+    }
+    
+    public static void main(String[] args) throws InterruptedException {
+        SeatBookingEngine engine = new SeatBookingEngine();
+        
+        LocalDateTime eventDate = LocalDateTime.now().plusDays(60);
+        engine.createEvent("event_001", 50, eventDate);
+        
+        List<TicketType> tickets = Arrays.asList(
+            TicketType.ADULT, TicketType.ADULT, TicketType.CHILD, TicketType.STUDENT
+        );
+        
+        ReservationResult reservation = engine.holdSeats("event_001", tickets);
+        System.out.println("Reservation successful: " + reservation.isSuccess());
+        System.out.println("Seats: " + reservation.getSeatIds());
+        System.out.println("Total price: " + reservation.getTotalPrice());
+        
+        if (reservation.isSuccess()) {
+            boolean confirmed = engine.confirmReservation(reservation.getReservationId());
+            System.out.println("Confirmed: " + confirmed);
+            
+            String bookingId = engine.bookings.values().stream()
+                .filter(b -> b.getStatus() == Booking.BookingStatus.CONFIRMED)
+                .map(Booking::getBookingId)
+                .findFirst()
+                .orElse(null);
+            
+            if (bookingId != null) {
+                CancellationRefund refund = engine.cancelBooking(bookingId);
+                System.out.println("Refund: " + refund.getAmount() + " cents");
+                System.out.println("Message: " + refund.getMessage());
+            }
+        }
     }
 }
 
@@ -893,19 +1300,19 @@ class SeatHold {
 
 ````java
 enum TicketType {
-    ADULT(100.0),
-    CHILD(50.0),
-    SENIOR(75.0),
-    STUDENT(60.0);
-    
-    private final double price;
-    
-    TicketType(double price) {
-        this.price = price;
+    ADULT(15.0),
+    CHILD(8.0),
+    SENIOR(10.0),
+    STUDENT(12.0);
+
+    private final double basePrice;
+
+    TicketType(double basePrice) {
+        this.basePrice = basePrice;
     }
-    
-    public double getPrice() {
-        return price;
+
+    public double getBasePrice() {
+        return basePrice;
     }
 }
 
@@ -914,34 +1321,41 @@ enum TicketType {
 </details>
 
 <details>
-<summary><code>WaitlistEntry.java</code></summary>
+<summary><code>WaitListEntry.java</code> · 1 smell</summary>
 
+- `too-many-parameters` at line 10
 
 ````java
-import java.time.LocalDateTime;
+import java.time.*;
 import java.util.*;
 
-class WaitlistEntry {
-    private final String entryId;
-    private final Map<TicketType, Integer> ticketCounts;
-    private final LocalDateTime requestTime;
-    
-    public WaitlistEntry(String entryId, Map<TicketType, Integer> ticketCounts) {
-        this.entryId = entryId;
-        this.ticketCounts = new HashMap<>(ticketCounts);
-        this.requestTime = LocalDateTime.now();
+class WaitListEntry {
+    private final String waitListId;
+    private final String customerId;
+    private final List<TicketType> ticketTypes;
+    private final LocalDateTime requestedAt;
+
+    public WaitListEntry(String waitListId, String customerId, List<TicketType> ticketTypes, LocalDateTime requestedAt) {
+        this.waitListId = waitListId;
+        this.customerId = customerId;
+        this.ticketTypes = new ArrayList<>(ticketTypes);
+        this.requestedAt = requestedAt;
     }
-    
-    public String getEntryId() {
-        return entryId;
+
+    public String getWaitListId() {
+        return waitListId;
     }
-    
-    public Map<TicketType, Integer> getTicketCounts() {
-        return ticketCounts;
+
+    public String getCustomerId() {
+        return customerId;
     }
-    
-    public int getTotalSeatsRequested() {
-        return ticketCounts.values().stream().mapToInt(Integer::intValue).sum();
+
+    public List<TicketType> getTicketTypes() {
+        return new ArrayList<>(ticketTypes);
+    }
+
+    public LocalDateTime getRequestedAt() {
+        return requestedAt;
     }
 }
 
@@ -953,7 +1367,7 @@ class WaitlistEntry {
 
 </TabItem>
 
-<TabItem value="uncle-bob-junior" label="uncle-bob-junior · 0.89">
+<TabItem value="uncle-bob-junior" label="uncle-bob-junior · 0.94">
 
 Gates: valid code yes ·
 habit-hooks **FAIL** ·
@@ -963,673 +1377,58 @@ correct yes
 <details open>
 <summary><code>Booking.java</code> · 1 smell</summary>
 
-- `too-many-parameters` at line 11
-
-````java
-// Booking.java
-public final class Booking {
-    private final String id;
-    private final String eventId;
-    private final java.util.List<String> seatIds;
-    private final java.util.List<TicketType> ticketTypes;
-    private final Money totalPrice;
-    private final String customerId;
-    private final long createdAtMillis;
-
-    public Booking(String id, String eventId, java.util.List<String> seatIds,
-                   java.util.List<TicketType> ticketTypes, Money totalPrice,
-                   String customerId, long createdAtMillis) {
-        this.id = id;
-        this.eventId = eventId;
-        this.seatIds = java.util.List.copyOf(seatIds);
-        this.ticketTypes = java.util.List.copyOf(ticketTypes);
-        this.totalPrice = totalPrice;
-        this.customerId = customerId;
-        this.createdAtMillis = createdAtMillis;
-    }
-
-    public String id() {
-        return id;
-    }
-
-    public String eventId() {
-        return eventId;
-    }
-
-    public java.util.List<String> seatIds() {
-        return seatIds;
-    }
-
-    public java.util.List<TicketType> ticketTypes() {
-        return ticketTypes;
-    }
-
-    public Money totalPrice() {
-        return totalPrice;
-    }
-
-    public String customerId() {
-        return customerId;
-    }
-
-    public long createdAtMillis() {
-        return createdAtMillis;
-    }
-
-    public int seatCount() {
-        return seatIds.size();
-    }
-}
-
-````
-
-</details>
-
-<details>
-<summary><code>BookingStatus.java</code></summary>
-
-
-````java
-public enum BookingStatus {
-    CONFIRMED, CANCELLED
-}
-
-````
-
-</details>
-
-<details>
-<summary><code>Event.java</code> · 1 smell</summary>
-
-- `too-many-parameters` at line 10
-
-````java
-// Event.java
-public final class Event {
-    private final String id;
-    private final String name;
-    private final long eventDateMillis;
-    private final int capacity;
-    private final java.util.Map<String, Seat> seats;
-    private final java.util.Deque<WaitListEntry> waitList;
-
-    public Event(String id, String name, long eventDateMillis, int capacity) {
-        this.id = id;
-        this.name = name;
-        this.eventDateMillis = eventDateMillis;
-        this.capacity = capacity;
-        this.seats = new java.util.HashMap<>();
-        this.waitList = new java.util.LinkedList<>();
-        initializeSeats();
-    }
-
-    private void initializeSeats() {
-        for (int i = 0; i < capacity; i++) {
-            String seatId = String.format("SEAT_%03d", i);
-            seats.put(seatId, new Seat(seatId));
-        }
-    }
-
-    public String id() {
-        return id;
-    }
-
-    public String name() {
-        return name;
-    }
-
-    public long eventDateMillis() {
-        return eventDateMillis;
-    }
-
-    public int capacity() {
-        return capacity;
-    }
-
-    public java.util.Map<String, Seat> seats() {
-        return new java.util.HashMap<>(seats);
-    }
-
-    public void updateSeat(String seatId, Seat seat) {
-        seats.put(seatId, seat);
-    }
-
-    public void addToWaitList(WaitListEntry entry) {
-        waitList.addLast(entry);
-    }
-
-    public WaitListEntry pollWaitList() {
-        return waitList.pollFirst();
-    }
-
-    public int availableSeats() {
-        return (int) seats.values().stream()
-            .filter(Seat::isAvailable)
-            .count();
-    }
-
-    public boolean isSoldOut() {
-        return availableSeats() == 0;
-    }
-}
-
-````
-
-</details>
-
-<details>
-<summary><code>EventBookingEngine.java</code> · 1 smell</summary>
-
-- `oversized-function` at line 44
-
-````java
-import java.time.LocalDateTime;
-import java.util.*;
-
-public class EventBookingEngine {
-    private static final int TOTAL_SEATS = 100;
-    private static final int GROUP_DISCOUNT_THRESHOLD = 10;
-    private static final long GROUP_DISCOUNT_PERCENT = 5;
-    private static final long REFUND_FULL_DAYS_BEFORE = 30;
-    private static final long REFUND_HALF_DAYS_BEFORE = 7;
-    
-    private final LocalDateTime eventDate;
-    private int availableSeats;
-    private final Map<String, SeatHold> holds;
-    private final List<Booking> bookings;
-    private final Queue<WaitlistEntry> waitlist;
-    
-    public EventBookingEngine(LocalDateTime eventDate) {
-        this.eventDate = eventDate;
-        this.availableSeats = TOTAL_SEATS;
-        this.holds = new HashMap<>();
-        this.bookings = new ArrayList<>();
-        this.waitlist = new LinkedList<>();
-    }
-    
-    public String holdSeats(int quantity, TicketTier tier, LocalDateTime now) {
-        expireOldHolds(now);
-        
-        if (quantity <= 0) {
-            throw new IllegalArgumentException("Quantity must be positive");
-        }
-        
-        if (!seatsAvailable(quantity)) {
-            waitlist.offer(new WaitlistEntry(quantity, tier));
-            throw new IllegalStateException("Insufficient seats, added to waitlist");
-        }
-        
-        SeatHold hold = new SeatHold(quantity, now);
-        holds.put(hold.getId(), hold);
-        availableSeats -= quantity;
-        
-        return hold.getId();
-    }
-    
-    public Booking confirmHold(String holdId, LocalDateTime now) {
-        expireOldHolds(now);
-        
-        SeatHold hold = holds.get(holdId);
-        if (hold == null) {
-            throw new IllegalArgumentException("Hold not found: " + holdId);
-        }
-        
-        if (hold.isExpired(now)) {
-            hold.expire();
-            availableSeats += hold.getQuantity();
-            throw new IllegalStateException("Hold has expired");
-        }
-        
-        if (hold.getStatus() != HoldStatus.ACTIVE) {
-            throw new IllegalStateException("Hold is not active");
-        }
-        
-        hold.confirm();
-        
-        long price = calculatePrice(hold.getQuantity());
-        Booking booking = new Booking(hold.getQuantity(), TicketTier.ADULT, 
-                                     price, eventDate, now);
-        bookings.add(booking);
-        
-        return booking;
-    }
-    
-    public void releaseHold(String holdId) {
-        SeatHold hold = holds.get(holdId);
-        if (hold == null) {
-            throw new IllegalArgumentException("Hold not found: " + holdId);
-        }
-        
-        if (hold.getStatus() == HoldStatus.ACTIVE) {
-            hold.release();
-            availableSeats += hold.getQuantity();
-            processWaitlist();
-        }
-    }
-    
-    public long cancelBooking(String bookingId, LocalDateTime cancellationDate) {
-        Booking booking = bookings.stream()
-            .filter(b -> b.getId().equals(bookingId))
-            .findFirst()
-            .orElseThrow(() -> new IllegalArgumentException("Booking not found: " + bookingId));
-        
-        if (booking.getStatus() != BookingStatus.CONFIRMED) {
-            throw new IllegalStateException("Booking is not active");
-        }
-        
-        long refund = booking.getRefundAmount(cancellationDate);
-        booking.cancel();
-        availableSeats += booking.getQuantity();
-        processWaitlist();
-        
-        return refund;
-    }
-    
-    public int getAvailableSeats() {
-        return availableSeats;
-    }
-    
-    public int getWaitlistSize() {
-        return waitlist.size();
-    }
-    
-    public List<Booking> getConfirmedBookings() {
-        return bookings.stream()
-            .filter(b -> b.getStatus() == BookingStatus.CONFIRMED)
-            .toList();
-    }
-    
-    private void expireOldHolds(LocalDateTime now) {
-        for (SeatHold hold : holds.values()) {
-            if (hold.isExpired(now)) {
-                hold.expire();
-                availableSeats += hold.getQuantity();
-            }
-        }
-    }
-    
-    private void processWaitlist() {
-        while (!waitlist.isEmpty() && availableSeats > 0) {
-            WaitlistEntry entry = waitlist.peek();
-            
-            if (seatsAvailable(entry.getQuantity())) {
-                waitlist.poll();
-                availableSeats -= entry.getQuantity();
-            } else {
-                break;
-            }
-        }
-    }
-    
-    private boolean seatsAvailable(int quantity) {
-        return quantity <= availableSeats;
-    }
-    
-    private long calculatePrice(int quantity) {
-        long basePrice = TicketTier.ADULT.getBasePriceInCents() * quantity;
-        
-        if (quantity >= GROUP_DISCOUNT_THRESHOLD) {
-            return basePrice - (basePrice * GROUP_DISCOUNT_PERCENT / 100);
-        }
-        
-        return basePrice;
-    }
-}
-
-````
-
-</details>
-
-<details>
-<summary><code>EventSeatBookingEngine.java</code> · 4 smells</summary>
-
-- `too-many-parameters` at line 40
-- `too-many-parameters` at line 91
-- `unused-import` at line 4
-- `oversized-file` at line 
+- `too-many-parameters` at line 12
 
 ````java
 import java.math.BigDecimal;
-import java.time.Clock;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
-import java.time.temporal.ChronoUnit;
+import java.time.*;
 import java.util.*;
 
-public class EventSeatBookingEngine {
-    private static final int HOLD_DURATION_MINUTES = 15;
-    private static final double GROUP_DISCOUNT_RATE = 0.05;
-    private static final int GROUP_MINIMUM_SEATS = 10;
-    private static final int FULL_REFUND_DAYS_BEFORE = 30;
-    private static final int PARTIAL_REFUND_DAYS_BEFORE = 7;
-    private static final double PARTIAL_REFUND_RATE = 0.50;
+class Booking {
+    private final String id;
+    private final String customerId;
+    private final LocalDate eventDate;
+    private final List<Seat> seats;
+    private final Money totalPrice;
     
-    public enum TicketTier {
-        ADULT(1.0),
-        CHILD(0.5),
-        SENIOR(0.75),
-        STUDENT(0.6);
-        
-        private final double priceMultiplier;
-        
-        TicketTier(double priceMultiplier) {
-            this.priceMultiplier = priceMultiplier;
-        }
-        
-        public double getPriceMultiplier() {
-            return priceMultiplier;
-        }
+    Booking(String id, String customerId, LocalDate eventDate, List<Seat> seats, Money totalPrice) {
+        this.id = id;
+        this.customerId = customerId;
+        this.eventDate = eventDate;
+        this.seats = List.copyOf(seats);
+        this.totalPrice = totalPrice;
     }
     
-    public static class Event {
-        private final String id;
-        private final String name;
-        private final LocalDateTime eventDateTime;
-        private final int totalSeats;
-        private final Map<TicketTier, BigDecimal> basePrices;
+    Money calculateRefund() {
+        long daysUntilEvent = ChronoUnit.DAYS.between(LocalDate.now(), eventDate);
         
-        public Event(String name, LocalDateTime eventDateTime, int totalSeats, 
-                    Map<TicketTier, BigDecimal> basePrices) {
-            this.id = UUID.randomUUID().toString();
-            this.name = name;
-            this.eventDateTime = eventDateTime;
-            this.totalSeats = totalSeats;
-            this.basePrices = new EnumMap<>(basePrices);
-        }
-        
-        public String getId() { return id; }
-        public LocalDateTime getEventDateTime() { return eventDateTime; }
-        public int getTotalSeats() { return totalSeats; }
-        public BigDecimal getBasePrice(TicketTier tier) { return basePrices.get(tier); }
+        if (daysUntilEvent > 30) return totalPrice;
+        if (daysUntilEvent >= 7) return totalPrice.applyPartialRefund();
+        return new Money(BigDecimal.ZERO);
     }
     
-    public static class SeatHold {
-        private final String id;
-        private final List<Integer> seatNumbers;
-        private final TicketTier tier;
-        private final LocalDateTime heldAt;
-        private final LocalDateTime expiresAt;
-        
-        SeatHold(List<Integer> seatNumbers, TicketTier tier, LocalDateTime heldAt) {
-            this.id = UUID.randomUUID().toString();
-            this.seatNumbers = new ArrayList<>(seatNumbers);
-            this.tier = tier;
-            this.heldAt = heldAt;
-            this.expiresAt = heldAt.plusMinutes(HOLD_DURATION_MINUTES);
-        }
-        
-        boolean hasExpired(LocalDateTime now) {
-            return now.isAfter(expiresAt);
-        }
-        
-        public String getId() { return id; }
-        public List<Integer> getSeatNumbers() { return new ArrayList<>(seatNumbers); }
-        public TicketTier getTier() { return tier; }
+    String id() { return id; }
+    String customerId() { return customerId; }
+    List<Seat> seats() { return seats; }
+    Money totalPrice() { return totalPrice; }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>BookingResult.java</code></summary>
+
+
+````java
+record BookingResult(boolean success, String bookingId, Money totalPrice, String error) {
+    static BookingResult confirmed(String bookingId, Money totalPrice) {
+        return new BookingResult(true, bookingId, totalPrice, "");
     }
-    
-    public static class Booking {
-        private final String id;
-        private final List<Integer> seatNumbers;
-        private final TicketTier tier;
-        private final BigDecimal totalPrice;
-        private final LocalDateTime bookedAt;
-        private BookingStatus status;
-        
-        public enum BookingStatus {
-            ACTIVE, CANCELLED
-        }
-        
-        Booking(List<Integer> seatNumbers, TicketTier tier, BigDecimal totalPrice, 
-               LocalDateTime bookedAt) {
-            this.id = UUID.randomUUID().toString();
-            this.seatNumbers = new ArrayList<>(seatNumbers);
-            this.tier = tier;
-            this.totalPrice = totalPrice;
-            this.bookedAt = bookedAt;
-            this.status = BookingStatus.ACTIVE;
-        }
-        
-        public String getId() { return id; }
-        public List<Integer> getSeatNumbers() { return new ArrayList<>(seatNumbers); }
-        public int getSeatCount() { return seatNumbers.size(); }
-        public TicketTier getTier() { return tier; }
-        public BigDecimal getTotalPrice() { return totalPrice; }
-        public BookingStatus getStatus() { return status; }
-        
-        void markCancelled() {
-            this.status = BookingStatus.CANCELLED;
-        }
-    }
-    
-    public static class WaitlistEntry {
-        private final String id;
-        private final int requestedSeats;
-        private final TicketTier tier;
-        
-        WaitlistEntry(int requestedSeats, TicketTier tier) {
-            this.id = UUID.randomUUID().toString();
-            this.requestedSeats = requestedSeats;
-            this.tier = tier;
-        }
-        
-        public String getId() { return id; }
-        public int getRequestedSeats() { return requestedSeats; }
-        public TicketTier getTier() { return tier; }
-    }
-    
-    public static class HoldResult {
-        private final String holdId;
-        private final BigDecimal totalPrice;
-        
-        HoldResult(String holdId, BigDecimal totalPrice) {
-            this.holdId = holdId;
-            this.totalPrice = totalPrice;
-        }
-        
-        public String getHoldId() { return holdId; }
-        public BigDecimal getTotalPrice() { return totalPrice; }
-    }
-    
-    public static class WaitlistResult {
-        private final String waitlistEntryId;
-        private final int queuePosition;
-        
-        WaitlistResult(String waitlistEntryId, int queuePosition) {
-            this.waitlistEntryId = waitlistEntryId;
-            this.queuePosition = queuePosition;
-        }
-        
-        public String getWaitlistEntryId() { return waitlistEntryId; }
-        public int getQueuePosition() { return queuePosition; }
-    }
-    
-    public static class CancellationResult {
-        private final BigDecimal refundAmount;
-        private final String reason;
-        
-        CancellationResult(BigDecimal refundAmount, String reason) {
-            this.refundAmount = refundAmount;
-            this.reason = reason;
-        }
-        
-        public BigDecimal getRefundAmount() { return refundAmount; }
-        public String getReason() { return reason; }
-    }
-    
-    private final Event event;
-    private final Set<Integer> availableSeats;
-    private final Map<String, SeatHold> holds;
-    private final Map<String, Booking> bookings;
-    private final Deque<WaitlistEntry> waitlist;
-    private Clock clock;
-    
-    public EventSeatBookingEngine(Event event) {
-        this.event = event;
-        this.availableSeats = new HashSet<>();
-        for (int i = 1; i <= event.getTotalSeats(); i++) {
-            availableSeats.add(i);
-        }
-        this.holds = new HashMap<>();
-        this.bookings = new HashMap<>();
-        this.waitlist = new LinkedList<>();
-        this.clock = Clock.systemDefaultZone();
-    }
-    
-    public void setClock(Clock clock) {
-        this.clock = clock;
-    }
-    
-    public Object requestSeats(int seatCount, TicketTier tier) {
-        expireHolds();
-        
-        if (availableSeats.size() >= seatCount) {
-            return createHold(seatCount, tier);
-        }
-        
-        return addToWaitlist(seatCount, tier);
-    }
-    
-    public String confirmHold(String holdId) {
-        SeatHold hold = holds.remove(holdId);
-        if (hold == null) {
-            throw new IllegalArgumentException("Hold not found: " + holdId);
-        }
-        
-        BigDecimal totalPrice = calculatePrice(hold.getSeatNumbers().size(), hold.getTier());
-        Booking booking = new Booking(hold.getSeatNumbers(), hold.getTier(), 
-                                     totalPrice, LocalDateTime.now(clock));
-        bookings.put(booking.getId(), booking);
-        availableSeats.removeAll(hold.getSeatNumbers());
-        return booking.getId();
-    }
-    
-    public void releaseHold(String holdId) {
-        SeatHold hold = holds.remove(holdId);
-        if (hold != null) {
-            availableSeats.addAll(hold.getSeatNumbers());
-            processWaitlist();
-        }
-    }
-    
-    public CancellationResult cancelBooking(String bookingId) {
-        Booking booking = bookings.get(bookingId);
-        if (booking == null) {
-            throw new IllegalArgumentException("Booking not found: " + bookingId);
-        }
-        
-        BigDecimal refund = calculateRefund(booking);
-        booking.markCancelled();
-        availableSeats.addAll(booking.getSeatNumbers());
-        processWaitlist();
-        
-        String reason = formatRefundReason(refund, booking);
-        return new CancellationResult(refund, reason);
-    }
-    
-    public void expireHolds() {
-        LocalDateTime now = LocalDateTime.now(clock);
-        List<String> expiredIds = new ArrayList<>();
-        
-        for (Map.Entry<String, SeatHold> entry : holds.entrySet()) {
-            if (entry.getValue().hasExpired(now)) {
-                expiredIds.add(entry.getKey());
-            }
-        }
-        
-        expiredIds.forEach(this::releaseHold);
-    }
-    
-    public int getAvailableSeatCount() {
-        expireHolds();
-        return availableSeats.size();
-    }
-    
-    public int getWaitlistSize() {
-        return waitlist.size();
-    }
-    
-    public Booking getBooking(String bookingId) {
-        return bookings.get(bookingId);
-    }
-    
-    private HoldResult createHold(int seatCount, TicketTier tier) {
-        List<Integer> selectedSeats = selectSeats(seatCount);
-        SeatHold hold = new SeatHold(selectedSeats, tier, LocalDateTime.now(clock));
-        holds.put(hold.getId(), hold);
-        availableSeats.removeAll(selectedSeats);
-        
-        BigDecimal totalPrice = calculatePrice(seatCount, tier);
-        return new HoldResult(hold.getId(), totalPrice);
-    }
-    
-    private WaitlistResult addToWaitlist(int seatCount, TicketTier tier) {
-        WaitlistEntry entry = new WaitlistEntry(seatCount, tier);
-        waitlist.add(entry);
-        return new WaitlistResult(entry.getId(), waitlist.size());
-    }
-    
-    private void processWaitlist() {
-        while (!waitlist.isEmpty()) {
-            WaitlistEntry entry = waitlist.peekFirst();
-            expireHolds();
-            
-            if (availableSeats.size() >= entry.getRequestedSeats()) {
-                waitlist.removeFirst();
-                createHold(entry.getRequestedSeats(), entry.getTier());
-            } else {
-                break;
-            }
-        }
-    }
-    
-    private List<Integer> selectSeats(int count) {
-        List<Integer> sorted = new ArrayList<>(availableSeats);
-        Collections.sort(sorted);
-        return sorted.subList(0, Math.min(count, sorted.size()));
-    }
-    
-    private BigDecimal calculatePrice(int seatCount, TicketTier tier) {
-        BigDecimal basePrice = event.getBasePrice(tier);
-        BigDecimal pricePerSeat = basePrice.multiply(
-            BigDecimal.valueOf(tier.getPriceMultiplier()));
-        BigDecimal subtotal = pricePerSeat.multiply(BigDecimal.valueOf(seatCount));
-        
-        if (seatCount >= GROUP_MINIMUM_SEATS) {
-            return subtotal.multiply(BigDecimal.valueOf(1 - GROUP_DISCOUNT_RATE));
-        }
-        
-        return subtotal;
-    }
-    
-    private BigDecimal calculateRefund(Booking booking) {
-        long daysBefore = ChronoUnit.DAYS.between(LocalDateTime.now(clock), 
-                                                   event.getEventDateTime());
-        
-        if (daysBefore > FULL_REFUND_DAYS_BEFORE) {
-            return booking.getTotalPrice();
-        }
-        
-        if (daysBefore > PARTIAL_REFUND_DAYS_BEFORE) {
-            return booking.getTotalPrice().multiply(
-                BigDecimal.valueOf(PARTIAL_REFUND_RATE));
-        }
-        
-        return BigDecimal.ZERO;
-    }
-    
-    private String formatRefundReason(BigDecimal refund, Booking booking) {
-        long daysBefore = ChronoUnit.DAYS.between(LocalDateTime.now(clock), 
-                                                   event.getEventDateTime());
-        
-        if (daysBefore > FULL_REFUND_DAYS_BEFORE) {
-            return "Full refund: more than 30 days before event";
-        }
-        
-        if (daysBefore > PARTIAL_REFUND_DAYS_BEFORE) {
-            return "50% refund: 7-30 days before event";
-        }
-        
-        return "No refund: within 7 days of event";
+
+    static BookingResult error(String error) {
+        return new BookingResult(false, "", new Money(0), error);
     }
 }
 
@@ -1638,12 +1437,136 @@ public class EventSeatBookingEngine {
 </details>
 
 <details>
-<summary><code>HoldStatus.java</code></summary>
+<summary><code>Event.java</code></summary>
 
 
 ````java
-public enum HoldStatus {
-    ACTIVE, EXPIRED, CONFIRMED, RELEASED
+import java.time.*;
+import java.util.*;
+import java.util.stream.Collectors;
+
+public class Event {
+    private final String id;
+    private final LocalDateTime date;
+    private final Map<Integer, Seat> seats;
+    
+    public Event(String id, LocalDateTime date, int capacity) {
+        this.id = id;
+        this.date = date;
+        this.seats = new LinkedHashMap<>();
+        for (int i = 1; i <= capacity; i++) {
+            seats.put(i, new Seat(i));
+        }
+    }
+    
+    public String id() { return id; }
+    public LocalDateTime date() { return date; }
+    public int capacity() { return seats.size(); }
+    
+    public Seat seat(int seatId) {
+        return seats.get(seatId);
+    }
+    
+    public List<Integer> availableSeatIds() {
+        return seats.values().stream()
+            .filter(s -> s.status() == Seat.Status.AVAILABLE)
+            .map(Seat::id)
+            .collect(Collectors.toList());
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>Hold.java</code></summary>
+
+
+````java
+import java.time.*;
+import java.util.*;
+
+class Hold {
+    private static final long HOLD_DURATION_SECONDS = 15 * 60;
+    
+    private final String id;
+    private final String customerId;
+    private final List<Seat> seats;
+    private final Instant createdAt;
+    
+    Hold(String id, String customerId, List<Seat> seats) {
+        this.id = id;
+        this.customerId = customerId;
+        this.seats = List.copyOf(seats);
+        this.createdAt = Instant.now();
+    }
+    
+    boolean isExpired() {
+        return Duration.between(createdAt, Instant.now()).toSeconds() > HOLD_DURATION_SECONDS;
+    }
+    
+    String id() { return id; }
+    String customerId() { return customerId; }
+    List<Seat> seats() { return seats; }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>IdGenerator.java</code></summary>
+
+
+````java
+public class IdGenerator {
+    private int counter = 0;
+    
+    public synchronized String nextId() {
+        return "ID_" + (++counter);
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>InsufficientSeatsException.java</code></summary>
+
+
+````java
+// ============ EXCEPTIONS ============
+
+class InsufficientSeatsException extends RuntimeException {
+    InsufficientSeatsException(String message) { super(message); }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>InvalidBookingException.java</code></summary>
+
+
+````java
+class InvalidBookingException extends RuntimeException {
+    InvalidBookingException(String message) { super(message); }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>InvalidHoldException.java</code></summary>
+
+
+````java
+class InvalidHoldException extends RuntimeException {
+    InvalidHoldException(String message) { super(message); }
 }
 
 ````
@@ -1655,46 +1578,60 @@ public enum HoldStatus {
 
 
 ````java
-// Money.java
-public final class Money {
-    private final long amountInCents;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 
-    public Money(long amountInCents) {
-        if (amountInCents < 0) {
-            throw new IllegalArgumentException("Amount cannot be negative");
-        }
-        this.amountInCents = amountInCents;
+record Money(BigDecimal amount) {
+    private static final BigDecimal GROUP_DISCOUNT_FACTOR = new BigDecimal("0.95");
+    private static final BigDecimal PARTIAL_REFUND_FACTOR = new BigDecimal("0.50");
+    
+    public Money multiply(BigDecimal factor) {
+        return new Money(amount.multiply(factor).setScale(2, RoundingMode.HALF_UP));
     }
-
+    
     public Money add(Money other) {
-        return new Money(this.amountInCents + other.amountInCents);
+        return new Money(amount.add(other.amount));
     }
-
-    public Money multiply(double factor) {
-        return new Money(Math.round(this.amountInCents * factor));
+    
+    public Money applyGroupDiscount() {
+        return multiply(GROUP_DISCOUNT_FACTOR);
     }
-
-    public Money subtract(Money other) {
-        if (other.amountInCents > this.amountInCents) {
-            throw new IllegalArgumentException("Cannot subtract more than available");
-        }
-        return new Money(this.amountInCents - other.amountInCents);
+    
+    public Money applyPartialRefund() {
+        return multiply(PARTIAL_REFUND_FACTOR);
     }
+}
 
-    public long cents() {
-        return amountInCents;
+````
+
+</details>
+
+<details>
+<summary><code>PriceCalculator.java</code></summary>
+
+
+````java
+import java.math.BigDecimal;
+import java.util.*;
+
+// ============ PRICING LOGIC ============
+
+class PriceCalculator {
+    private static final int GROUP_DISCOUNT_THRESHOLD = 10;
+    private final Map<SeatType, Money> pricing;
+    
+    PriceCalculator(Map<SeatType, Money> pricing) {
+        this.pricing = Map.copyOf(pricing);
     }
-
-    @Override
-    public boolean equals(Object o) {
-        if (!(o instanceof Money)) return false;
-        Money other = (Money) o;
-        return amountInCents == other.amountInCents;
-    }
-
-    @Override
-    public int hashCode() {
-        return Long.hashCode(amountInCents);
+    
+    Money calculateTotal(List<Seat> seats) {
+        Money subtotal = seats.stream()
+            .map(seat -> pricing.get(seat.type()))
+            .reduce(new Money(BigDecimal.ZERO), Money::add);
+        
+        return seats.size() >= GROUP_DISCOUNT_THRESHOLD
+            ? subtotal.applyGroupDiscount()
+            : subtotal;
     }
 }
 
@@ -1707,25 +1644,39 @@ public final class Money {
 
 
 ````java
-// RefundPolicy.java
-public final class RefundPolicy {
-    private static final long MILLIS_PER_DAY = 24 * 60 * 60 * 1000L;
-    private static final int DAYS_FULL_REFUND = 30;
-    private static final int DAYS_HALF_REFUND = 7;
+class RefundPolicy {
+    private static final long THIRTY_DAYS = 30L * 24 * 60 * 60 * 1000;
+    private static final long SEVEN_DAYS = 7L * 24 * 60 * 60 * 1000;
 
-    public Money calculateRefund(Money originalPrice, long eventDateMillis, long nowMillis) {
-        long daysUntilEvent = (eventDateMillis - nowMillis) / MILLIS_PER_DAY;
-        return calculateRefundByDays(originalPrice, daysUntilEvent);
+    double refundPercent(long eventTimeMillis, long nowMillis) {
+        long msUntilEvent = eventTimeMillis - nowMillis;
+
+        if (msUntilEvent > THIRTY_DAYS) {
+            return 100.0;
+        }
+        if (msUntilEvent > SEVEN_DAYS) {
+            return 50.0;
+        }
+        return 0.0;
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>RefundResult.java</code></summary>
+
+
+````java
+record RefundResult(boolean success, Money amount, double refundPercent, String error) {
+    static RefundResult refunded(Money amount, double percent) {
+        return new RefundResult(true, amount, percent, "");
     }
 
-    private Money calculateRefundByDays(Money originalPrice, long daysUntilEvent) {
-        if (daysUntilEvent > DAYS_FULL_REFUND) {
-            return originalPrice;
-        }
-        if (daysUntilEvent > DAYS_HALF_REFUND) {
-            return originalPrice.multiply(0.5);
-        }
-        return new Money(0);
+    static RefundResult error(String error) {
+        return new RefundResult(false, new Money(0), 0, error);
     }
 }
 
@@ -1738,36 +1689,42 @@ public final class RefundPolicy {
 
 
 ````java
-// Seat.java
-public final class Seat {
-    private final String id;
-    private final SeatState state;
-
-    public Seat(String id) {
-        this.id = id;
-        this.state = SeatState.AVAILABLE;
+class Seat {
+    private final SeatLocation location;
+    private final SeatType type;
+    private SeatStatus status;
+    private String currentHoldId;
+    
+    Seat(SeatLocation location, SeatType type) {
+        this.location = location;
+        this.type = type;
+        this.status = SeatStatus.AVAILABLE;
     }
-
-    private Seat(String id, SeatState state) {
-        this.id = id;
-        this.state = state;
+    
+    synchronized void hold(String holdId) {
+        if (status != SeatStatus.AVAILABLE) {
+            throw new IllegalStateException("Seat not available");
+        }
+        this.status = SeatStatus.HELD;
+        this.currentHoldId = holdId;
     }
-
-    public String id() {
-        return id;
+    
+    synchronized void release() {
+        this.status = SeatStatus.AVAILABLE;
+        this.currentHoldId = null;
     }
-
-    public SeatState state() {
-        return state;
+    
+    synchronized void book(String bookingId) {
+        if (status != SeatStatus.HELD) {
+            throw new IllegalStateException("Seat must be held before booking");
+        }
+        this.status = SeatStatus.BOOKED;
+        this.currentHoldId = null;
     }
-
-    public Seat withState(SeatState newState) {
-        return new Seat(id, newState);
-    }
-
-    public boolean isAvailable() {
-        return state == SeatState.AVAILABLE;
-    }
+    
+    SeatLocation location() { return location; }
+    SeatType type() { return type; }
+    synchronized SeatStatus status() { return status; }
 }
 
 ````
@@ -1775,274 +1732,340 @@ public final class Seat {
 </details>
 
 <details>
-<summary><code>SeatBookingEngine.java</code> · 4 smells</summary>
+<summary><code>SeatBookingEngine.java</code> · 3 smells</summary>
 
-- `too-many-parameters` at line 22
-- `oversized-function` at line 26
-- `oversized-function` at line 49
-- `oversized-file` at line 
+- `oversized-function` at line 22
+- `oversized-function` at line 43
+- `oversized-function` at line 152
 
 ````java
-// SeatBookingEngine.java
-import java.util.*;
-import java.util.stream.*;
-
-public final class SeatBookingEngine {
-    private static final int HOLD_DURATION_MINUTES = 15;
+public class SeatBookingEngine {
+    private static final int HOLD_DURATION_MILLIS = 15 * 60 * 1000;
     private static final int GROUP_DISCOUNT_THRESHOLD = 10;
-    private static final double GROUP_DISCOUNT_PERCENT = 0.05;
+    private static final double GROUP_DISCOUNT_PERCENT = 5.0;
 
-    private final java.util.Map<String, Event> events;
-    private final java.util.Map<String, SeatHold> holds;
-    private final java.util.Map<String, Booking> bookings;
-    private final RefundPolicy refundPolicy;
+    private final String eventId;
+    private final long eventTimeMillis;
+    private final Map<String, Seat> seats = new HashMap<>();
+    private final Map<String, SeatHold> holds = new HashMap<>();
+    private final Map<String, Booking> bookings = new HashMap<>();
+    private final Queue<WaitingListEntry> waitingList = new LinkedList<>();
+    private final RefundPolicy refundPolicy = new RefundPolicy();
 
-    public SeatBookingEngine() {
-        this.events = new HashMap<>();
-        this.holds = new HashMap<>();
-        this.bookings = new HashMap<>();
-        this.refundPolicy = new RefundPolicy();
-    }
-
-    public void createEvent(String eventId, String name, long eventDateMillis, int capacity) {
-        events.put(eventId, new Event(eventId, name, eventDateMillis, capacity));
-    }
-
-    public SeatHold holdSeats(String eventId, java.util.List<TicketType> ticketTypes, String customerId) {
-        Event event = findEventOrThrow(eventId);
-        expireOldHolds(event);
-        if (event.isSoldOut()) {
-            addToWaitList(event, customerId, ticketTypes);
-            throw new IllegalStateException("Event is sold out");
-        }
-
-        java.util.List<String> seatsToHold = findAvailableSeats(event, ticketTypes.size());
-        if (seatsToHold.size() < ticketTypes.size()) {
-            addToWaitList(event, customerId, ticketTypes);
-            throw new IllegalStateException("Not enough available seats");
-        }
-
-        String holdId = generateId("HOLD");
-        long expiresAt = System.currentTimeMillis() + (HOLD_DURATION_MINUTES * 60 * 1000L);
-        SeatHold hold = new SeatHold(holdId, eventId, seatsToHold, expiresAt, customerId);
-
-        markSeatsAsHeld(event, seatsToHold);
-        holds.put(holdId, hold);
-        return hold;
-    }
-
-    public Booking confirmHold(String holdId, String customerId) {
-        SeatHold hold = findHoldOrThrow(holdId);
-        validateCustomer(hold, customerId);
-        Event event = findEventOrThrow(hold.eventId());
-
-        if (hold.isExpired(System.currentTimeMillis())) {
-            releaseHold(holdId);
-            throw new IllegalStateException("Hold has expired");
-        }
-
-        Money totalPrice = calculatePrice(hold.seatCount());
-        String bookingId = generateId("BOOKING");
-        Booking booking = new Booking(bookingId, event.id(), hold.seatIds(),
-                                      createTicketTypes(hold.seatCount()),
-                                      totalPrice, customerId, System.currentTimeMillis());
-
-        markSeatsAsBooked(event, hold.seatIds());
-        bookings.put(bookingId, booking);
-        holds.remove(holdId);
-        notifyWaitList(event);
-
-        return booking;
-    }
-
-    public void releaseHold(String holdId) {
-        SeatHold hold = holds.get(holdId);
-        if (hold == null) return;
-
-        Event event = events.get(hold.eventId());
-        if (event != null) {
-            markSeatsAsAvailable(event, hold.seatIds());
-        }
-        holds.remove(holdId);
-    }
-
-    public Money cancelBooking(String bookingId) {
-        Booking booking = findBookingOrThrow(bookingId);
-        Event event = findEventOrThrow(booking.eventId());
-
-        Money refund = refundPolicy.calculateRefund(booking.totalPrice(),
-                                                     event.eventDateMillis(),
-                                                     System.currentTimeMillis());
-
-        markSeatsAsAvailable(event, booking.seatIds());
-        bookings.remove(bookingId);
-        notifyWaitList(event);
-
-        return refund;
-    }
-
-    private void expireOldHolds(Event event) {
-        long now = System.currentTimeMillis();
-        holds.values().stream()
-            .filter(h -> h.eventId().equals(event.id()) && h.isExpired(now))
-            .map(SeatHold::id)
-            .collect(Collectors.toList())
-            .forEach(this::releaseHold);
-    }
-
-    private void notifyWaitList(Event event) {
-        while (!event.isSoldOut()) {
-            WaitListEntry entry = event.pollWaitList();
-            if (entry == null) break;
-
-            List<String> available = findAvailableSeats(event, entry.requestedSeats());
-            if (available.size() < entry.requestedSeats()) {
-                event.addToWaitList(entry);
-                break;
-            }
-
-            autoBookWaitListEntry(event, entry, available);
+    public SeatBookingEngine(String eventId, long eventTimeMillis, List<String> seatIds) {
+        this.eventId = eventId;
+        this.eventTimeMillis = eventTimeMillis;
+        for (String seatId : seatIds) {
+            seats.put(seatId, new Seat(seatId));
         }
     }
 
-    private void autoBookWaitListEntry(Event event, WaitListEntry entry, List<String> seats) {
-        String bookingId = generateId("BOOKING");
-        Money price = calculatePrice(entry.requestedSeats());
-        Booking booking = new Booking(bookingId, event.id(), seats,
-                                      createTicketTypes(entry.requestedSeats()),
-                                      price, entry.customerId(), System.currentTimeMillis());
-        markSeatsAsBooked(event, seats);
-        bookings.put(bookingId, booking);
-    }
+    public SeatHoldResult hold(List<TicketType> ticketTypes) {
+        cleanExpiredHolds();
 
-    private List<String> findAvailableSeats(Event event, int count) {
-        return event.seats().values().stream()
-            .filter(Seat::isAvailable)
-            .map(Seat::id)
-            .limit(count)
-            .collect(Collectors.toList());
-    }
+        List<String> availableSeats = findAvailableSeats(ticketTypes.size());
 
-    private void markSeatsAsHeld(Event event, List<String> seatIds) {
-        seatIds.forEach(id -> event.updateSeat(id, event.seats().get(id).withState(SeatState.HELD)));
-    }
-
-    private void markSeatsAsBooked(Event event, List<String> seatIds) {
-        seatIds.forEach(id -> event.updateSeat(id, event.seats().get(id).withState(SeatState.BOOKED)));
-    }
-
-    private void markSeatsAsAvailable(Event event, List<String> seatIds) {
-        seatIds.forEach(id -> event.updateSeat(id, event.seats().get(id).withState(SeatState.AVAILABLE)));
-    }
-
-    private Money calculatePrice(int seatCount) {
-        Money basePrice = new Money(TicketType.ADULT.priceInCents() * seatCount);
-        if (seatCount >= GROUP_DISCOUNT_THRESHOLD) {
-            return basePrice.multiply(1.0 - GROUP_DISCOUNT_PERCENT);
+        if (availableSeats.size() < ticketTypes.size()) {
+            waitingList.offer(new WaitingListEntry(ticketTypes, System.currentTimeMillis()));
+            return SeatHoldResult.waitingList();
         }
+
+        String holdId = UUID.randomUUID().toString();
+        long expiryTime = System.currentTimeMillis() + HOLD_DURATION_MILLIS;
+
+        for (String seatId : availableSeats) {
+            seats.get(seatId).hold();
+            holds.put(seatId, new SeatHold(holdId, seatId, expiryTime));
+        }
+
+        return SeatHoldResult.held(holdId, availableSeats, expiryTime);
+    }
+
+    public BookingResult confirm(String holdId, List<TicketType> ticketTypes) {
+        List<String> heldSeats = findSeatsForHold(holdId);
+
+        if (heldSeats.isEmpty()) {
+            return BookingResult.error("Hold not found: " + holdId);
+        }
+
+        if (heldSeats.size() != ticketTypes.size()) {
+            return BookingResult.error("Ticket count mismatch");
+        }
+
+        String bookingId = UUID.randomUUID().toString();
+        Money totalPrice = calculateTotalPrice(ticketTypes);
+
+        for (int i = 0; i < heldSeats.size(); i++) {
+            String seatId = heldSeats.get(i);
+            Seat seat = seats.get(seatId);
+            seat.book();
+
+            Money seatPrice = calculateSeatPrice(ticketTypes.get(i), ticketTypes.size());
+            bookings.put(seatId, new Booking(bookingId, seatId, ticketTypes.get(i), seatPrice, System.currentTimeMillis()));
+            holds.remove(seatId);
+        }
+
+        return BookingResult.confirmed(bookingId, totalPrice);
+    }
+
+    public void release(String holdId) {
+        List<String> heldSeats = findSeatsForHold(holdId);
+
+        for (String seatId : heldSeats) {
+            seats.get(seatId).release();
+            holds.remove(seatId);
+        }
+
+        processWaitingList();
+    }
+
+    public RefundResult cancel(String seatId) {
+        Booking booking = bookings.get(seatId);
+
+        if (booking == null) {
+            return RefundResult.error("Seat not booked: " + seatId);
+        }
+
+        double refundPercent = refundPolicy.refundPercent(eventTimeMillis, System.currentTimeMillis());
+        Money refundAmount = booking.seatPrice().applyPercent(refundPercent);
+
+        seats.get(seatId).release();
+        bookings.remove(seatId);
+
+        processWaitingList();
+
+        return RefundResult.refunded(refundAmount, refundPercent);
+    }
+
+    private Money calculateTotalPrice(List<TicketType> ticketTypes) {
+        Money total = new Money(0);
+        for (TicketType type : ticketTypes) {
+            total = total.plus(new Money(type.priceInCents()));
+        }
+
+        if (ticketTypes.size() >= GROUP_DISCOUNT_THRESHOLD) {
+            Money discount = total.applyPercent(GROUP_DISCOUNT_PERCENT);
+            total = new Money(total.cents() - discount.cents());
+        }
+
+        return total;
+    }
+
+    private Money calculateSeatPrice(TicketType type, int totalTickets) {
+        Money basePrice = new Money(type.priceInCents());
+
+        if (totalTickets >= GROUP_DISCOUNT_THRESHOLD) {
+            Money discount = basePrice.applyPercent(GROUP_DISCOUNT_PERCENT);
+            return new Money(basePrice.cents() - discount.cents());
+        }
+
         return basePrice;
     }
 
-    private List<TicketType> createTicketTypes(int count) {
-        List<TicketType> types = new ArrayList<>();
-        for (int i = 0; i < count; i++) {
-            types.add(TicketType.ADULT);
+    private List<String> findAvailableSeats(int count) {
+        return seats.values().stream()
+            .filter(s -> s.status() == SeatStatus.AVAILABLE)
+            .limit(count)
+            .map(Seat::id)
+            .toList();
+    }
+
+    private List<String> findSeatsForHold(String holdId) {
+        return holds.values().stream()
+            .filter(h -> h.holdId().equals(holdId))
+            .map(SeatHold::seatId)
+            .toList();
+    }
+
+    private void cleanExpiredHolds() {
+        long now = System.currentTimeMillis();
+        List<String> expired = holds.values().stream()
+            .filter(h -> h.isExpired(now))
+            .map(SeatHold::seatId)
+            .toList();
+
+        for (String seatId : expired) {
+            seats.get(seatId).release();
+            holds.remove(seatId);
         }
-        return types;
     }
 
-    private void addToWaitList(Event event, String customerId, List<TicketType> ticketTypes) {
-        WaitListEntry entry = new WaitListEntry(customerId, ticketTypes.size(), ticketTypes,
-                                                 System.currentTimeMillis());
-        event.addToWaitList(entry);
-    }
+    private void processWaitingList() {
+        while (!waitingList.isEmpty()) {
+            WaitingListEntry entry = waitingList.peek();
+            List<String> available = findAvailableSeats(entry.ticketTypes().size());
 
-    private Event findEventOrThrow(String eventId) {
-        Event event = events.get(eventId);
-        if (event == null) throw new IllegalArgumentException("Event not found: " + eventId);
-        return event;
-    }
+            if (available.size() < entry.ticketTypes().size()) {
+                break;
+            }
 
-    private SeatHold findHoldOrThrow(String holdId) {
-        SeatHold hold = holds.get(holdId);
-        if (hold == null) throw new IllegalArgumentException("Hold not found: " + holdId);
+            waitingList.poll();
+
+            String holdId = UUID.randomUUID().toString();
+            long expiryTime = System.currentTimeMillis() + HOLD_DURATION_MILLIS;
+
+            for (String seatId : available) {
+                seats.get(seatId).hold();
+                holds.put(seatId, new SeatHold(holdId, seatId, expiryTime));
+            }
+        }
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>SeatBookingService.java</code> · 3 smells</summary>
+
+- `oversized-function` at line 23
+- `oversized-function` at line 42
+- `oversized-function` at line 114
+
+````java
+import java.time.*;
+import java.util.*;
+
+// ============ BOOKING SERVICE ============
+
+class SeatBookingService {
+    private final LocalDate eventDate;
+    private final Map<String, Seat> seatsById;
+    private final Map<String, Hold> holdsById;
+    private final Map<String, Booking> bookingsById;
+    private final Queue<WaitlistEntry> waitlist;
+    private final PriceCalculator priceCalculator;
+    
+    SeatBookingService(LocalDate eventDate, List<Seat> seats, Map<SeatType, Money> pricing) {
+        this.eventDate = eventDate;
+        this.seatsById = buildSeatMap(seats);
+        this.holdsById = new HashMap<>();
+        this.bookingsById = new HashMap<>();
+        this.waitlist = new LinkedList<>();
+        this.priceCalculator = new PriceCalculator(pricing);
+    }
+    
+    synchronized Hold createHold(String customerId, Map<SeatType, Integer> requirements) {
+        processExpiredHolds();
+        
+        int totalRequested = requirements.values().stream().mapToInt(Integer::intValue).sum();
+        List<Seat> available = findAvailableSeats(requirements);
+        
+        if (available.size() < totalRequested) {
+            addToWaitlist(customerId, requirements);
+            throw new InsufficientSeatsException("Added to waitlist");
+        }
+        
+        String holdId = UUID.randomUUID().toString();
+        Hold hold = new Hold(holdId, customerId, available);
+        available.forEach(seat -> seat.hold(holdId));
+        holdsById.put(holdId, hold);
+        
         return hold;
     }
-
-    private Booking findBookingOrThrow(String bookingId) {
-        Booking booking = bookings.get(bookingId);
-        if (booking == null) throw new IllegalArgumentException("Booking not found: " + bookingId);
+    
+    synchronized Booking confirmHold(String holdId) {
+        Hold hold = holdsById.get(holdId);
+        if (hold == null) throw new InvalidHoldException("Hold not found");
+        if (hold.isExpired()) {
+            processExpiredHolds();
+            throw new InvalidHoldException("Hold expired");
+        }
+        
+        String bookingId = UUID.randomUUID().toString();
+        Money totalPrice = priceCalculator.calculateTotal(hold.seats());
+        Booking booking = new Booking(bookingId, hold.customerId(), eventDate,
+                                       hold.seats(), totalPrice);
+        
+        hold.seats().forEach(seat -> seat.book(bookingId));
+        bookingsById.put(bookingId, booking);
+        holdsById.remove(holdId);
+        
         return booking;
     }
-
-    private void validateCustomer(SeatHold hold, String customerId) {
-        if (!hold.customerId().equals(customerId)) {
-            throw new IllegalArgumentException("Customer mismatch");
+    
+    synchronized void releaseHold(String holdId) {
+        Hold hold = holdsById.get(holdId);
+        if (hold == null) return;
+        
+        hold.seats().forEach(Seat::release);
+        holdsById.remove(holdId);
+        processWaitlist();
+    }
+    
+    synchronized Money cancelBooking(String bookingId) {
+        Booking booking = bookingsById.get(bookingId);
+        if (booking == null) throw new InvalidBookingException("Booking not found");
+        
+        Money refund = booking.calculateRefund();
+        booking.seats().forEach(Seat::release);
+        bookingsById.remove(bookingId);
+        processWaitlist();
+        
+        return refund;
+    }
+    
+    synchronized int availableSeatCount() {
+        return (int) seatsById.values().stream()
+            .filter(seat -> seat.status() == SeatStatus.AVAILABLE)
+            .count();
+    }
+    
+    synchronized int waitlistSize() {
+        return waitlist.size();
+    }
+    
+    private List<Seat> findAvailableSeats(Map<SeatType, Integer> requirements) {
+        List<Seat> result = new ArrayList<>();
+        for (Map.Entry<SeatType, Integer> entry : requirements.entrySet()) {
+            seatsById.values().stream()
+                .filter(s -> s.type() == entry.getKey() && s.status() == SeatStatus.AVAILABLE)
+                .limit(entry.getValue())
+                .forEach(result::add);
+        }
+        return result;
+    }
+    
+    private void processExpiredHolds() {
+        holdsById.entrySet().removeIf(entry -> {
+            if (entry.getValue().isExpired()) {
+                entry.getValue().seats().forEach(Seat::release);
+                return true;
+            }
+            return false;
+        });
+    }
+    
+    private void processWaitlist() {
+        Iterator<WaitlistEntry> iter = waitlist.iterator();
+        while (iter.hasNext()) {
+            WaitlistEntry entry = iter.next();
+            List<Seat> available = findAvailableSeats(entry.requirements());
+            
+            if (available.size() >= entry.totalRequested()) {
+                String holdId = UUID.randomUUID().toString();
+                Hold hold = new Hold(holdId, entry.customerId(), available);
+                available.forEach(seat -> seat.hold(holdId));
+                holdsById.put(holdId, hold);
+                iter.remove();
+            } else {
+                break;
+            }
         }
     }
-
-    private String generateId(String prefix) {
-        return prefix + "_" + UUID.randomUUID().toString().substring(0, 8);
+    
+    private void addToWaitlist(String customerId, Map<SeatType, Integer> requirements) {
+        waitlist.offer(new WaitlistEntry(UUID.randomUUID().toString(), customerId, requirements));
     }
-
-    public Booking getBooking(String bookingId) {
-        return bookings.get(bookingId);
-    }
-
-    public Event getEvent(String eventId) {
-        return events.get(eventId);
-    }
-}
-
-````
-
-</details>
-
-<details>
-<summary><code>SeatHold.java</code> · 1 smell</summary>
-
-- `too-many-parameters` at line 9
-
-````java
-// SeatHold.java
-public final class SeatHold {
-    private final String id;
-    private final String eventId;
-    private final java.util.List<String> seatIds;
-    private final long expiresAtMillis;
-    private final String customerId;
-
-    public SeatHold(String id, String eventId, java.util.List<String> seatIds,
-                    long expiresAtMillis, String customerId) {
-        this.id = id;
-        this.eventId = eventId;
-        this.seatIds = java.util.List.copyOf(seatIds);
-        this.expiresAtMillis = expiresAtMillis;
-        this.customerId = customerId;
-    }
-
-    public String id() {
-        return id;
-    }
-
-    public String eventId() {
-        return eventId;
-    }
-
-    public java.util.List<String> seatIds() {
-        return seatIds;
-    }
-
-    public String customerId() {
-        return customerId;
-    }
-
-    public boolean isExpired(long nowMillis) {
-        return nowMillis > expiresAtMillis;
-    }
-
-    public int seatCount() {
-        return seatIds.size();
+    
+    private Map<String, Seat> buildSeatMap(List<Seat> seats) {
+        Map<String, Seat> map = new HashMap<>();
+        for (Seat seat : seats) {
+            String key = seat.location().section() + "-" + seat.location().row() + "-" + seat.location().seatNumber();
+            map.put(key, seat);
+        }
+        return map;
     }
 }
 
@@ -2051,15 +2074,76 @@ public final class SeatHold {
 </details>
 
 <details>
-<summary><code>SeatState.java</code></summary>
+<summary><code>SeatHold.java</code></summary>
 
 
 ````java
-// SeatState.java
-public enum SeatState {
-    AVAILABLE,
-    HELD,
-    BOOKED
+record SeatHold(
+    String holdId,
+    String seatId,
+    long expiryTimeMillis
+) {
+    boolean isExpired(long nowMillis) {
+        return nowMillis > expiryTimeMillis;
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>SeatHoldResult.java</code></summary>
+
+
+````java
+record SeatHoldResult(String holdId, List<String> seatIds, long expiryTimeMillis, boolean onWaitingList) {
+    static SeatHoldResult held(String holdId, List<String> seatIds, long expiryTimeMillis) {
+        return new SeatHoldResult(holdId, seatIds, expiryTimeMillis, false);
+    }
+
+    static SeatHoldResult waitingList() {
+        return new SeatHoldResult("", List.of(), 0, true);
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>SeatLocation.java</code></summary>
+
+
+````java
+record SeatLocation(String section, int row, int seatNumber) {}
+
+````
+
+</details>
+
+<details>
+<summary><code>SeatStatus.java</code></summary>
+
+
+````java
+// ============ DOMAIN ENTITIES ============
+
+enum SeatStatus { AVAILABLE, HELD, BOOKED }
+
+````
+
+</details>
+
+<details>
+<summary><code>SeatType.java</code></summary>
+
+
+````java
+// ============ VALUE OBJECTS ============
+
+enum SeatType {
+    ADULT, CHILD, SENIOR, STUDENT
 }
 
 ````
@@ -2071,26 +2155,20 @@ public enum SeatState {
 
 
 ````java
-public class TicketTier {
-    private final String name;
-    private final long basePriceInCents;
+public enum TicketTier {
+    ADULT(50.00),
+    CHILD(25.00),
+    SENIOR(35.00),
+    STUDENT(30.00);
     
-    public static final TicketTier ADULT = new TicketTier("Adult", 1000);
-    public static final TicketTier CHILD = new TicketTier("Child", 500);
-    public static final TicketTier SENIOR = new TicketTier("Senior", 700);
-    public static final TicketTier STUDENT = new TicketTier("Student", 600);
+    private final double price;
     
-    private TicketTier(String name, long basePriceInCents) {
-        this.name = name;
-        this.basePriceInCents = basePriceInCents;
+    TicketTier(double price) {
+        this.price = price;
     }
     
-    public long getBasePriceInCents() {
-        return basePriceInCents;
-    }
-    
-    public String getName() {
-        return name;
+    public double price() {
+        return price;
     }
 }
 
@@ -2103,20 +2181,19 @@ public class TicketTier {
 
 
 ````java
-// TicketType.java
 public enum TicketType {
-    ADULT(100_00),      // EUR in cents
-    CHILD(50_00),
-    SENIOR(70_00),
-    STUDENT(60_00);
+    ADULT(100),
+    CHILD(50),
+    SENIOR(75),
+    STUDENT(60);
 
-    private final long priceInCents;
+    private final int priceInCents;
 
-    TicketType(long priceInCents) {
+    TicketType(int priceInCents) {
         this.priceInCents = priceInCents;
     }
 
-    public long priceInCents() {
+    public int priceInCents() {
         return priceInCents;
     }
 }
@@ -2126,41 +2203,44 @@ public enum TicketType {
 </details>
 
 <details>
-<summary><code>WaitlistEntry.java</code> · 1 smell</summary>
+<summary><code>WaitingListEntry.java</code></summary>
 
-- `too-many-parameters` at line 8
 
 ````java
-// WaitListEntry.java
-public final class WaitListEntry {
+record WaitingListEntry(
+    List<TicketType> ticketTypes,
+    long joinedAtMillis
+) {
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>WaitlistEntry.java</code></summary>
+
+
+````java
+import java.util.*;
+
+class WaitlistEntry {
+    private final String id;
     private final String customerId;
-    private final int requestedSeats;
-    private final java.util.List<TicketType> ticketTypes;
-    private final long addedAtMillis;
-
-    public WaitListEntry(String customerId, int requestedSeats,
-                         java.util.List<TicketType> ticketTypes, long addedAtMillis) {
+    private final Map<SeatType, Integer> requirements;
+    
+    WaitlistEntry(String id, String customerId, Map<SeatType, Integer> requirements) {
+        this.id = id;
         this.customerId = customerId;
-        this.requestedSeats = requestedSeats;
-        this.ticketTypes = java.util.List.copyOf(ticketTypes);
-        this.addedAtMillis = addedAtMillis;
+        this.requirements = Map.copyOf(requirements);
     }
-
-    public String customerId() {
-        return customerId;
+    
+    int totalRequested() {
+        return requirements.values().stream().mapToInt(Integer::intValue).sum();
     }
-
-    public int requestedSeats() {
-        return requestedSeats;
-    }
-
-    public java.util.List<TicketType> ticketTypes() {
-        return ticketTypes;
-    }
-
-    public long addedAtMillis() {
-        return addedAtMillis;
-    }
+    
+    String customerId() { return customerId; }
+    Map<SeatType, Integer> requirements() { return requirements; }
 }
 
 ````
@@ -2168,680 +2248,327 @@ public final class WaitListEntry {
 </details>
 
 <details>
-<summary>Shipped tests (3 files)</summary>
-
-<details>
-<summary><code>EventBookingEngineTest.java</code></summary>
-
-
-````java
-import java.time.LocalDateTime;
-
-// Tests
-class EventBookingEngineTest {
-    private EventBookingEngine engine;
-    private LocalDateTime eventDate;
-    private LocalDateTime now;
-    
-    void setUp() {
-        eventDate = LocalDateTime.of(2026, 12, 25, 19, 0);
-        now = LocalDateTime.of(2026, 8, 30, 10, 0);
-        engine = new EventBookingEngine(eventDate);
-    }
-    
-    void testHoldSeatsAndConfirm() {
-        setUp();
-        String holdId = engine.holdSeats(5, TicketTier.ADULT, now);
-        assert holdId != null;
-        assert engine.getAvailableSeats() == 95;
-        
-        Booking booking = engine.confirmHold(holdId, now);
-        assert booking != null;
-        assert booking.getQuantity() == 5;
-        assert engine.getAvailableSeats() == 95;
-    }
-    
-    void testHoldExpiration() {
-        setUp();
-        String holdId = engine.holdSeats(3, TicketTier.CHILD, now);
-        assert engine.getAvailableSeats() == 97;
-        
-        LocalDateTime expiredTime = now.plusMinutes(16);
-        try {
-            engine.confirmHold(holdId, expiredTime);
-            assert false : "Should throw for expired hold";
-        } catch (IllegalStateException e) {
-            assert e.getMessage().contains("expired");
-        }
-        
-        assert engine.getAvailableSeats() == 100;
-    }
-    
-    void testReleaseHold() {
-        setUp();
-        String holdId = engine.holdSeats(4, TicketTier.SENIOR, now);
-        assert engine.getAvailableSeats() == 96;
-        
-        engine.releaseHold(holdId);
-        assert engine.getAvailableSeats() == 100;
-    }
-    
-    void testGroupDiscountAt10Seats() {
-        setUp();
-        String holdId = engine.holdSeats(10, TicketTier.ADULT, now);
-        Booking booking = engine.confirmHold(holdId, now);
-        
-        long basePrice = TicketTier.ADULT.getBasePriceInCents() * 10;
-        long discountedPrice = basePrice - (basePrice * 5 / 100);
-        assert booking.getTotalPriceInCents() == discountedPrice;
-    }
-    
-    void testNoDiscountBelow10Seats() {
-        setUp();
-        String holdId = engine.holdSeats(9, TicketTier.ADULT, now);
-        Booking booking = engine.confirmHold(holdId, now);
-        
-        long basePrice = TicketTier.ADULT.getBasePriceInCents() * 9;
-        assert booking.getTotalPriceInCents() == basePrice;
-    }
-    
-    void testFullRefund30DaysBeforeEvent() {
-        setUp();
-        String holdId = engine.holdSeats(5, TicketTier.ADULT, now);
-        Booking booking = engine.confirmHold(holdId, now);
-        
-        LocalDateTime cancelDate = eventDate.minusDays(31);
-        long refund = engine.cancelBooking(booking.getId(), cancelDate);
-        assert refund == booking.getTotalPriceInCents();
-    }
-    
-    void testFullRefundExactly30DaysBeforeEvent() {
-        setUp();
-        String holdId = engine.holdSeats(5, TicketTier.ADULT, now);
-        Booking booking = engine.confirmHold(holdId, now);
-        
-        LocalDateTime cancelDate = eventDate.minusDays(30);
-        long refund = engine.cancelBooking(booking.getId(), cancelDate);
-        assert refund == booking.getTotalPriceInCents();
-    }
-    
-    void testHalfRefundBetween7And30Days() {
-        setUp();
-        String holdId = engine.holdSeats(5, TicketTier.ADULT, now);
-        Booking booking = engine.confirmHold(holdId, now);
-        
-        LocalDateTime cancelDate = eventDate.minusDays(15);
-        long refund = engine.cancelBooking(booking.getId(), cancelDate);
-        assert refund == booking.getTotalPriceInCents() / 2;
-    }
-    
-    void testHalfRefundExactly7DaysBeforeEvent() {
-        setUp();
-        String holdId = engine.holdSeats(5, TicketTier.ADULT, now);
-        Booking booking = engine.confirmHold(holdId, now);
-        
-        LocalDateTime cancelDate = eventDate.minusDays(7);
-        long refund = engine.cancelBooking(booking.getId(), cancelDate);
-        assert refund == booking.getTotalPriceInCents() / 2;
-    }
-    
-    void testNoRefundLessThan7DaysBeforeEvent() {
-        setUp();
-        String holdId = engine.holdSeats(5, TicketTier.ADULT, now);
-        Booking booking = engine.confirmHold(holdId, now);
-        
-        LocalDateTime cancelDate = eventDate.minusDays(6);
-        long refund = engine.cancelBooking(booking.getId(), cancelDate);
-        assert refund == 0;
-    }
-    
-    void testCancellationReleasesSeatBackToInventory() {
-        setUp();
-        String holdId = engine.holdSeats(5, TicketTier.ADULT, now);
-        Booking booking = engine.confirmHold(holdId, now);
-        assert engine.getAvailableSeats() == 95;
-        
-        engine.cancelBooking(booking.getId(), now);
-        assert engine.getAvailableSeats() == 100;
-    }
-    
-    void testWaitlistWhenSoldOut() {
-        setUp();
-        for (int i = 0; i < 10; i++) {
-            String holdId = engine.holdSeats(10, TicketTier.ADULT, now);
-            engine.confirmHold(holdId, now);
-        }
-        
-        assert engine.getAvailableSeats() == 0;
-        
-        try {
-            engine.holdSeats(5, TicketTier.ADULT, now);
-            assert false : "Should throw when sold out";
-        } catch (IllegalStateException e) {
-            assert e.getMessage().contains("waitlist");
-        }
-        
-        assert engine.getWaitlistSize() == 1;
-    }
-    
-    void testWaitlistProcessingWhenSeatsRelease() {
-        setUp();
-        for (int i = 0; i < 10; i++) {
-            String holdId = engine.holdSeats(10, TicketTier.ADULT, now);
-            engine.confirmHold(holdId, now);
-        }
-        
-        try {
-            engine.holdSeats(5, TicketTier.ADULT, now);
-        } catch (IllegalStateException e) {
-            // Expected
-        }
-        
-        assert engine.getWaitlistSize() == 1;
-        
-        Booking firstBooking = engine.getConfirmedBookings().get(0);
-        engine.cancelBooking(firstBooking.getId(), eventDate.minusDays(15));
-        
-        assert engine.getAvailableSeats() == 5;
-        assert engine.getWaitlistSize() == 0;
-    }
-    
-    void testMultipleBookingsWithDifferentTiers() {
-        setUp();
-        String adultsHold = engine.holdSeats(3, TicketTier.ADULT, now);
-        String childrenHold = engine.holdSeats(2, TicketTier.CHILD, now);
-        
-        Booking adultBooking = engine.confirmHold(adultsHold, now);
-        Booking childBooking = engine.confirmHold(childrenHold, now);
-        
-        assert adultBooking.getTier() == TicketTier.ADULT;
-        assert childBooking.getTier() == TicketTier.CHILD;
-        assert engine.getConfirmedBookings().size() == 2;
-    }
-    
-    void runAllTests() {
-        testHoldSeatsAndConfirm();
-        testHoldExpiration();
-        testReleaseHold();
-        testGroupDiscountAt10Seats();
-        testNoDiscountBelow10Seats();
-        testFullRefund30DaysBeforeEvent();
-        testFullRefundExactly30DaysBeforeEvent();
-        testHalfRefundBetween7And30Days();
-        testHalfRefundExactly7DaysBeforeEvent();
-        testNoRefundLessThan7DaysBeforeEvent();
-        testCancellationReleasesSeatBackToInventory();
-        testWaitlistWhenSoldOut();
-        testWaitlistProcessingWhenSeatsRelease();
-        testMultipleBookingsWithDifferentTiers();
-        System.out.println("All tests passed");
-    }
-    
-    public static void main(String[] args) {
-        new EventBookingEngineTest().runAllTests();
-    }
-}
-
-````
-
-</details>
-
-<details>
-<summary><code>EventSeatBookingEngineTest.java</code></summary>
-
-
-````java
-import java.math.BigDecimal;
-import java.time.Clock;
-import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
-import java.util.EnumMap;
-import java.util.Map;
-import org.junit.Before;
-import org.junit.Test;
-import static org.junit.Assert.*;
-
-public class EventSeatBookingEngineTest {
-    private EventSeatBookingEngine engine;
-    private Clock fixedClock;
-    private static final LocalDateTime EVENT_TIME = LocalDateTime.of(2026, 9, 15, 19, 0, 0);
-    private static final LocalDateTime NOW = LocalDateTime.of(2026, 8, 30, 12, 0, 0);
-    
-    @Before
-    public void setUp() {
-        fixedClock = Clock.fixed(NOW.atZone(ZoneId.systemDefault()).toInstant(), 
-                               ZoneId.systemDefault());
-        
-        Map<EventSeatBookingEngine.TicketTier, BigDecimal> prices = new EnumMap<>(
-            EventSeatBookingEngine.TicketTier.class);
-        prices.put(EventSeatBookingEngine.TicketTier.ADULT, new BigDecimal("100.00"));
-        prices.put(EventSeatBookingEngine.TicketTier.CHILD, new BigDecimal("100.00"));
-        prices.put(EventSeatBookingEngine.TicketTier.SENIOR, new BigDecimal("100.00"));
-        prices.put(EventSeatBookingEngine.TicketTier.STUDENT, new BigDecimal("100.00"));
-        
-        EventSeatBookingEngine.Event event = new EventSeatBookingEngine.Event(
-            "Concert", EVENT_TIME, 100, prices);
-        engine = new EventSeatBookingEngine(event);
-        engine.setClock(fixedClock);
-    }
-    
-    @Test
-    public void holdSeatsReducesAvailability() {
-        Object result = engine.requestSeats(5, EventSeatBookingEngine.TicketTier.ADULT);
-        assertTrue(result instanceof EventSeatBookingEngine.HoldResult);
-        
-        EventSeatBookingEngine.HoldResult holdResult = (EventSeatBookingEngine.HoldResult) result;
-        assertNotNull(holdResult.getHoldId());
-        assertEquals(95, engine.getAvailableSeatCount());
-    }
-    
-    @Test
-    public void holdExpires15MinutesAfterCreation() {
-        Object result = engine.requestSeats(5, EventSeatBookingEngine.TicketTier.ADULT);
-        EventSeatBookingEngine.HoldResult hold = (EventSeatBookingEngine.HoldResult) result;
-        
-        assertEquals(95, engine.getAvailableSeatCount());
-        
-        Instant later = NOW.plusMinutes(16).atZone(ZoneId.systemDefault()).toInstant();
-        engine.setClock(Clock.fixed(later, ZoneId.systemDefault()));
-        
-        engine.expireHolds();
-        assertEquals(100, engine.getAvailableSeatCount());
-    }
-    
-    @Test
-    public void holdDoesNotExpireAt14Minutes() {
-        Object result = engine.requestSeats(5, EventSeatBookingEngine.TicketTier.ADULT);
-        EventSeatBookingEngine.HoldResult hold = (EventSeatBookingEngine.HoldResult) result;
-        
-        Instant before = NOW.plusMinutes(14).atZone(ZoneId.systemDefault()).toInstant();
-        engine.setClock(Clock.fixed(before, ZoneId.systemDefault()));
-        
-        engine.expireHolds();
-        assertEquals(95, engine.getAvailableSeatCount());
-    }
-    
-    @Test
-    public void confirmHoldCreatesBooking() {
-        Object result = engine.requestSeats(5, EventSeatBookingEngine.TicketTier.ADULT);
-        EventSeatBookingEngine.HoldResult hold = (EventSeatBookingEngine.HoldResult) result;
-        
-        String bookingId = engine.confirmHold(hold.getHoldId());
-        
-        assertNotNull(bookingId);
-        EventSeatBookingEngine.Booking booking = engine.getBooking(bookingId);
-        assertNotNull(booking);
-        assertEquals(EventSeatBookingEngine.Booking.BookingStatus.ACTIVE, booking.getStatus());
-    }
-    
-    @Test
-    public void releaseHoldFreesSeats() {
-        Object result = engine.requestSeats(5, EventSeatBookingEngine.TicketTier.ADULT);
-        EventSeatBookingEngine.HoldResult hold = (EventSeatBookingEngine.HoldResult) result;
-        
-        assertEquals(95, engine.getAvailableSeatCount());
-        engine.releaseHold(hold.getHoldId());
-        assertEquals(100, engine.getAvailableSeatCount());
-    }
-    
-    @Test
-    public void groupDiscountAppliedFor10Seats() {
-        Object result = engine.requestSeats(10, EventSeatBookingEngine.TicketTier.ADULT);
-        EventSeatBookingEngine.HoldResult hold = (EventSeatBookingEngine.HoldResult) result;
-        
-        BigDecimal expected = new BigDecimal("950.00");
-        assertEquals(expected, hold.getTotalPrice());
-    }
-    
-    @Test
-    public void noGroupDiscountFor9Seats() {
-        Object result = engine.requestSeats(9, EventSeatBookingEngine.TicketTier.ADULT);
-        EventSeatBookingEngine.HoldResult hold = (EventSeatBookingEngine.HoldResult) result;
-        
-        BigDecimal expected = new BigDecimal("900.00");
-        assertEquals(expected, hold.getTotalPrice());
-    }
-    
-    @Test
-    public void childTierApplies50PercentDiscount() {
-        Object result = engine.requestSeats(1, EventSeatBookingEngine.TicketTier.CHILD);
-        EventSeatBookingEngine.HoldResult hold = (EventSeatBookingEngine.HoldResult) result;
-        
-        BigDecimal expected = new BigDecimal("50.00");
-        assertEquals(expected, hold.getTotalPrice());
-    }
-    
-    @Test
-    public void studentTierApplies60PercentDiscount() {
-        Object result = engine.requestSeats(1, EventSeatBookingEngine.TicketTier.STUDENT);
-        EventSeatBookingEngine.HoldResult hold = (EventSeatBookingEngine.HoldResult) result;
-        
-        BigDecimal expected = new BigDecimal("60.00");
-        assertEquals(expected, hold.getTotalPrice());
-    }
-    
-    @Test
-    public void fullRefundMoreThan30DaysBeforeEvent() {
-        Object result = engine.requestSeats(5, EventSeatBookingEngine.TicketTier.ADULT);
-        EventSeatBookingEngine.HoldResult hold = (EventSeatBookingEngine.HoldResult) result;
-        String bookingId = engine.confirmHold(hold.getHoldId());
-        
-        Instant thirtyFiveDaysBefore = NOW.minusDays(35)
-            .atZone(ZoneId.systemDefault()).toInstant();
-        engine.setClock(Clock.fixed(thirtyFiveDaysBefore, ZoneId.systemDefault()));
-        
-        EventSeatBookingEngine.CancellationResult cancellation = 
-            engine.cancelBooking(bookingId);
-        
-        assertEquals(new BigDecimal("500.00"), cancellation.getRefundAmount());
-    }
-    
-    @Test
-    public void partialRefundBetween7And30DaysBeforeEvent() {
-        Object result = engine.requestSeats(5, EventSeatBookingEngine.TicketTier.ADULT);
-        EventSeatBookingEngine.HoldResult hold = (EventSeatBookingEngine.HoldResult) result;
-        String bookingId = engine.confirmHold(hold.getHoldId());
-        
-        Instant fifteenDaysBefore = NOW.minusDays(15)
-            .atZone(ZoneId.systemDefault()).toInstant();
-        engine.setClock(Clock.fixed(fifteenDaysBefore, ZoneId.systemDefault()));
-        
-        EventSeatBookingEngine.CancellationResult cancellation = 
-            engine.cancelBooking(bookingId);
-        
-        assertEquals(new BigDecimal("250.00"), cancellation.getRefundAmount());
-    }
-    
-    @Test
-    public void noRefundLessThan7DaysBeforeEvent() {
-        Object result = engine.requestSeats(5, EventSeatBookingEngine.TicketTier.ADULT);
-        EventSeatBookingEngine.HoldResult hold = (EventSeatBookingEngine.HoldResult) result;
-        String bookingId = engine.confirmHold(hold.getHoldId());
-        
-        Instant fiveDaysBefore = NOW.minusDays(5)
-            .atZone(ZoneId.systemDefault()).toInstant();
-        engine.setClock(Clock.fixed(fiveDaysBefore, ZoneId.systemDefault()));
-        
-        EventSeatBookingEngine.CancellationResult cancellation = 
-            engine.cancelBooking(bookingId);
-        
-        assertEquals(BigDecimal.ZERO, cancellation.getRefundAmount());
-    }
-    
-    @Test
-    public void waitlistWhenSoldOut() {
-        engine.requestSeats(100, EventSeatBookingEngine.TicketTier.ADULT);
-        Object result = engine.requestSeats(5, EventSeatBookingEngine.TicketTier.STUDENT);
-        
-        assertTrue(result instanceof EventSeatBookingEngine.WaitlistResult);
-        EventSeatBookingEngine.WaitlistResult waitlist = 
-            (EventSeatBookingEngine.WaitlistResult) result;
-        
-        assertEquals(1, waitlist.getQueuePosition());
-        assertEquals(1, engine.getWaitlistSize());
-    }
-    
-    @Test
-    public void waitlistProcessedWhenSeatsBecomeFree() {
-        Object hold1 = engine.requestSeats(100, EventSeatBookingEngine.TicketTier.ADULT);
-        EventSeatBookingEngine.HoldResult firstHold = 
-            (EventSeatBookingEngine.HoldResult) hold1;
-        
-        Object waitlistReq = engine.requestSeats(5, EventSeatBookingEngine.TicketTier.STUDENT);
-        assertEquals(1, engine.getWaitlistSize());
-        
-        engine.releaseHold(firstHold.getHoldId());
-        assertEquals(0, engine.getWaitlistSize());
-        assertEquals(5, engine.getAvailableSeatCount());
-    }
-    
-    @Test
-    public void waitlistPrioritizedByOrder() {
-        engine.requestSeats(100, EventSeatBookingEngine.TicketTier.ADULT);
-        
-        Object wait1 = engine.requestSeats(5, EventSeatBookingEngine.TicketTier.STUDENT);
-        Object wait2 = engine.requestSeats(5, EventSeatBookingEngine.TicketTier.CHILD);
-        
-        EventSeatBookingEngine.WaitlistResult first = 
-            (EventSeatBookingEngine.WaitlistResult) wait1;
-        EventSeatBookingEngine.WaitlistResult second = 
-            (EventSeatBookingEngine.WaitlistResult) wait2;
-        
-        assertEquals(1, first.getQueuePosition());
-        assertEquals(2, second.getQueuePosition());
-    }
-    
-    @Test
-    public void cancelBookingFreesSeatsForWaitlist() {
-        Object hold = engine.requestSeats(100, EventSeatBookingEngine.TicketTier.ADULT);
-        EventSeatBookingEngine.HoldResult booking100 = 
-            (EventSeatBookingEngine.HoldResult) hold;
-        String bookingId = engine.confirmHold(booking100.getHoldId());
-        
-        Object waitReq = engine.requestSeats(5, EventSeatBookingEngine.TicketTier.STUDENT);
-        assertEquals(1, engine.getWaitlistSize());
-        
-        engine.cancelBooking(bookingId);
-        
-        assertEquals(0, engine.getWaitlistSize());
-        assertEquals(5, engine.getAvailableSeatCount());
-    }
-    
-    @Test
-    public void invalidHoldThrowsException() {
-        assertThrows(IllegalArgumentException.class, 
-                    () -> engine.confirmHold("nonexistent"));
-    }
-    
-    @Test
-    public void invalidBookingThrowsException() {
-        assertThrows(IllegalArgumentException.class, 
-                    () -> engine.cancelBooking("nonexistent"));
-    }
-}
-
-````
-
-</details>
+<summary>Shipped tests (2 files)</summary>
 
 <details>
 <summary><code>SeatBookingEngineTest.java</code></summary>
 
 
 ````java
-// SeatBookingEngineTest.java
-import static org.junit.jupiter.api.Assertions.*;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.BeforeEach;
+public class SeatBookingEngineTest {
+    private SeatBookingEngine engine;
+    private static final long EVENT_TIME = System.currentTimeMillis() + 40 * 24 * 60 * 60 * 1000;
+
+    @Before
+    public void setUp() {
+        List<String> seatIds = IntStream.rangeClosed(1, 20)
+            .mapToObj(i -> "A" + i)
+            .toList();
+        engine = new SeatBookingEngine("event1", EVENT_TIME, seatIds);
+    }
+
+    @Test
+    public void holdReservesSeatsForFifteenMinutes() {
+        SeatHoldResult result = engine.hold(List.of(TicketType.ADULT, TicketType.CHILD));
+
+        assertTrue(!result.holdId().isEmpty());
+        assertEquals(2, result.seatIds().size());
+        assertFalse(result.onWaitingList());
+        assertEquals(System.currentTimeMillis() + 15 * 60 * 1000, result.expiryTimeMillis(), 500);
+    }
+
+    @Test
+    public void confirmConvertHoldToBooking() {
+        SeatHoldResult hold = engine.hold(List.of(TicketType.ADULT));
+        BookingResult booking = engine.confirm(hold.holdId(), List.of(TicketType.ADULT));
+
+        assertTrue(booking.success());
+        assertEquals(100, booking.totalPrice().cents());
+    }
+
+    @Test
+    public void groupDiscountAppliedAt10Seats() {
+        List<TicketType> tickets = IntStream.range(0, 10)
+            .mapToObj(i -> TicketType.ADULT)
+            .toList();
+
+        SeatHoldResult hold = engine.hold(tickets);
+        BookingResult booking = engine.confirm(hold.holdId(), tickets);
+
+        assertEquals(950, booking.totalPrice().cents());
+    }
+
+    @Test
+    public void noGroupDiscountBelow10Seats() {
+        List<TicketType> tickets = IntStream.range(0, 9)
+            .mapToObj(i -> TicketType.ADULT)
+            .toList();
+
+        SeatHoldResult hold = engine.hold(tickets);
+        BookingResult booking = engine.confirm(hold.holdId(), tickets);
+
+        assertEquals(900, booking.totalPrice().cents());
+    }
+
+    @Test
+    public void mixedTicketTypesPriced() {
+        List<TicketType> tickets = List.of(TicketType.ADULT, TicketType.CHILD, TicketType.SENIOR, TicketType.STUDENT);
+
+        SeatHoldResult hold = engine.hold(tickets);
+        BookingResult booking = engine.confirm(hold.holdId(), tickets);
+
+        assertEquals(285, booking.totalPrice().cents());
+    }
+
+    @Test
+    public void fullRefundMoreThan30DaysBefore() {
+        long eventTime = System.currentTimeMillis() + 40 * 24 * 60 * 60 * 1000;
+        SeatBookingEngine futureEngine = new SeatBookingEngine("event2", eventTime, List.of("A1"));
+
+        SeatHoldResult hold = futureEngine.hold(List.of(TicketType.ADULT));
+        futureEngine.confirm(hold.holdId(), List.of(TicketType.ADULT));
+        RefundResult refund = futureEngine.cancel("A1");
+
+        assertTrue(refund.success());
+        assertEquals(100.0, refund.refundPercent());
+        assertEquals(100, refund.amount().cents());
+    }
+
+    @Test
+    public void halfRefundBetween7And30Days() {
+        long eventTime = System.currentTimeMillis() + 15 * 24 * 60 * 60 * 1000;
+        SeatBookingEngine soonEngine = new SeatBookingEngine("event3", eventTime, List.of("A1"));
+
+        SeatHoldResult hold = soonEngine.hold(List.of(TicketType.ADULT));
+        soonEngine.confirm(hold.holdId(), List.of(TicketType.ADULT));
+        RefundResult refund = soonEngine.cancel("A1");
+
+        assertTrue(refund.success());
+        assertEquals(50.0, refund.refundPercent());
+        assertEquals(50, refund.amount().cents());
+    }
+
+    @Test
+    public void noRefundLessThan7DaysBefore() {
+        long eventTime = System.currentTimeMillis() + 3 * 24 * 60 * 60 * 1000;
+        SeatBookingEngine veryEngine = new SeatBookingEngine("event4", eventTime, List.of("A1"));
+
+        SeatHoldResult hold = veryEngine.hold(List.of(TicketType.ADULT));
+        veryEngine.confirm(hold.holdId(), List.of(TicketType.ADULT));
+        RefundResult refund = veryEngine.cancel("A1");
+
+        assertTrue(refund.success());
+        assertEquals(0.0, refund.refundPercent());
+        assertEquals(0, refund.amount().cents());
+    }
+
+    @Test
+    public void waitingListWhenSoldOut() {
+        SeatBookingEngine tinyEngine = new SeatBookingEngine("event5", EVENT_TIME, List.of("A1", "A2"));
+
+        SeatHoldResult hold1 = tinyEngine.hold(List.of(TicketType.ADULT));
+        tinyEngine.confirm(hold1.holdId(), List.of(TicketType.ADULT));
+
+        SeatHoldResult hold2 = tinyEngine.hold(List.of(TicketType.ADULT));
+        tinyEngine.confirm(hold2.holdId(), List.of(TicketType.ADULT));
+
+        SeatHoldResult result3 = tinyEngine.hold(List.of(TicketType.ADULT));
+        assertTrue(result3.onWaitingList());
+    }
+
+    @Test
+    public void waitingListServedInOrder() {
+        SeatBookingEngine tinyEngine = new SeatBookingEngine("event6", EVENT_TIME, List.of("A1"));
+
+        SeatHoldResult hold1 = tinyEngine.hold(List.of(TicketType.ADULT));
+        tinyEngine.confirm(hold1.holdId(), List.of(TicketType.ADULT));
+
+        tinyEngine.hold(List.of(TicketType.CHILD));
+        tinyEngine.hold(List.of(TicketType.SENIOR));
+
+        tinyEngine.release(hold1.holdId());
+    }
+
+    @Test
+    public void confirmFailsWrongHoldId() {
+        BookingResult result = engine.confirm("wrongId", List.of(TicketType.ADULT));
+
+        assertFalse(result.success());
+        assertTrue(result.error().contains("not found"));
+    }
+
+    @Test
+    public void confirmFailsMismatchedTicketCount() {
+        SeatHoldResult hold = engine.hold(List.of(TicketType.ADULT, TicketType.CHILD));
+
+        BookingResult result = engine.confirm(hold.holdId(), List.of(TicketType.ADULT));
+
+        assertFalse(result.success());
+        assertTrue(result.error().contains("mismatch"));
+    }
+
+    @Test
+    public void cancelUnbookedSeatFails() {
+        RefundResult result = engine.cancel("A1");
+
+        assertFalse(result.success());
+        assertTrue(result.error().contains("not booked"));
+    }
+}
+
+````
+
+</details>
+
+<details>
+<summary><code>SeatBookingServiceTest.java</code></summary>
+
+
+````java
+import java.math.BigDecimal;
+import java.time.*;
 import java.util.*;
 
-public final class SeatBookingEngineTest {
-    private SeatBookingEngine engine;
-    private String eventId;
-    private long futureEventDate;
+// ============ TESTS ============
 
-    @BeforeEach
-    public void setup() {
-        engine = new SeatBookingEngine();
-        eventId = "EVT_001";
-        futureEventDate = System.currentTimeMillis() + (31 * 24 * 60 * 60 * 1000L);
-        engine.createEvent(eventId, "Concert", futureEventDate, 100);
-    }
-
-    @Test
-    public void holdSeatsReservesSeatForCustomer() {
-        List<TicketType> tickets = List.of(TicketType.ADULT);
-        SeatHold hold = engine.holdSeats(eventId, tickets, "CUST_001");
-
-        assertNotNull(hold);
-        assertEquals(1, hold.seatCount());
-        assertEquals("CUST_001", hold.customerId());
-    }
-
-    @Test
-    public void confirmHoldCreatesBooking() {
-        List<TicketType> tickets = List.of(TicketType.ADULT, TicketType.CHILD);
-        SeatHold hold = engine.holdSeats(eventId, tickets, "CUST_001");
-        Booking booking = engine.confirmHold(hold.id(), "CUST_001");
-
-        assertNotNull(booking);
-        assertEquals(2, booking.seatCount());
-        assertEquals(100_00 + 50_00, booking.totalPrice().cents());
-    }
-
-    @Test
-    public void confirmHoldThrowsIfExpired() {
-        List<TicketType> tickets = List.of(TicketType.ADULT);
-        SeatHold hold = engine.holdSeats(eventId, tickets, "CUST_001");
-
-        assertTrue(!hold.isExpired(System.currentTimeMillis()));
-        assertTrue(hold.isExpired(System.currentTimeMillis() + (16 * 60 * 1000L)));
-    }
-
-    @Test
-    public void groupDiscountAppliedFor10OrMoreSeats() {
-        List<TicketType> tickets = new ArrayList<>();
-        for (int i = 0; i < 10; i++) {
-            tickets.add(TicketType.ADULT);
+class SeatBookingServiceTest {
+    private SeatBookingService service;
+    private LocalDate eventDate;
+    private Map<SeatType, Money> pricing;
+    
+    void setUp() {
+        eventDate = LocalDate.now().plusDays(60);
+        pricing = Map.of(
+            SeatType.ADULT, new Money(new BigDecimal("50.00")),
+            SeatType.CHILD, new Money(new BigDecimal("25.00")),
+            SeatType.SENIOR, new Money(new BigDecimal("35.00")),
+            SeatType.STUDENT, new Money(new BigDecimal("30.00"))
+        );
+        
+        List<Seat> seats = new ArrayList<>();
+        for (int i = 1; i <= 20; i++) {
+            SeatType type = SeatType.values()[(i - 1) % 4];
+            seats.add(new Seat(new SeatLocation("A", 1, i), type));
         }
-
-        SeatHold hold = engine.holdSeats(eventId, tickets, "CUST_001");
-        Booking booking = engine.confirmHold(hold.id(), "CUST_001");
-
-        long basePrice = 100_00L * 10;
-        long expectedPrice = Math.round(basePrice * 0.95);
-        assertEquals(expectedPrice, booking.totalPrice().cents());
+        service = new SeatBookingService(eventDate, seats, pricing);
     }
-
-    @Test
-    public void groupDiscountNotAppliedFor9Seats() {
-        List<TicketType> tickets = new ArrayList<>();
-        for (int i = 0; i < 9; i++) {
-            tickets.add(TicketType.ADULT);
+    
+    void testCreateHold() {
+        setUp();
+        Map<SeatType, Integer> req = Map.of(SeatType.ADULT, 2);
+        Hold hold = service.createHold("cust1", req);
+        
+        assert hold.id() != null;
+        assert hold.customerId().equals("cust1");
+        assert hold.seats().size() == 2;
+        System.out.println("✓ createHold");
+    }
+    
+    void testConfirmHold() {
+        setUp();
+        Map<SeatType, Integer> req = Map.of(SeatType.ADULT, 2);
+        Hold hold = service.createHold("cust1", req);
+        Booking booking = service.confirmHold(hold.id());
+        
+        assert booking.totalPrice().amount.equals(new BigDecimal("100.00"));
+        System.out.println("✓ confirmHold");
+    }
+    
+    void testGroupDiscount() {
+        setUp();
+        Map<SeatType, Integer> req = Map.of(SeatType.ADULT, 10);
+        Hold hold = service.createHold("cust1", req);
+        Booking booking = service.confirmHold(hold.id());
+        
+        assert booking.totalPrice().amount.equals(new BigDecimal("475.00"));
+        System.out.println("✓ groupDiscount");
+    }
+    
+    void testReleaseHold() {
+        setUp();
+        int before = service.availableSeatCount();
+        Map<SeatType, Integer> req = Map.of(SeatType.ADULT, 5);
+        Hold hold = service.createHold("cust1", req);
+        service.releaseHold(hold.id());
+        int after = service.availableSeatCount();
+        
+        assert after > before;
+        System.out.println("✓ releaseHold");
+    }
+    
+    void testWaitlist() {
+        setUp();
+        for (int i = 0; i < 20; i++) {
+            Map<SeatType, Integer> req = Map.of(SeatType.ADULT, 1);
+            Hold hold = service.createHold("c" + i, req);
+            service.confirmHold(hold.id());
         }
-
-        SeatHold hold = engine.holdSeats(eventId, tickets, "CUST_001");
-        Booking booking = engine.confirmHold(hold.id(), "CUST_001");
-
-        long basePrice = 100_00L * 9;
-        assertEquals(basePrice, booking.totalPrice().cents());
+        
+        try {
+            service.createHold("waitlist", Map.of(SeatType.ADULT, 1));
+        } catch (InsufficientSeatsException e) {
+            assert service.waitlistSize() == 1;
+            System.out.println("✓ waitlist");
+        }
     }
-
-    @Test
-    public void releaseHoldFreesSeats() {
-        List<TicketType> tickets = List.of(TicketType.ADULT);
-        SeatHold hold = engine.holdSeats(eventId, tickets, "CUST_001");
-
-        engine.releaseHold(hold.id());
-
-        SeatHold hold2 = engine.holdSeats(eventId, tickets, "CUST_002");
-        assertNotNull(hold2);
-        assertEquals(1, hold2.seatCount());
+    
+    void testRefund100Percent() {
+        setUp();
+        LocalDate eventIn60Days = LocalDate.now().plusDays(60);
+        Booking booking = new Booking("b1", "c1", eventIn60Days,
+            List.of(new Seat(new SeatLocation("A", 1, 1), SeatType.ADULT)),
+            new Money(new BigDecimal("100.00")));
+        
+        assert booking.calculateRefund().amount.equals(new BigDecimal("100.00"));
+        System.out.println("✓ refund100");
     }
-
-    @Test
-    public void fullRefundMoreThan30DaysBeforeEvent() {
-        List<TicketType> tickets = List.of(TicketType.ADULT);
-        SeatHold hold = engine.holdSeats(eventId, tickets, "CUST_001");
-        Booking booking = engine.confirmHold(hold.id(), "CUST_001");
-
-        Money refund = engine.cancelBooking(booking.id());
-        assertEquals(booking.totalPrice().cents(), refund.cents());
+    
+    void testRefund50Percent() {
+        setUp();
+        LocalDate eventIn15Days = LocalDate.now().plusDays(15);
+        Booking booking = new Booking("b1", "c1", eventIn15Days,
+            List.of(new Seat(new SeatLocation("A", 1, 1), SeatType.ADULT)),
+            new Money(new BigDecimal("100.00")));
+        
+        assert booking.calculateRefund().amount.equals(new BigDecimal("50.00"));
+        System.out.println("✓ refund50");
     }
-
-    @Test
-    public void halfRefund30To7DaysBeforeEvent() {
-        long eventDate = System.currentTimeMillis() + (15 * 24 * 60 * 60 * 1000L);
-        engine.createEvent("EVT_002", "Show", eventDate, 50);
-
-        List<TicketType> tickets = List.of(TicketType.ADULT);
-        SeatHold hold = engine.holdSeats("EVT_002", tickets, "CUST_001");
-        Booking booking = engine.confirmHold(hold.id(), "CUST_001");
-
-        Money refund = engine.cancelBooking(booking.id());
-        assertEquals(booking.totalPrice().cents() / 2, refund.cents());
+    
+    void testRefund0Percent() {
+        setUp();
+        LocalDate eventIn3Days = LocalDate.now().plusDays(3);
+        Booking booking = new Booking("b1", "c1", eventIn3Days,
+            List.of(new Seat(new SeatLocation("A", 1, 1), SeatType.ADULT)),
+            new Money(new BigDecimal("100.00")));
+        
+        assert booking.calculateRefund().amount.equals(BigDecimal.ZERO);
+        System.out.println("✓ refund0");
     }
-
-    @Test
-    public void noRefundLessThan7DaysBeforeEvent() {
-        long eventDate = System.currentTimeMillis() + (3 * 24 * 60 * 60 * 1000L);
-        engine.createEvent("EVT_003", "Show", eventDate, 50);
-
-        List<TicketType> tickets = List.of(TicketType.ADULT);
-        SeatHold hold = engine.holdSeats("EVT_003", tickets, "CUST_001");
-        Booking booking = engine.confirmHold(hold.id(), "CUST_001");
-
-        Money refund = engine.cancelBooking(booking.id());
-        assertEquals(0, refund.cents());
+    
+    void testCancelBooking() {
+        setUp();
+        Map<SeatType, Integer> req = Map.of(SeatType.ADULT, 2);
+        Hold hold = service.createHold("cust1", req);
+        Booking booking = service.confirmHold(hold.id());
+        Money refund = service.cancelBooking(booking.id());
+        
+        assert refund.amount.compareTo(BigDecimal.ZERO) > 0;
+        assert service.availableSeatCount() > 0;
+        System.out.println("✓ cancelBooking");
     }
-
-    @Test
-    public void waitListWhenEventSoldOut() {
-        engine.createEvent("SMALL", "Small", futureEventDate, 1);
-
-        List<TicketType> tickets1 = List.of(TicketType.ADULT);
-        SeatHold hold1 = engine.holdSeats("SMALL", tickets1, "CUST_001");
-        engine.confirmHold(hold1.id(), "CUST_001");
-
-        List<TicketType> tickets2 = List.of(TicketType.ADULT);
-        assertThrows(IllegalStateException.class, () ->
-            engine.holdSeats("SMALL", tickets2, "CUST_002")
-        );
-    }
-
-    @Test
-    public void waitListCustomerAutoBookedWhenSeatsFreed() {
-        engine.createEvent("SMALL", "Small", futureEventDate, 2);
-
-        List<TicketType> tickets1 = List.of(TicketType.ADULT, TicketType.CHILD);
-        SeatHold hold1 = engine.holdSeats("SMALL", tickets1, "CUST_001");
-        Booking booking1 = engine.confirmHold(hold1.id(), "CUST_001");
-
-        List<TicketType> tickets2 = List.of(TicketType.ADULT);
-        assertThrows(IllegalStateException.class, () ->
-            engine.holdSeats("SMALL", tickets2, "CUST_002")
-        );
-
-        engine.cancelBooking(booking1.id());
-
-        Booking autoBooking = engine.getBooking("BOOKING_00000000");
-        assertNotNull(autoBooking);
-        assertEquals("CUST_002", autoBooking.customerId());
-    }
-
-    @Test
-    public void expiredHoldIsAutoReleasedOnNextHoldAttempt() {
-        List<TicketType> tickets1 = List.of(TicketType.ADULT);
-        SeatHold hold1 = engine.holdSeats(eventId, tickets1, "CUST_001");
-
-        Event event = engine.getEvent(eventId);
-        assertEquals(99, event.availableSeats());
-
-        List<TicketType> tickets2 = List.of(TicketType.ADULT);
-        SeatHold hold2 = engine.holdSeats(eventId, tickets2, "CUST_002");
-
-        assertNotNull(hold2);
-    }
-
-    @Test
-    public void differentTicketTypesCalculateCorrectPrice() {
-        List<TicketType> tickets = List.of(TicketType.ADULT, TicketType.CHILD, TicketType.SENIOR);
-        SeatHold hold = engine.holdSeats(eventId, tickets, "CUST_001");
-        Booking booking = engine.confirmHold(hold.id(), "CUST_001");
-
-        long expected = 100_00 + 50_00 + 70_00;
-        assertEquals(expected, booking.totalPrice().cents());
-    }
-
-    @Test
-    public void confirmHoldThrowsIfWrongCustomer() {
-        List<TicketType> tickets = List.of(TicketType.ADULT);
-        SeatHold hold = engine.holdSeats(eventId, tickets, "CUST_001");
-
-        assertThrows(IllegalArgumentException.class, () ->
-            engine.confirmHold(hold.id(), "CUST_002")
-        );
+    
+    public static void main(String[] args) {
+        SeatBookingServiceTest test = new SeatBookingServiceTest();
+        test.testCreateHold();
+        test.testConfirmHold();
+        test.testGroupDiscount();
+        test.testReleaseHold();
+        test.testWaitlist();
+        test.testRefund100Percent();
+        test.testRefund50Percent();
+        test.testRefund0Percent();
+        test.testCancelBooking();
+        System.out.println("\nAll tests passed.");
     }
 }
 

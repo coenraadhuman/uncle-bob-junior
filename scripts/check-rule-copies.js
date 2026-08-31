@@ -32,7 +32,7 @@ const INVARIANTS = [
 ];
 
 const sources = [
-  ['skills/uncle-bob-junior/SKILL.md', read('skills/uncle-bob-junior/SKILL.md')],
+  ['plugins/uncle-bob-junior/skills/uncle-bob-junior/SKILL.md', read('plugins/uncle-bob-junior/skills/uncle-bob-junior/SKILL.md')],
   ['AGENTS.md', read('AGENTS.md')],
 ];
 

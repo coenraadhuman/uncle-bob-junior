@@ -6,7 +6,15 @@ const path = require('path');
 const { DEFAULT_MODE, normalizeMode, normalizePersistedMode } = require('./uncle-bob-junior-config');
 
 const INDEPENDENT_MODES = new Set(['review']);
-const SKILL_PATH = path.join(__dirname, '..', 'skills', 'uncle-bob-junior', 'SKILL.md');
+const SKILL_DIR = path.join(__dirname, '..', 'skills', 'uncle-bob-junior');
+const SKILL_PATH = path.join(SKILL_DIR, 'SKILL.md');
+
+// SKILL.md points at its references/ files with skill-relative paths, which
+// mean nothing once the body is injected as session context. Resolve them to
+// absolute paths so the agent can Read the file the rule points at.
+function resolveReferencePaths(body) {
+  return String(body).replace(/references\/([\w-]+\.md)/g, (match, file) => path.join(SKILL_DIR, 'references', file));
+}
 
 function filterSkillBodyForMode(body, mode) {
   const effectiveMode = normalizeMode(mode) || DEFAULT_MODE;
@@ -96,7 +104,7 @@ function getUncleBobJuniorInstructions(mode) {
 
   try {
     return 'UNCLE_BOB_JUNIOR MODE ACTIVE — level: ' + effectiveMode + '\n\n' +
-      filterSkillBodyForMode(fs.readFileSync(SKILL_PATH, 'utf8'), effectiveMode);
+      resolveReferencePaths(filterSkillBodyForMode(fs.readFileSync(SKILL_PATH, 'utf8'), effectiveMode));
   } catch (e) {
     return getFallbackInstructions(effectiveMode);
   }
@@ -106,4 +114,5 @@ module.exports = {
   filterSkillBodyForMode,
   getFallbackInstructions,
   getUncleBobJuniorInstructions,
+  resolveReferencePaths,
 };

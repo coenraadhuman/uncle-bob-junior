@@ -21,7 +21,7 @@ const { slug } = require('./export-results');
 
 const RESULTS_DIR = path.join(__dirname, 'results');
 const SITE_DOCS_DIR = path.join(__dirname, '..', 'website', 'docs');
-const SKILL_PATH = path.join(__dirname, '..', 'skills', 'uncle-bob-junior', 'SKILL.md');
+const SKILL_PATH = path.join(__dirname, '..', 'plugins', 'uncle-bob-junior', 'skills', 'uncle-bob-junior', 'SKILL.md');
 const REPO_URL = 'https://github.com/coenraadhuman/uncle-bob-junior';
 // Outer fences use four backticks so model code containing ``` cannot close them.
 const FENCE = '````';
